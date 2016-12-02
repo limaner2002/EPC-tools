@@ -13,17 +13,11 @@ import qualified System.IO as SIO
 import GHC.IO.Exception
 import Data.Time
 import Control.Concurrent.Async.Lifted
+import Types
 
-data ExeOpts = ExeOpts
-  { nRuns :: Run
-  , nUsers :: [NUsers]
-  , jmxPath :: FilePath
-  , jmeterPath :: FilePath
-  } deriving Show
-
-createCommand :: ExeOpts -> NUsers -> CmdSpec
-createCommand (ExeOpts _ _ jmxPath jmeterPath) (NUsers n) =
-  RawCommand jmeterPath
+createCommand :: JMeterOpts -> NUsers -> CmdSpec
+createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts) (NUsers n) =
+  RawCommand jmeterPath $
   [ "-n"
   , "-t"
   , jmxPath
@@ -31,13 +25,7 @@ createCommand (ExeOpts _ _ jmxPath jmeterPath) (NUsers n) =
   , "-JoutputFile=aggregate_" <> show n <> "_" <> show n <> ".csv"
   , "-JsessionPrefix=session_"
   , "-JloopCount=1"
-  ]
-
-newtype NUsers = NUsers Int
-  deriving (Show, Eq)
-
-newtype Run = Run Int
-  deriving (Show, Eq)
+  ] <> fmap unpack otherOpts
 
 readRun :: Text -> Maybe Run
 readRun = fmap Run . readMay
@@ -52,13 +40,16 @@ streamConsumer = CC.mapM_ (\bs -> putStr (decodeUtf8 bs) >> SIO.hFlush (stdout))
 
 -- runCommand :: CreateProcess -> IO ()
 runCommand :: CreateProcess -> IO (ExitCode, (), ())
-runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
+-- runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
+runCommand _ = do
+  putStrLn "Executing process"
+  return (ExitSuccess, (), ())
 
 isEmptyDirectory [] = True
 isEmptyDirectory _ = False
 
-runJMeter :: ExeOpts -> IO ()
-runJMeter opts@(ExeOpts n users _ jmeterPath) = go
+runJMeter :: JMeterOpts -> IO ()
+runJMeter opts@(JMeterOpts n users _ jmeterPath _ _) = mapM_ runForNUsers users
   where
     createNUsersDir (NUsers u) = do
       exists <- doesDirectoryExist $ show u
@@ -80,17 +71,23 @@ runJMeter opts@(ExeOpts n users _ jmeterPath) = go
       putStrLn "Waiting for 1 minute"
       threadDelay 60000000
       setCurrentDirectory "../"
-    go = do
-      l <- listDirectory =<< getCurrentDirectory
-      case isEmptyDirectory l of
-        False -> fail $ "The current directory is not empty. Either change to an empty directory or remove everything from the current one."
-        True -> mapM_ runForNUsers users
     extractRun (Run n) = n
     extractUser (NUsers u) = u
 
-runningMessage :: ExeOpts -> Text
-runningMessage (ExeOpts n users jmxPath jmeterPath) = do
+batchJMeterScripts :: [JMeterOpts] -> IO ()
+batchJMeterScripts runs = doIfDirIsEmpty $ mapM_ go runs
+  where
+    go run = do
+      createDirectoryIfMissing False $ unpack . fromRunName $ runName run
+      setCurrentDirectory $ unpack . fromRunName $ runName run
+      runJMeter run
+      setCurrentDirectory "../"
+
+runningMessage :: JMeterOpts -> Text
+runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts) = do
   "Running " <> tshow jmeterPath <> " using " <> tshow jmxPath <> " with " <> tshow n <> " runs with " <> tshow users <> " users."
+    <> "\notherOpts: " <> intercalate " " otherOpts
+    <> "\n" <> tshow runName
 
 showCmdSpec (RawCommand bin opts) = bin <> " " <> intercalate " " opts
 showCmdSpec (ShellCommand cmd) = cmd
@@ -106,3 +103,9 @@ schedule time action = do
       threadDelay 1000000
       schedule time action
 
+doIfDirIsEmpty :: IO () -> IO ()
+doIfDirIsEmpty act = do
+  l <- listDirectory =<< getCurrentDirectory
+  case isEmptyDirectory l of
+    False -> fail $ "The current directory is not empty. Either change to an empty directory or remove everything from the current one."
+    True -> act

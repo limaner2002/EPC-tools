@@ -1,25 +1,17 @@
 # For more information, see: http://docs.haskellstack.org/en/stable/yaml_configuration.html
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
-resolver: lts-7.8
+resolver: lts-6.10
 
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
-- location: /Users/josh/workspace/machinecell-contrib
-  extra-dep: true
-- '.'
-- location: /Users/josh/workspace/machinecell
-  extra-dep: true
-- location:
-    git: https://github.com/limaner2002/hs-config.git
-    commit: c8f6c750c260eb04801e85ee44510ae33588aa27
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
-- arrows-0.4.4.1
-- Stream-0.4.7.2
-- lazysmallcheck-0.6
+- ref-tf-0.4.0.1
+- reflex-0.4.0
+- reflex-dom-0.3
 
 # Override default flag values for local packages and extra-deps
 flags: {}
@@ -44,3 +36,12 @@ extra-package-dbs: []
 
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+
+compiler: ghcjs-0.2.0.20160414_ghc-7.10.3
+compiler-check: match-exact
+setup-info:
+  ghcjs:
+    source:
+      ghcjs-0.2.0.20160414_ghc-7.10.3:
+        url: https://s3.amazonaws.com/ghcjs/ghcjs-0.2.0.20160414_ghc-7.10.3.tar.gz
+        sha1: 6d6f307503be9e94e0c96ef1308c7cf224d06be3

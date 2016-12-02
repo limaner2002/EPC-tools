@@ -16,6 +16,9 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Execute
+                       Server
+                       Types
+                       GetLogs
   build-depends:       base >= 4.7 && < 5
                      , classy-prelude
                      , directory
@@ -25,15 +28,50 @@ library
                      , time
                      , lifted-async
                      , filepath
+                     , servant-server
+                     , machinecell-contrib
+                     , aeson
+                     , lucid
+                     , bytestring
+                     , http-media
+                     , wai
+                     , warp
+                     , path
+                     , resourcet
+                     , http-client
+                     , http-conduit
+                     , conduit
+                     , http-types
+                     , hxt                  
   default-language:    Haskell2010
 
-executable EPC-tools-exe
+executable EPC-tools
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , EPC-tools
                      , classy-prelude
+                     , warp
+                     , path
+                     , hs-config
+                     , time
+  default-language:    Haskell2010
+
+executable results
+  hs-source-dirs:      app
+  main-is:             Results.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , EPC-tools
+                     , classy-prelude
+                     , resourcet
+                     , time
+                     , machinecell-contrib
+                     , data-default
+                     , mtl
+                     , filemanip
+                     , filepath
   default-language:    Haskell2010
 
 test-suite EPC-tools-test
