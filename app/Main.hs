@@ -34,22 +34,22 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-    [configFilePath, timestamp] -> do
-      cfg <- readConfigFile $ unpack configFilePath
-      let eOpts = readJMeterOpts cfg
+    (timestamp:configFiles) -> do
+      cfgs <- mapM (readConfigFile . unpack) configFiles
+      let eOpts = sequence $ fmap readJMeterOpts cfgs
       case eOpts of
         Left msg -> fail $ show msg
         Right opts -> do
           let mTime = readMay timestamp
           case mTime of
             Nothing -> fail $ "could not read timestamp: " <> show timestamp
-            Just time -> schedule time $ runJMeter opts
+            Just time -> schedule time $ batchJMeterScripts opts
       -- let mOpts = ExeOpts <$> readRun nRuns <*> userList <*> pure (unpack jmxPath) <*> pure (unpack jmeterPath)
       --     userList = fmap NUsers <$> (readMay users :: Maybe [Int])
       --     mTime = readMay timestamp
       -- mapM_ (putStrLn . runningMessage) mOpts
       -- mapM_ (\(time, opts) -> schedule time $ runJMeter opts) $ (,) <$> mTime <*> mOpts
     _ -> do
-      putStrLn "usage: EPC-tools configFilePath utc-timestamp"
+      putStrLn "usage: EPC-tools utc-timestamp configFile1 configFile2 ..."
       ct <- getCurrentTime
-      putStrLn $ "example: EPC-tools /path/to/configfile " <> tshow ct
+      putStrLn $ "example: EPC-tools \"" <> tshow ct <> "\" /path/to/file1 /path/to/file2"

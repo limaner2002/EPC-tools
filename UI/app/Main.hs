@@ -1,5 +1,9 @@
 import Reflex.Dom
 import UI
+import JobQueueUI
 
 main :: IO ()
-ain = mainWidgetWithHead UI.head doIt
+main = mainWidgetWithHead UI.head (el "div" $ do
+                                      getUserList
+                                      blank
+                                  )
