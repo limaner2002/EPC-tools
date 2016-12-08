@@ -28,28 +28,33 @@ readJMeterOpts cfg =
              <*> getVal' "jmxPath"
              <*> getVal' "jmeterPath"
              <*> getVal' "runName"
-             <*> getVal' "otherOpts"
+             <*> (replaceIt <$> getVal' "otherOpts")
   where
     getVal' k = getVal k cfg
+                -- This is a quick and dirty hack. I need to update
+                -- hs-config to properly handle strings that contain
+                -- '=' characters.
+    replaceIt :: [Text] -> [Text]
+    replaceIt = fmap (replaceElem '@' '=')
 
 main :: IO ()
 main = do
   args <- getArgs
   case args of
-    [configFilePath, timestamp] -> do
-      cfg <- readConfigFile $ unpack configFilePath
-      let eOpts = readJMeterOpts cfg
+    (timestamp:configFiles) -> do
+      cfgs <- mapM (readConfigFile . unpack) configFiles
+      let eOpts = sequence $ fmap readJMeterOpts cfgs
       case eOpts of
         Left msg -> fail $ show msg
         Right opts -> do
           let mTime = readMay timestamp
           case mTime of
             Nothing -> fail $ "could not read timestamp: " <> show timestamp
-            Just time -> schedule time $ runJMeter opts
+            Just time -> schedule time $ batchJMeterScripts opts
     _ -> do
-      putStrLn "usage: EPC-tools configFilePath utc-timestamp"
+      putStrLn "usage: EPC-tools utc-timestamp configFile1 configFile2 ..."
       ct <- getCurrentTime
-      putStrLn $ "example: EPC-tools /path/to/configfile " <> tshow ct
+      putStrLn $ "example: EPC-tools \"" <> tshow ct <> "\" /path/to/file1 /path/to/file2"
 
 toTimeOfDay :: Text -> TimeOfDay
 toTimeOfDay txt = fromJust $ readMay txt

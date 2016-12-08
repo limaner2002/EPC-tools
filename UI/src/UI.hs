@@ -9,7 +9,7 @@ import Reflex
 import Reflex.Dom
 import Data.Default
 import Path
-mport Data.Aeson
+import Data.Aeson
 
 newtype NothingYet = NothingYet Text
   deriving Show

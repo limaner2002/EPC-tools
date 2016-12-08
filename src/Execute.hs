@@ -39,8 +39,8 @@ newCP cs = (shell mempty) {cmdspec = cs}
 streamConsumer = CC.mapM_ (\bs -> putStr (decodeUtf8 bs) >> SIO.hFlush (stdout))
 
 -- runCommand :: CreateProcess -> IO ()
-runCommand :: CreateProcess -> IO (ExitCode, (), ())
--- runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
+-- runCommand :: CreateProcess -> IO (ExitCode, (), ())
+runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
 runCommand _ = do
   putStrLn "Executing process"
   return (ExitSuccess, (), ())
@@ -82,6 +82,8 @@ batchJMeterScripts runs = doIfDirIsEmpty $ mapM_ go runs
       setCurrentDirectory $ unpack . fromRunName $ runName run
       runJMeter run
       setCurrentDirectory "../"
+      putStrLn "Waiting for an hour now..."
+      threadDelay 3600000000
 
 runningMessage :: JMeterOpts -> Text
 runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts) = do
