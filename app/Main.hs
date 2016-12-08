@@ -12,6 +12,8 @@ import Path
 import ConfigFile
 import Types (JMeterOpts (..))
 import Data.Time (getCurrentTime)
+import SendMail
+import Data.Time
 
 -- main :: IO ()
 -- main = do
@@ -44,12 +46,19 @@ main = do
           case mTime of
             Nothing -> fail $ "could not read timestamp: " <> show timestamp
             Just time -> schedule time $ runJMeter opts
-      -- let mOpts = ExeOpts <$> readRun nRuns <*> userList <*> pure (unpack jmxPath) <*> pure (unpack jmeterPath)
-      --     userList = fmap NUsers <$> (readMay users :: Maybe [Int])
-      --     mTime = readMay timestamp
-      -- mapM_ (putStrLn . runningMessage) mOpts
-      -- mapM_ (\(time, opts) -> schedule time $ runJMeter opts) $ (,) <$> mTime <*> mOpts
     _ -> do
       putStrLn "usage: EPC-tools configFilePath utc-timestamp"
       ct <- getCurrentTime
       putStrLn $ "example: EPC-tools /path/to/configfile " <> tshow ct
+
+toTimeOfDay :: Text -> TimeOfDay
+toTimeOfDay txt = fromJust $ readMay txt
+  where
+    -- The value is hardcoded for now so this is safe to use
+    fromJust (Just t) = t
+
+checkJobStatusTime :: TimeOfDay
+checkJobStatusTime = toTimeOfDay "08:00:00"
+
+sendScheduledInfo :: TimeOfDay
+sendScheduledInfo = toTimeOfDay "00:00:00"
