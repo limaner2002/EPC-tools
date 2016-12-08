@@ -82,6 +82,8 @@ batchJMeterScripts runs = doIfDirIsEmpty $ mapM_ go runs
       setCurrentDirectory $ unpack . fromRunName $ runName run
       runJMeter run
       setCurrentDirectory "../"
+      putStrLn "Waiting for an hour now..."
+      threadDelay 3600000000
 
 runningMessage :: JMeterOpts -> Text
 runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts) = do

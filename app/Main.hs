@@ -26,14 +26,14 @@ readJMeterOpts cfg =
              <*> getVal' "jmxPath"
              <*> getVal' "jmeterPath"
              <*> getVal' "runName"
-             <*> (replaceColon <$> getVal' "otherOpts")
+             <*> (replaceIt <$> getVal' "otherOpts")
   where
     getVal' k = getVal k cfg
                 -- This is a quick and dirty hack. I need to update
                 -- hs-config to properly handle strings that contain
                 -- '=' characters.
-    replaceColon :: [Text] -> [Text]
-    replaceColon = fmap (replaceElem ':' '=')
+    replaceIt :: [Text] -> [Text]
+    replaceIt = fmap (replaceElem '@' '=')
 
 main :: IO ()
 main = do
