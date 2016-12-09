@@ -42,7 +42,7 @@ library
                      , http-conduit
                      , conduit
                      , http-types
-                     , hxt                  
+                     , hxt                 
   default-language:    Haskell2010
 
 executable EPC-tools

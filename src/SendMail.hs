@@ -13,24 +13,29 @@ import ClassyPrelude
 import Network.Mail.SMTP
 import Data.Time
 import Network.Mail.Mime (Mail, Part)
+import Types
 
 data JobMessage
   = Scheduled Text
+  | NothingScheduled Text
   | Running Text
   | Completed Text
 
 sendIt :: Mail -> IO ()
-sendIt = sendMail' "10.102.5.61" 2525
+-- sendIt = sendMail' "10.102.5.61" 2525
+sendIt = sendMail "10.100.3.26"
 
-showJobNames :: [Text] -> Text
-showJobNames = foldl' (\x y -> x <> "&bull; " <> y <> "<br>") mempty
+showJobNames :: [RunName] -> Text
+showJobNames = foldl' (\x y -> x <> "&bull; " <> showRunName y <> "<br>") mempty
+  where
+    showRunName (RunName name) = name
 
-scheduledMessage :: [Text] -> LocalTime -> JobMessage
+scheduledMessage :: [RunName] -> LocalTime -> JobMessage
 scheduledMessage jobNames time = Scheduled $ 
   "The following EPC Post Commit performance tests have been scheduled for execution at " <> tshow time <> ".<br><br>"
   <> showJobNames jobNames
 
-stillRunningMessage :: [Text] -> LocalTime -> JobMessage
+stillRunningMessage :: [RunName] -> LocalTime -> JobMessage
 stillRunningMessage jobNames time = Running $ 
   "The following EPC Post Commit performance tests are still scheduled to be run as of " <> tshow time <> ".<br><br>"
   <> showJobNames jobNames
@@ -38,6 +43,10 @@ stillRunningMessage jobNames time = Running $
 jobsCompletedMessage :: LocalTime -> JobMessage
 jobsCompletedMessage time = Completed $ 
   "All EPC Post Commit performance tests for " <> tshow (localDay time) <> " have completed. preprod is now free."
+
+nothingScheduledMessage :: LocalTime -> JobMessage
+nothingScheduledMessage time = NothingScheduled $
+  "There are no EPC Post Commit performance tests scheduled for the " <> tshow time <> " window."
 
 makeMail
   :: LocalTime -> [Part] -> Network.Mail.Mime.Mail
@@ -59,3 +68,4 @@ fromJobMessage :: JobMessage -> Text
 fromJobMessage (Scheduled txt) = txt
 fromJobMessage (Running txt) = txt
 fromJobMessage (Completed txt) = txt
+fromJobMessage (NothingScheduled txt) = txt

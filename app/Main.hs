@@ -40,6 +40,7 @@ readJMeterOpts cfg =
 main :: IO ()
 main = do
   args <- getArgs
+  tz <- getCurrentTimeZone
   case args of
     (timestamp:configFiles) -> do
       cfgs <- mapM (readConfigFile . unpack) configFiles
@@ -50,11 +51,23 @@ main = do
           let mTime = readMay timestamp
           case mTime of
             Nothing -> fail $ "could not read timestamp: " <> show timestamp
-            Just time -> schedule time $ batchJMeterScripts opts
+            Just time -> initialize tz time sendScheduledInfo opts
     _ -> do
       putStrLn "usage: EPC-tools utc-timestamp configFile1 configFile2 ..."
       ct <- getCurrentTime
       putStrLn $ "example: EPC-tools \"" <> tshow ct <> "\" /path/to/file1 /path/to/file2"
+
+initialize :: TimeZone -> UTCTime -> TimeOfDay -> [JMeterOpts] -> IO ()
+initialize tz time scheduledTime opts = do
+  let time' = localTimeToUTC tz localTime
+      localTime = LocalTime (utctDay time) scheduledTime
+  _ <- concurrently
+    ( schedule time' $ do
+        putStrLn "Sending message now"
+        sendMessage $ scheduledMessage (fmap runName opts) localTime
+    )
+    ( schedule time $ batchJMeterScripts opts )
+  return ()
 
 toTimeOfDay :: Text -> TimeOfDay
 toTimeOfDay txt = fromJust $ readMay txt
