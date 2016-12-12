@@ -67,7 +67,6 @@ initialize tz time sendScheduledTime checkJobStatusTime opts = do
       checkJobStatusTime' = toUTCTime checkJobStatusTime
       toUTCTime = localTimeToUTC tz . toLocalTime
       toLocalTime t = LocalTime (localDay $ utcToLocalTime tz time) t
-  sendMessage $ scheduledMessage (fmap runName opts) (utcToLocalTime tz time)
   _ <- concurrently
     ( do
         schedule (trace ("scheduledMsg: " <> show scheduledTime') scheduledTime') $ do
@@ -76,12 +75,13 @@ initialize tz time sendScheduledTime checkJobStatusTime opts = do
         schedule (trace ("checkMsg: " <> show checkJobStatusTime') checkJobStatusTime') $ checkStatus tz runningStatus opts
     )
     ( do
-        doIfDirIsEmpty $ schedule time $ do
+        doIfDirIsEmpty $ do
           atomically $ writeTVar runningStatus Running
           case validateBatchOpts $ createBatchOpts opts of
-            Left exc -> print exc
-            Right validatedOpts -> 
-              batchJMeterScripts $ validatedOpts
+            Left exc -> fail $ show exc
+            Right validatedOpts -> do
+              sendMessage $ scheduledMessage (fmap runName opts) (utcToLocalTime tz time)
+              schedule time $ batchJMeterScripts $ validatedOpts
           atomically $ writeTVar runningStatus Finished
     )
   return ()
