@@ -7,6 +7,8 @@ module SendMail
   , scheduledMessage
   , stillRunningMessage
   , jobsCompletedMessage
+  , nothingScheduledMessage
+  , notStartedMessage
   ) where
 
 import ClassyPrelude
@@ -20,6 +22,7 @@ data JobMessage
   | NothingScheduled Text
   | Running Text
   | Completed Text
+  | NotStarted Text
 
 sendIt :: Mail -> IO ()
 -- sendIt = sendMail' "10.102.5.61" 2525
@@ -48,6 +51,10 @@ nothingScheduledMessage :: LocalTime -> JobMessage
 nothingScheduledMessage time = NothingScheduled $
   "There are no EPC Post Commit performance tests scheduled for the " <> tshow time <> " window."
 
+notStartedMessage :: LocalTime -> JobMessage
+notStartedMessage time = NotStarted $
+  "As of " <> tshow time <> ", there are jobs scheduled but they have not started yet."
+
 makeMail
   :: LocalTime -> [Part] -> Network.Mail.Mime.Mail
 makeMail time = simpleMail (Address Nothing "joshua.mccartney@itgfirm.com")
@@ -69,3 +76,4 @@ fromJobMessage (Scheduled txt) = txt
 fromJobMessage (Running txt) = txt
 fromJobMessage (Completed txt) = txt
 fromJobMessage (NothingScheduled txt) = txt
+fromJobMessage (NotStarted txt) = txt

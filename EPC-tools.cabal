@@ -56,6 +56,8 @@ executable EPC-tools
                      , path
                      , hs-config
                      , time
+                     , smtp-mail
+                     , mime-mail
   default-language:    Haskell2010
 
 executable results

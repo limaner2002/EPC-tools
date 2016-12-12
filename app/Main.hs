@@ -6,9 +6,6 @@ module Main where
 import ClassyPrelude
 import Execute
 
-import Server
-import Network.Wai.Handler.Warp (run)
-import Path
 import ConfigFile
 import Types (JMeterOpts (..))
 import Data.Time (getCurrentTime)
@@ -20,6 +17,11 @@ import Data.Time
 --   (scriptsDirIn:_) <- getArgs
 --   scriptsDir <- parseRelDir $ unpack scriptsDirIn
 --   run 8081 (app scriptsDir)
+
+data ExecutionStatus
+  = NotStarted
+  | Running
+  | Finished
 
 readJMeterOpts :: MonadThrow m => Config -> m JMeterOpts
 readJMeterOpts cfg =
@@ -51,23 +53,48 @@ main = do
           let mTime = readMay timestamp
           case mTime of
             Nothing -> fail $ "could not read timestamp: " <> show timestamp
-            Just time -> initialize tz time sendScheduledInfo opts
+            Just time -> initialize tz time sendScheduledInfo checkJobStatusTime opts
     _ -> do
       putStrLn "usage: EPC-tools utc-timestamp configFile1 configFile2 ..."
       ct <- getCurrentTime
       putStrLn $ "example: EPC-tools \"" <> tshow ct <> "\" /path/to/file1 /path/to/file2"
 
-initialize :: TimeZone -> UTCTime -> TimeOfDay -> [JMeterOpts] -> IO ()
-initialize tz time scheduledTime opts = do
-  let time' = localTimeToUTC tz localTime
-      localTime = LocalTime (utctDay time) scheduledTime
+initialize :: TimeZone -> UTCTime -> TimeOfDay -> TimeOfDay -> [JMeterOpts] -> IO ()
+initialize tz time sendScheduledTime checkJobStatusTime opts = do
+  runningStatus <- newTVarIO NotStarted
+  let time' = toUTCTime sendScheduledTime
+      time'' = toUTCTime checkJobStatusTime
+      toUTCTime = localTimeToUTC tz . toLocalTime
+      toLocalTime t = LocalTime (utctDay time) t
   _ <- concurrently
-    ( schedule time' $ do
-        putStrLn "Sending message now"
-        sendMessage $ scheduledMessage (fmap runName opts) localTime
+    ( do
+        schedule time' $ do
+          putStrLn "Sending message now"
+          sendMessage $ scheduledMessage (fmap runName opts) (utcToLocalTime tz time)
+        schedule time'' $ checkStatus tz runningStatus
     )
-    ( schedule time $ batchJMeterScripts opts )
+    ( do
+        doIfDirIsEmpty $ schedule time $ do
+          atomically $ writeTVar runningStatus Running
+          batchJMeterScripts opts
+          atomically $ writeTVar runningStatus Finished
+    )
   return ()
+
+checkStatus :: TimeZone -> TVar ExecutionStatus -> IO ()
+checkStatus tz runningStatus = go
+  where
+    go = do
+      putStrLn "Sending message now"
+      isRunning <- atomically $ readTVar runningStatus
+      clt <- utcToLocalTime tz <$> getCurrentTime
+      case isRunning of
+        Running -> do
+          sendMessage $ stillRunningMessage mempty clt
+          threadDelay 10000000
+          go
+        Finished -> sendMessage $ nothingScheduledMessage clt
+        NotStarted -> sendMessage $ notStartedMessage clt
 
 toTimeOfDay :: Text -> TimeOfDay
 toTimeOfDay txt = fromJust $ readMay txt
