@@ -25,8 +25,8 @@ data JobMessage
   | NotStarted Text
 
 sendIt :: Mail -> IO ()
--- sendIt = sendMail' "10.102.5.61" 2525
-sendIt = sendMail "10.100.3.26"
+-- sendIt = sendMail' "10.102.5.14" 2525
+sendIt = sendMail "10.100.2.21"
 
 showJobNames :: [RunName] -> Text
 showJobNames = foldl' (\x y -> x <> "&bull; " <> showRunName y <> "<br>") mempty
@@ -69,7 +69,10 @@ sendMessage txt = do
   tz <- getCurrentTimeZone
   let localTime = utcToLocalTime tz ct
       message = htmlPart (fromStrict $ fromJobMessage txt) `cons` mempty
-  sendIt $ makeMail localTime message
+  res <- tryAny $ sendIt $ makeMail localTime message
+  case res of
+    Left exc -> hPutStrLn stderr $ tshow exc
+    Right x -> return x
 
 fromJobMessage :: JobMessage -> Text
 fromJobMessage (Scheduled txt) = txt
