@@ -55,7 +55,7 @@ instance ToJSON Run
 instance FromJSON Run
 
 newtype RunName = RunName Text
-  deriving (Show, Generic, Read)
+  deriving (Show, Generic, Read, Eq, Ord)
 
 fromRunName :: RunName -> Text
 fromRunName (RunName n) = n
@@ -63,3 +63,5 @@ fromRunName (RunName n) = n
 instance ToJSON RunName
 instance FromJSON RunName
 
+data UnValidated
+data Validated

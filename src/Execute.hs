@@ -1,7 +1,15 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
 
-module Execute where
+module Execute
+  ( schedule
+  , batchJMeterScripts
+  , doIfDirIsEmpty
+  , createBatchOpts
+  , validateBatchOpts
+  ) where
 
 import ClassyPrelude
 import System.Directory
@@ -14,6 +22,8 @@ import GHC.IO.Exception
 import Data.Time
 import Control.Concurrent.Async.Lifted
 import Types
+
+newtype BatchOpts a = BatchOpts [JMeterOpts]
 
 createCommand :: JMeterOpts -> NUsers -> CmdSpec
 createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts) (NUsers n) =
@@ -38,8 +48,6 @@ newCP cs = (shell mempty) {cmdspec = cs}
 
 streamConsumer = CC.mapM_ (\bs -> putStr (decodeUtf8 bs) >> SIO.hFlush (stdout))
 
--- runCommand :: CreateProcess -> IO ()
--- runCommand :: CreateProcess -> IO (ExitCode, (), ())
 runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
 runCommand _ = do
   putStrLn "Executing process"
@@ -74,8 +82,8 @@ runJMeter opts@(JMeterOpts n users _ jmeterPath _ _) = mapM_ runForNUsers users
     extractRun (Run n) = n
     extractUser (NUsers u) = u
 
-batchJMeterScripts :: [JMeterOpts] -> IO ()
-batchJMeterScripts runs = doIfDirIsEmpty $ mapM_ go runs
+batchJMeterScripts :: BatchOpts Validated -> IO ()
+batchJMeterScripts (BatchOpts runs) = doIfDirIsEmpty $ mapM_ go runs
   where
     go run = do
       createDirectoryIfMissing False $ unpack . fromRunName $ runName run
@@ -111,3 +119,23 @@ doIfDirIsEmpty act = do
   case isEmptyDirectory l of
     False -> fail $ "The current directory is not empty. Either change to an empty directory or remove everything from the current one."
     True -> act
+
+data InvalidBatchOpts = InvalidBatchOpts Text
+  deriving Show
+
+instance Exception InvalidBatchOpts
+
+validateBatchOpts :: MonadThrow m => BatchOpts UnValidated -> m (BatchOpts Validated)
+validateBatchOpts (BatchOpts opts) =
+  case checkRunNames opts of
+    True -> return $ BatchOpts opts
+    False -> throwM $ InvalidBatchOpts "Each test should have a unique name."
+  where
+    checkRunNames = all (==1) . countRunNames
+    countRunNames opts = foldl' insertName (mempty :: Map RunName Int) opts
+    insertName mp v = alterMap countName (runName v) mp
+    countName Nothing = Just 1
+    countName (Just n) = Just (n + 1)
+
+createBatchOpts :: [JMeterOpts] -> BatchOpts UnValidated
+createBatchOpts opts = BatchOpts opts

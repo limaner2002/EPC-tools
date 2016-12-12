@@ -24,7 +24,10 @@ import Network.Wai.Handler.Warp
 import Path
 import GetLogs (downloadLogs)
 import MachineUtils
-import Execute (batchJMeterScripts)
+import Execute ( batchJMeterScripts
+               , createBatchOpts
+               , validateBatchOpts
+               )
 
 type HomePageAPI = Get '[HTMLLucid] HomePage
 type SubmitAPI = "submit" :> ReqBody '[JSON] LogSettings :> Post '[JSON] SubmitStatus
@@ -116,8 +119,9 @@ serveFile scriptsDir fName = do
     Right bs -> return bs
 
 startTests :: [JMeterOpts] -> Handler SubmitStatus
-startTests runs = do
-  res <- tryAny $ liftIO $ batchJMeterScripts runs
+startTests opts = do
+  validatedOpts <- validateBatchOpts $ createBatchOpts opts
+  res <- tryAny $ liftIO $ batchJMeterScripts validatedOpts
   case res of
     Left e -> return $ SubmissionError $ tshow e
     Right _ -> return $ SubmissionSuccess "The tests have completed successfully"

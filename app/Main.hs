@@ -78,7 +78,10 @@ initialize tz time sendScheduledTime checkJobStatusTime opts = do
     ( do
         doIfDirIsEmpty $ schedule time $ do
           atomically $ writeTVar runningStatus Running
-          batchJMeterScripts opts
+          case validateBatchOpts $ createBatchOpts opts of
+            Left exc -> print exc
+            Right validatedOpts -> 
+              batchJMeterScripts $ validatedOpts
           atomically $ writeTVar runningStatus Finished
     )
   return ()
