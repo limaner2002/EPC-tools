@@ -33,9 +33,9 @@ showJobNames = foldl' (\x y -> x <> "&bull; " <> showRunName y <> "<br>") mempty
   where
     showRunName (RunName name) = name
 
-scheduledMessage :: [RunName] -> LocalTime -> JobMessage
+scheduledMessage :: [RunName] -> ScheduledTime -> JobMessage
 scheduledMessage jobNames time = Scheduled $ 
-  "The following EPC Post Commit performance tests have been scheduled for execution at " <> tshow time <> ".<br><br>"
+  "The following EPC Post Commit performance tests have been scheduled for execution at " <> tshow (fromScheduledTime time) <> ".<br><br>"
   <> showJobNames jobNames
 
 stillRunningMessage :: [RunName] -> LocalTime -> JobMessage

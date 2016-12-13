@@ -26,7 +26,7 @@ import Types
 newtype BatchOpts a = BatchOpts [JMeterOpts]
 
 createCommand :: JMeterOpts -> NUsers -> CmdSpec
-createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts) (NUsers n) =
+createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts _) (NUsers n) =
   RawCommand jmeterPath $
   [ "-n"
   , "-t"
@@ -57,7 +57,7 @@ isEmptyDirectory [] = True
 isEmptyDirectory _ = False
 
 runJMeter :: JMeterOpts -> IO ()
-runJMeter opts@(JMeterOpts n users _ jmeterPath _ _) = mapM_ runForNUsers users
+runJMeter opts@(JMeterOpts n users _ jmeterPath _ _ _) = mapM_ runForNUsers users
   where
     createNUsersDir (NUsers u) = do
       exists <- doesDirectoryExist $ show u
@@ -83,35 +83,41 @@ runJMeter opts@(JMeterOpts n users _ jmeterPath _ _) = mapM_ runForNUsers users
     extractUser (NUsers u) = u
 
 batchJMeterScripts :: BatchOpts Validated -> IO ()
-batchJMeterScripts (BatchOpts runs) = doIfDirIsEmpty $ mapM_ go runs
+batchJMeterScripts (BatchOpts runs) = mapM_ go runs
   where
     go run = do
       createDirectoryIfMissing False $ unpack . fromRunName $ runName run
       setCurrentDirectory $ unpack . fromRunName $ runName run
-      runJMeter run
+      res <- tryAny $ runJMeter run
+      case res of
+        Left exc -> print exc
+        Right x -> return x
       setCurrentDirectory "../"
-      putStrLn "Waiting for an hour now..."
-      threadDelay 3600000000
+      delayJob $ sleepTime run
 
 runningMessage :: JMeterOpts -> Text
-runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts) = do
+runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts sleepTime) = do
   "Running " <> tshow jmeterPath <> " using " <> tshow jmxPath <> " with " <> tshow n <> " runs with " <> tshow users <> " users."
     <> "\notherOpts: " <> intercalate " " otherOpts
     <> "\n" <> tshow runName
+    <> "\nwith " <> tshow sleepTime <> " seconds before the next run."
 
 showCmdSpec (RawCommand bin opts) = bin <> " " <> intercalate " " opts
 showCmdSpec (ShellCommand cmd) = cmd
 
-schedule :: UTCTime -> IO () -> IO ()
-schedule time action = do
-  ct <- getCurrentTime
-  case ct >= time of
-    True -> do
-      putStrLn "Running job now"
-      action
-    False -> do
-      threadDelay 1000000
-      schedule time action
+schedule :: ScheduledTime -> IO () -> IO ()
+schedule scheduledTime action = putStrLn ("Running scheduled the job for " <> tshow scheduledTime) >> loop
+  where
+    loop = do
+      ct <- getCurrentTime
+      case ct >= time of
+        True -> do
+          putStrLn "Running job now"
+          action
+        False -> do
+          threadDelay 1000000
+          loop
+    time = fromScheduledTime scheduledTime
 
 doIfDirIsEmpty :: IO () -> IO ()
 doIfDirIsEmpty act = do
@@ -139,3 +145,14 @@ validateBatchOpts (BatchOpts opts) =
 
 createBatchOpts :: [JMeterOpts] -> BatchOpts UnValidated
 createBatchOpts opts = BatchOpts opts
+
+delayJob :: JobDelay -> IO ()
+delayJob (Delay n) = do
+  putStrLn $ "Waiting for " <> tshow n <> " seconds"
+  threadDelay (n * 1000000)
+  putStrLn "Starting the next job."
+delayJob (AtTime t) = do
+  putStrLn $ "Sleeping until " <> tshow t <> "."
+  tz <- getCurrentTimeZone
+  ct <- getCurrentTime
+  schedule (mkScheduledTime tz t ct) $ putStrLn "Starting the next job."
