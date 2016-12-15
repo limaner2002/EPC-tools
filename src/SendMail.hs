@@ -52,12 +52,12 @@ showBatchPlan batchOpts = -- foldl' (\x y -> x <> "&bull; " <> showRunName (runN
 
 scheduledMessage :: BatchOpts Validated -> ScheduledTime -> JobMessage
 scheduledMessage jobNames time = Scheduled $
-  L.toHtml ("The following EPC Post Commit performance tests have been scheduled for execution at " <> tshow (fromScheduledTime time) <> ".<br><br>")
+  L.toHtml ("The following EPC Post Commit performance tests have been scheduled for execution at " <> tshow (fromScheduledTime time))
   <> showBatchPlan jobNames
 
 stillRunningMessage :: BatchOpts Validated -> LocalTime -> JobMessage
 stillRunningMessage jobNames time = Running $
-  L.toHtml ("The following EPC Post Commit performance tests are still scheduled to be run as of " <> tshow time <> ".<br><br>")
+  L.toHtml ("The following EPC Post Commit performance tests are still scheduled to be run as of " <> tshow time <> ".")
   <> showBatchPlan jobNames
 
 jobsCompletedMessage :: LocalTime -> JobMessage
