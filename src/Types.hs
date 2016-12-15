@@ -1,5 +1,9 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 
 module Types
   ( LogSettings (..)
@@ -17,6 +21,12 @@ module Types
   , ToScheduledTime (..)
   , scheduledTimeToLocalTime
   , SubmitStatus (..)
+  , BatchOpts
+  , fromBatchOpts
+  , createBatchOpts
+  , validateBatchOpts
+  , showRunName
+  , showJobDelay
   ) where
 
 import ClassyPrelude
@@ -119,3 +129,37 @@ fromScheduledTime (ScheduledTime t) = t
 
 scheduledTimeToLocalTime :: TimeZone -> ScheduledTime -> LocalTime
 scheduledTimeToLocalTime tz = utcToLocalTime tz . fromScheduledTime
+
+newtype BatchOpts a = BatchOpts [JMeterOpts]
+
+data InvalidBatchOpts = InvalidBatchOpts Text
+  deriving Show
+
+instance Exception InvalidBatchOpts
+
+validateBatchOpts :: MonadThrow m => BatchOpts UnValidated -> m (BatchOpts Validated)
+validateBatchOpts (BatchOpts opts) =
+  case checkRunNames opts of
+    True -> return $ BatchOpts opts
+    False -> throwM $ InvalidBatchOpts "Each test should have a unique name."
+  where
+    checkRunNames = all (==1) . countRunNames
+    countRunNames opts = foldl' insertName (mempty :: Map RunName Int) opts
+    insertName mp v = alterMap countName (runName v) mp
+    countName Nothing = Just 1
+    countName (Just n) = Just (n + 1)
+
+createBatchOpts :: [JMeterOpts] -> BatchOpts UnValidated
+createBatchOpts opts = BatchOpts opts
+
+fromBatchOpts :: BatchOpts a -> [JMeterOpts]
+fromBatchOpts (BatchOpts opts) = opts
+
+showRunName :: RunName -> Text
+showRunName (RunName n) = n
+
+showJobDelay :: JobDelay -> Text
+showJobDelay (Delay n) = "Wait for " <> tshow n <> " seconds."
+showJobDelay (AtTime (TOD t)) = "Wait until " <> tshow t <> " or until current job completes. Whichever is later."
+showJobDelay (AtTime (At t)) = "Wait until " <> tshow t <> " or until current job completes. Whichever is later."
+

@@ -11,11 +11,19 @@ import Types ( JMeterOpts (..)
              , ToScheduledTime (..)
              , mkScheduledTime
              , ScheduledTime
+             , validateBatchOpts
+             , createBatchOpts
+             , BatchOpts
+             , Validated
              )
 import Data.Time (getCurrentTime)
 import SendMail
 import Data.Time
 import qualified System.IO as SIO
+
+import Path
+import Network.Wai.Handler.Warp
+import Server
 
 -- main :: IO ()
 -- main = do
@@ -73,34 +81,34 @@ main = do
 -- initialize :: TimeZone -> UTCTime -> TimeOfDay -> TimeOfDay -> [JMeterOpts] -> IO ()
 -- initialize tz time sendScheduledTime checkJobStatusTime opts = do
 initialize :: TimeZone -> ScheduledTime -> ScheduledTime -> ScheduledTime -> [JMeterOpts] -> IO ()
-initialize tz jobTime sendScheduledTime checkJobStatusTime opts = do
-  runningStatus <- newTVarIO NotStarted
-  -- let scheduledTime' = toUTCTime sendScheduledTime
-  --     checkJobStatusTime' = toUTCTime checkJobStatusTime
-  --     toUTCTime = localTimeToUTC tz . toLocalTime
-  --     toLocalTime t = LocalTime (localDay $ utcToLocalTime tz time) t
-  _ <- concurrently
-    ( do
-        schedule (trace ("scheduledMsg: " <> show sendScheduledTime) sendScheduledTime) $ do
-          putStrLn "Sending message now"
-          sendMessage $ scheduledMessage (fmap runName opts) sendScheduledTime
-        schedule (trace ("checkMsg: " <> show checkJobStatusTime) checkJobStatusTime) $ checkStatus tz runningStatus opts
-    )
-    ( do
-        doIfDirIsEmpty $ do
-          atomically $ writeTVar runningStatus Running
-          case validateBatchOpts $ createBatchOpts opts of
-            Left exc -> fail $ show exc
-            Right validatedOpts -> do
-              sendMessage $ scheduledMessage (fmap runName opts) jobTime
+initialize tz jobTime sendScheduledTime checkJobStatusTime opts =
+  case validateBatchOpts $ createBatchOpts opts of
+    Left exc -> fail $ show exc
+    Right validatedOpts -> do
+        runningStatus <- newTVarIO NotStarted
+        -- let scheduledTime' = toUTCTime sendScheduledTime
+        --     checkJobStatusTime' = toUTCTime checkJobStatusTime
+        --     toUTCTime = localTimeToUTC tz . toLocalTime
+        --     toLocalTime t = LocalTime (localDay $ utcToLocalTime tz time) t
+        _ <- concurrently
+          ( do
+              schedule (trace ("scheduledMsg: " <> show sendScheduledTime) sendScheduledTime) $ do
+                putStrLn "Sending message now"
+                sendMessage $ scheduledMessage validatedOpts sendScheduledTime
+              schedule (trace ("checkMsg: " <> show checkJobStatusTime) checkJobStatusTime) $ checkStatus tz runningStatus validatedOpts
+          )
+          (
+            doIfDirIsEmpty $ do
+              atomically $ writeTVar runningStatus Running
+              sendMessage $ scheduledMessage validatedOpts jobTime
               schedule jobTime $ batchJMeterScripts $ validatedOpts
-          atomically $ writeTVar runningStatus Finished
-          clt <- utcToLocalTime tz <$> getCurrentTime
-          sendMessage $ jobsCompletedMessage clt
-    )
-  return ()
+              atomically $ writeTVar runningStatus Finished
+              clt <- utcToLocalTime tz <$> getCurrentTime
+              sendMessage $ jobsCompletedMessage clt
+          )
+        return ()
 
-checkStatus :: TimeZone -> TVar ExecutionStatus -> [JMeterOpts] -> IO ()
+checkStatus :: TimeZone -> TVar ExecutionStatus -> BatchOpts Validated -> IO ()
 checkStatus tz runningStatus opts = go
   where
     go = do
@@ -110,7 +118,7 @@ checkStatus tz runningStatus opts = go
       clt <- utcToLocalTime tz <$> getCurrentTime
       case isRunning of
         Running -> do
-          sendMessage $ stillRunningMessage (fmap runName opts) clt
+          sendMessage $ stillRunningMessage opts clt
           threadDelay 600000000
           go
         Finished -> sendMessage $ nothingScheduledMessage clt

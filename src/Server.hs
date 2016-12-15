@@ -24,10 +24,7 @@ import Network.Wai.Handler.Warp
 import Path
 import GetLogs (downloadLogs)
 import MachineUtils
-import Execute ( batchJMeterScripts
-               , createBatchOpts
-               , validateBatchOpts
-               )
+import Execute (batchJMeterScripts)
 
 type HomePageAPI = Get '[HTMLLucid] HomePage
 type SubmitAPI = "submit" :> ReqBody '[JSON] LogSettings :> Post '[JSON] SubmitStatus

@@ -1,14 +1,10 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module Execute
   ( schedule
   , batchJMeterScripts
   , doIfDirIsEmpty
-  , createBatchOpts
-  , validateBatchOpts
   ) where
 
 import ClassyPrelude
@@ -22,8 +18,6 @@ import GHC.IO.Exception
 import Data.Time
 import Control.Concurrent.Async.Lifted
 import Types
-
-newtype BatchOpts a = BatchOpts [JMeterOpts]
 
 createCommand :: JMeterOpts -> NUsers -> CmdSpec
 createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts _) (NUsers n) =
@@ -83,7 +77,7 @@ runJMeter opts@(JMeterOpts n users _ jmeterPath _ _ _) = mapM_ runForNUsers user
     extractUser (NUsers u) = u
 
 batchJMeterScripts :: BatchOpts Validated -> IO ()
-batchJMeterScripts (BatchOpts runs) = mapM_ go runs
+batchJMeterScripts batchOpts = mapM_ go runs
   where
     go run = do
       createDirectoryIfMissing False $ unpack . fromRunName $ runName run
@@ -94,6 +88,7 @@ batchJMeterScripts (BatchOpts runs) = mapM_ go runs
         Right x -> return x
       setCurrentDirectory "../"
       delayJob $ sleepTime run
+    runs = fromBatchOpts batchOpts
 
 runningMessage :: JMeterOpts -> Text
 runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts sleepTime) = do
@@ -106,7 +101,7 @@ showCmdSpec (RawCommand bin opts) = bin <> " " <> intercalate " " opts
 showCmdSpec (ShellCommand cmd) = cmd
 
 schedule :: ScheduledTime -> IO () -> IO ()
-schedule scheduledTime action = putStrLn ("Running scheduled the job for " <> tshow scheduledTime) >> loop
+schedule scheduledTime action = loop
   where
     loop = do
       ct <- getCurrentTime
@@ -125,26 +120,6 @@ doIfDirIsEmpty act = do
   case isEmptyDirectory l of
     False -> fail $ "The current directory is not empty. Either change to an empty directory or remove everything from the current one."
     True -> act
-
-data InvalidBatchOpts = InvalidBatchOpts Text
-  deriving Show
-
-instance Exception InvalidBatchOpts
-
-validateBatchOpts :: MonadThrow m => BatchOpts UnValidated -> m (BatchOpts Validated)
-validateBatchOpts (BatchOpts opts) =
-  case checkRunNames opts of
-    True -> return $ BatchOpts opts
-    False -> throwM $ InvalidBatchOpts "Each test should have a unique name."
-  where
-    checkRunNames = all (==1) . countRunNames
-    countRunNames opts = foldl' insertName (mempty :: Map RunName Int) opts
-    insertName mp v = alterMap countName (runName v) mp
-    countName Nothing = Just 1
-    countName (Just n) = Just (n + 1)
-
-createBatchOpts :: [JMeterOpts] -> BatchOpts UnValidated
-createBatchOpts opts = BatchOpts opts
 
 delayJob :: JobDelay -> IO ()
 delayJob (Delay n) = do

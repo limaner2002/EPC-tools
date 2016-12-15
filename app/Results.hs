@@ -44,6 +44,31 @@ data ExpressionDetails = ExpressionDetails
   , exprMaxTotalTimems :: Int
   } deriving Show
 
+data System = System
+  { sysTimeStamp :: UTCTime
+  , sysThreadCount :: Int
+  , sysDaemonThreadCount :: Int
+  , sysUsedHeapSpace :: Int
+  , sysAvailableHeapSpace :: Int
+  , sysTenuredGenerationUsageAfterCollection :: Int
+  , sysTenuredGenerationUsed :: Int
+  , sysTenuredGenerationAvailable :: Int
+  , sysPermanentGenerationUsed :: Int
+  , sysPermanentGenerationAvailable :: Int
+  , sysYoungCollectionCount :: Int
+  , sysYoungCollectionTime :: Int
+  , sysTenuredCollectionCount :: Int
+  , sysDiskPartitionUsed :: Int
+  , sysDiskPartitionAvailable :: Int
+  , sysLoadAverage :: Int
+  , sysCPUCoreCount :: Int
+  , sysTotalSystemMemory :: Int
+  , sysUsedSystemMemory :: Int
+  , sysTotalSwapSpace :: Int
+  , sysUsedSwapSpace :: Int
+  , sysSessionCount :: Int
+  }
+
 showExpressionDetails :: ExpressionDetails -> Text
 showExpressionDetails (ExpressionDetails ts name typ total mean min max)
   = tshow ts <> "\t" <> name <> "\t" <> typ <> "\t" <> tshow total <> "\t" <> tshow mean <> "\t" <> tshow min <> "\t" <> tshow max
