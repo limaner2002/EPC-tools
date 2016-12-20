@@ -13,21 +13,36 @@ import Control.Monad.Trans.Resource
 import Data.Dynamic
 import qualified Data.ByteString.Lazy as BL
 import Data.Time.Clock.POSIX (POSIXTime)
+import Data.Char (isDigit)
 
-data AggregateRow = AggregateRow
-  { label :: Text
-  , nSamples :: Int
-  , average :: Double
-  , median :: Double
-  , ninetiethPercentLine :: Double
-  , ninetyFifthPercentLine :: Double
-  , ninetyNinthPercentLine :: Double
-  , minVal :: Double
-  , maxVal :: Double
-  , errorPct :: Double
-  , throughput :: Double
-  , kbps :: Double
-  } deriving (Show, Eq)
+data SheetRow = AggregateRow
+  { aggLabel :: Text
+  , aggNSamples :: Int
+  , aggAverage :: Double
+  , aggMedian :: Double
+  , aggNinetiethPercentLine :: Double
+  , aggNinetyFifthPercentLine :: Double
+  , aggNinetyNinthPercentLine :: Double
+  , aggMinVal :: Double
+  , aggMaxVal :: Double
+  , aggErrorPct :: Double
+  , aggThroughput :: Double
+  , aggKbps :: Double
+  } | Header
+  { headLabel :: Text
+  , headNSamples :: Text
+  , headAverage :: Text
+  , headMedian :: Text
+  , headNinetiethPercentLine :: Text
+  , headNinetyFifthPercentLine :: Text
+  , headNinetyNinthPercentLine :: Text
+  , headMinVal :: Text
+  , headMaxVal :: Text
+  , headErrorPct :: Text
+  , headThroughput :: Text
+  , headKbps :: Text
+  }
+  deriving (Show, Eq)
 
 newtype RowNum = RowNum Int
   deriving (Show, Eq)
@@ -37,34 +52,62 @@ data InvalidAggregateRow = InvalidAggregateRow Text
 
 instance Exception InvalidAggregateRow
 
-toSheetRow :: RowNum -> AggregateRow -> Worksheet -> Worksheet
-toSheetRow (RowNum n) ar ws =
-  ws & cellValueAt (n,1) ?~ (CellText $ label ar)
-     & cellValueAt (n,2) ?~ (CellDouble $ fromIntegral $ nSamples ar)
-     & cellValueAt (n,3) ?~ (CellDouble $ average ar)
-     & cellValueAt (n,4) ?~ (CellDouble $ median ar)
-     & cellValueAt (n,5) ?~ (CellDouble $ ninetiethPercentLine ar)
-     & cellValueAt (n,6) ?~ (CellDouble $ ninetyFifthPercentLine ar)
-     & cellValueAt (n,7) ?~ (CellDouble $ ninetyNinthPercentLine ar)
-     & cellValueAt (n,8) ?~ (CellDouble $ minVal ar)
-     & cellValueAt (n,9) ?~ (CellDouble $ maxVal ar)
-     & cellValueAt (n,10) ?~ (CellDouble $ errorPct ar)
-     & cellValueAt (n,11) ?~ (CellDouble $ throughput ar)
-     & cellValueAt (n,12) ?~ (CellDouble $ kbps ar)
+toSheetRow :: RowNum -> SheetRow -> Worksheet -> Worksheet
+toSheetRow (RowNum n) (Header label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
+  ws & cellValueAt (n,1) ?~ (CellText label)
+     & cellValueAt (n,2) ?~ (CellText nSamples)
+     & cellValueAt (n,3) ?~ (CellText average)
+     & cellValueAt (n,4) ?~ (CellText median)
+     & cellValueAt (n,5) ?~ (CellText ninetiethPercentLine)
+     & cellValueAt (n,6) ?~ (CellText ninetyFifthPercentLine)
+     & cellValueAt (n,7) ?~ (CellText ninetyNinthPercentLine)
+     & cellValueAt (n,8) ?~ (CellText minVal)
+     & cellValueAt (n,9) ?~ (CellText maxVal)
+     & cellValueAt (n,10) ?~ (CellText errorPct)
+     & cellValueAt (n,11) ?~ (CellText throughput)
+     & cellValueAt (n,12) ?~ (CellText kbps)
+toSheetRow (RowNum n) (AggregateRow label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
+  ws & cellValueAt (n,1) ?~ (CellText label)
+     & cellValueAt (n,2) ?~ (CellDouble $ fromIntegral nSamples)
+     & cellValueAt (n,3) ?~ (CellDouble $ average)
+     & cellValueAt (n,4) ?~ (CellDouble $ median)
+     & cellValueAt (n,5) ?~ (CellDouble $ ninetiethPercentLine)
+     & cellValueAt (n,6) ?~ (CellDouble $ ninetyFifthPercentLine)
+     & cellValueAt (n,7) ?~ (CellDouble $ ninetyNinthPercentLine)
+     & cellValueAt (n,8) ?~ (CellDouble $ minVal)
+     & cellValueAt (n,9) ?~ (CellDouble $ maxVal)
+     & cellValueAt (n,10) ?~ (CellDouble $ errorPct)
+     & cellValueAt (n,11) ?~ (CellDouble $ throughput)
+     & cellValueAt (n,12) ?~ (CellDouble $ kbps)
                            
 filterFcn :: Either SomeException [Text] -> Bool
 filterFcn (Left _) = False
-filterFcn (Right (x:_)) = isPrefixOf "AC : " x
+filterFcn (Right (x:_)) = checkIt $ headMay x
+  where
+    checkIt Nothing = False
+    checkIt (Just c) = not $ isDigit c
 
 readRows :: MonadResource m => ProcessA (Kleisli m) (Event Text) (Event (RowNum, Either SomeException [Text]))
 readRows = machineParser (parseRow def) >>> MachineUtils.filter (arr filterFcn) >>> makeRowNum
 
-makeRow :: (ArrowApply a, MonadThrow m) => ProcessA a (Event (RowNum, m [Text])) (Event (RowNum, m AggregateRow))
-makeRow = evMap makeIt
+makeRow :: (ArrowApply a, MonadThrow m) => ProcessA a (Event (RowNum, m [Text])) (Event (RowNum, m SheetRow))
+makeRow = dSwitch before after
   where
-    makeIt (rn, mRv) = (rn, join $ fmap makeRow_ mRv)
+    makeIt f (rn, mRv) = (rn, join $ fmap f mRv)
+    before = proc input -> do
+      header <- evMap (makeIt makeHead) -< input
+      returnA -< (header, header)
+    after _ = proc input -> do
+      res <- evMap (makeIt makeRow_) -< input
+      returnA -< res
 
-makeRow_ :: MonadThrow m => [Text] -> m AggregateRow
+makeHead :: MonadThrow m => [Text] -> m SheetRow
+makeHead [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,error,through,kbps] =
+  return $ Header l ns avg mdn ntypct nfthpct nnthpct min max error through kbps
+makeHead row = throwM $ InvalidAggregateRow $ tshow row <> " is not a valid JMeter aggregate report header."
+
+    -- Reads and returns an aggregate row
+makeRow_ :: MonadThrow m => [Text] -> m SheetRow
 makeRow_ [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,error,through,kbps] =
   AggregateRow <$> pure l
                <*> readVal ns
@@ -104,13 +147,13 @@ makeRowNum :: ArrowApply cat => ProcessA cat (Event a) (Event (RowNum, a))
 makeRowNum = count >>> evMap (\(n, x) -> (RowNum n, x))
 
 makeSheet :: (ArrowApply a, MonadThrow m) =>
-     ProcessA a (Event (RowNum, m AggregateRow)) (Event (m Worksheet))
+     ProcessA a (Event (RowNum, m SheetRow)) (Event (m Worksheet))
 makeSheet = proc input -> do
   sheet <- anytime (arr makeSheetRowFcn >>> arr (<*>)) >>> accum (pure def) -< input
   returnA -< sheet <$ input
 
 makeSheet' :: (Monad m1, MonadThrow m) =>
-     ProcessA (Kleisli m1) (Event Text, Event (RowNum, m AggregateRow)) (Event Text, Event (m Worksheet))
+     ProcessA (Kleisli m1) (Event Text, Event (RowNum, m SheetRow)) (Event Text, Event (m Worksheet))
 makeSheet' = proc (evtSheetName, evtRow) -> do
   mSheetName <- evMap Just >>> dHold Nothing -< evtSheetName
   mRow <- evMap Just >>> hold Nothing -< evtRow
@@ -120,7 +163,7 @@ makeSheet' = proc (evtSheetName, evtRow) -> do
       sheet <- evMap id *** (anytime (arr makeSheetRowFcn >>> arr (<*>))) >>> tee >>> accum' (pure def) -< (evtSheetName, evtRow)
       returnA -< (evtSheetName, sheet)
 
-makeSheetRowFcn :: Monad m => (RowNum, m AggregateRow) -> m (Worksheet -> Worksheet)
+makeSheetRowFcn :: Monad m => (RowNum, m SheetRow) -> m (Worksheet -> Worksheet)
 makeSheetRowFcn (rn, mAr) = do
   ar <- mAr
   return $ toSheetRow rn ar
@@ -160,9 +203,9 @@ writeSheet fp = proc input -> do
 doIt :: MonadResource m =>
   POSIXTime -> 
   ProcessA (Kleisli m) (Event (Text, FilePath)) (Event ())
-doIt t = evMap fst &&& evMap snd >>> (arr fst &&& switchTest myArr) >>> makeWorkbook' >>> serializeSheet t >>> writeSheet "/tmp/result.xlsx"
+doIt t = evMap fst &&& evMap snd >>> (arr fst &&& switchTest myArr) >>> makeWorkbook' >>> addStyleSheet >>> serializeSheet t >>> writeSheet "/tmp/result.xlsx"
   where
-    myArr = sourceFile >>> readRows >>> makeRow >>> makeSheet
+    myArr = sourceFile >>> readRows >>> makeRow >>> makeSheet >>> conditionalFormatting 
 
 serializeSheet :: (ArrowApply a, Functor f) =>
      POSIXTime ->
@@ -289,3 +332,26 @@ merge = proc (evtA, evtB) -> do
     Just a -> case mB of
       Nothing -> returnA -< noEvent
       Just b -> returnA -< (a, b) <$ evtB
+
+errorFormatting :: Map SqRef ConditionalFormatting
+errorFormatting = def & at (SqRef ["J1:J9"]) ?~ [CfRule (CellIs (OpGreaterThan (Formula "0"))) (Just 0) 1 Nothing]
+
+conditionalFormatting :: (ArrowApply a, Functor f) =>
+     ProcessA a (Event (f Worksheet)) (Event (f Worksheet))
+conditionalFormatting = anytime (arr (fmap (wsConditionalFormattings .~ errorFormatting)))
+
+errorFill :: Fill
+errorFill = Fill (Just $ FillPattern (Just errorColor) (Just errorColor) (Just PatternTypeSolid))
+
+errorColor :: Color
+errorColor = Color Nothing (Just "ff9999") Nothing Nothing
+
+errorDxf :: Dxf
+errorDxf = def & dxfFill .~ (Just errorFill)
+
+styleSheet :: StyleSheet
+styleSheet = minimalStyleSheet & styleSheetDxfs .~ [errorDxf]
+
+addStyleSheet :: (ArrowApply a, Functor f) =>
+     ProcessA a (Event (f Xlsx)) (Event (f Xlsx))
+addStyleSheet = anytime (arr $ fmap $ xlStyles .~ renderStyleSheet styleSheet)

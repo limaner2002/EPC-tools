@@ -20,6 +20,7 @@ library
                        Types
                        GetLogs
                        SendMail
+                       AggregateSheets
   build-depends:       base >= 4.7 && < 5
                      , classy-prelude
                      , directory
@@ -47,6 +48,8 @@ library
                      , smtp-mail
                      , mime-mail
                      , text
+                     , xlsx
+                     , lens
   default-language:    Haskell2010
 
 executable EPC-tools
