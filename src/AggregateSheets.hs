@@ -205,7 +205,7 @@ doIt :: MonadResource m =>
   ProcessA (Kleisli m) (Event (Text, FilePath)) (Event ())
 doIt t = evMap fst &&& evMap snd >>> (arr fst &&& switchTest myArr) >>> makeWorkbook' >>> addStyleSheet >>> serializeSheet t >>> writeSheet "/tmp/result.xlsx"
   where
-    myArr = sourceFile >>> readRows >>> makeRow >>> makeSheet >>> conditionalFormatting 
+    myArr = sourceFile >>> readRows >>> makeRow >>> makeSheet >>> conditionalFormatting >>> addViewSheet
 
 serializeSheet :: (ArrowApply a, Functor f) =>
      POSIXTime ->
@@ -355,3 +355,13 @@ styleSheet = minimalStyleSheet & styleSheetDxfs .~ [errorDxf]
 addStyleSheet :: (ArrowApply a, Functor f) =>
      ProcessA a (Event (f Xlsx)) (Event (f Xlsx))
 addStyleSheet = anytime (arr $ fmap $ xlStyles .~ renderStyleSheet styleSheet)
+
+sheetView :: SheetView
+sheetView = def & sheetViewPane .~ Just wsPane
+
+wsPane :: Pane
+wsPane = Pane (Just PaneTypeBottomLeft) (Just PaneStateFrozen) (Just "A2") Nothing (Just 1.0)
+
+addViewSheet :: (ArrowApply a, Functor f) =>
+     ProcessA a (Event (f Worksheet)) (Event (f Worksheet))
+addViewSheet = anytime (arr $ fmap (wsSheetViews .~ Just [sheetView]))
