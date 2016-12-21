@@ -168,7 +168,7 @@ makeSheetRowFcn (rn, mAr) = do
   ar <- mAr
   return $ toSheetRow rn ar
 
-makeWorkbook' :: (Monad m, Monad m1) => ProcessA (Kleisli m1) (Event Text, Event (m Worksheet)) (Event (m Xlsx))
+makeWorkbook' :: (ArrowApply cat, Monad m) => ProcessA cat (Event Text, Event (m Worksheet)) (Event (m Xlsx))
 makeWorkbook' = proc (evtBookName, evtSheet) -> do
   mBookName <- evMap Just >>> hold Nothing -< evtBookName
   mSheet <- evMap Just >>> hold Nothing -< evtSheet

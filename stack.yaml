@@ -8,10 +8,10 @@ packages:
 - '.'
 - location:
     git: https://github.com/limaner2002/machinecell-contrib.git
-    commit: cf6ad4a623493bf3fc5dbb738509973d4782c33e
+    commit: 039c42fe68edf5ead70b315b107209b4a7c6064e
 - location:
     git: https://github.com/as-capabl/machinecell.git
-    commit: 5d88a5abb513ad75433d44801547bd9058732f88
+    commit: dc436783f6e1cfe3a088e818dc94f503e1c5e709
 - location:
     git: https://github.com/limaner2002/hs-config.git
     commit: c8f6c750c260eb04801e85ee44510ae33588aa27
