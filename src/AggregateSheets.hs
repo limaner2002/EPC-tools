@@ -44,16 +44,13 @@ data SheetRow = AggregateRow
   }
   deriving (Show, Eq)
 
-newtype RowNum = RowNum Int
-  deriving (Show, Eq)
-
 data InvalidAggregateRow = InvalidAggregateRow Text
   deriving Show
 
 instance Exception InvalidAggregateRow
 
 toSheetRow :: RowNum -> SheetRow -> Worksheet -> Worksheet
-toSheetRow (RowNum n) (Header label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
+toSheetRow rowNum (Header label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
   ws & cellValueAt (n,1) ?~ (CellText label)
      & cellValueAt (n,2) ?~ (CellText nSamples)
      & cellValueAt (n,3) ?~ (CellText average)
@@ -66,7 +63,9 @@ toSheetRow (RowNum n) (Header label nSamples average median ninetiethPercentLine
      & cellValueAt (n,10) ?~ (CellText errorPct)
      & cellValueAt (n,11) ?~ (CellText throughput)
      & cellValueAt (n,12) ?~ (CellText kbps)
-toSheetRow (RowNum n) (AggregateRow label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
+  where
+    n = fromRowNum rowNum
+toSheetRow rowNum (AggregateRow label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
   ws & cellValueAt (n,1) ?~ (CellText label)
      & cellValueAt (n,2) ?~ (CellDouble $ fromIntegral nSamples)
      & cellValueAt (n,3) ?~ (CellDouble $ average)
@@ -79,6 +78,8 @@ toSheetRow (RowNum n) (AggregateRow label nSamples average median ninetiethPerce
      & cellValueAt (n,10) ?~ (CellDouble $ errorPct)
      & cellValueAt (n,11) ?~ (CellDouble $ throughput)
      & cellValueAt (n,12) ?~ (CellDouble $ kbps)
+  where
+    n = fromRowNum rowNum
                            
 filterFcn :: Either SomeException [Text] -> Bool
 filterFcn (Left _) = False
@@ -138,13 +139,13 @@ readVal txtVal = case mVal of
 dispType :: Typeable a => Maybe a -> Text
 dispType = pack . intercalate " " . fmap show . typeRepArgs . typeOf
 
-count :: ArrowApply cat => ProcessA cat (Event a) (Event (Int, a))
-count = proc input -> do
-  n <- evMap (const (+1)) >>> accum 0 -< input
-  returnA -< fmap (\x -> (n, x)) input
+-- count :: ArrowApply cat => ProcessA cat (Event a) (Event (Int, a))
+-- count = proc input -> do
+--   n <- evMap (const (+1)) >>> accum 0 -< input
+--   returnA -< fmap (\x -> (n, x)) input
 
-makeRowNum :: ArrowApply cat => ProcessA cat (Event a) (Event (RowNum, a))
-makeRowNum = count >>> evMap (\(n, x) -> (RowNum n, x))
+-- makeRowNum :: ArrowApply cat => ProcessA cat (Event a) (Event (RowNum, a))
+-- makeRowNum = count >>> evMap (\(n, x) -> (RowNum n, x))
 
 makeSheet :: (ArrowApply a, MonadThrow m) =>
      ProcessA a (Event (RowNum, m SheetRow)) (Event (m Worksheet))

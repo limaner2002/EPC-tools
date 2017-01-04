@@ -16,22 +16,43 @@ import Data.Default
 import Control.Monad.State hiding (mapM_)
 import System.FilePath.Glob
 import System.FilePath
+import Formatting
+import qualified Data.Text.Lazy as TL
+import Data.Char (isDigit)
+import Options.Applicative hiding ((<>))
+import qualified Options.Applicative as OA
+import Options.Applicative.Types
 
 data JMeterReading = JMeterReading
-  { timeStamp :: JMeterTimeStamp
-  , elapsed :: Int
-  , label :: Text
-  , responseCode :: Int
-  , responseMsg :: Text
-  , threadName :: Text
-  , dataType :: Text
-  , success :: Bool
-  , failureMessage :: Text
-  , bytes :: Int
-  , grpThreads :: Text
-  , allThreads :: Int
-  , latency :: Int
-  , idleTime :: Int
+  { readTimeStamp :: !JMeterTimeStamp
+  , readElapsed :: !Int
+  , readLabel :: !Text
+  , readResponseCode :: !JMeterResponseCode
+  , readResponseMsg :: !Text
+  , readThreadName :: !Text
+  , readDataType :: !Text
+  , readSuccess :: !Bool
+  , readFailureMessage :: !Text
+  , readBytes :: !Int
+  , readGrpThreads :: !Text
+  , readAllThreads :: !Int
+  , readLatency :: !Int
+  , readIdleTime :: !Int
+  } | ReadingHeader
+  { rheadTimeStamp :: !Text
+  , rheadElapsed :: !Text
+  , rheadLabel :: !Text
+  , rheadResponseCode :: !Text
+  , rheadResponseMsg :: !Text
+  , rheadThreadName :: !Text
+  , rheadDataType :: !Text
+  , rheadSuccess :: !Text
+  , rheadFailureMessage :: !Text
+  , rheadBytes :: !Text
+  , rheadGrpThreads :: !Text
+  , rheadAllThreads :: !Text
+  , rheadLatency :: !Text
+  , rheadIdleTime :: !Text
   } deriving Show
 
 data ExpressionDetails = ExpressionDetails
@@ -86,12 +107,83 @@ instance Exception InvalidCSVRow
 newtype JMeterTimeStamp = JMeterTimeStamp UTCTime
   deriving Show
 
-data AggregateAccum = AggregateAccum Int Int
+data AggregateAccum = AggregateAccum
+  { aggNObservations :: !Int
+  , aggTotalElapsed :: !Int
+  , aggNAboveSLA :: !Int
+  }
+  deriving (Show, Eq)
+
+data AggregateTransaction = AggregateTransaction
+  { transObserved :: !Int
+  , transAverage :: !Double
+  , transNAboveSLA :: !Int
+  , transPctAboveSLA :: !Double
+  } deriving (Show, Eq)
+
+mkAggregateTransaction :: AggregateAccum -> AggregateTransaction
+mkAggregateTransaction (AggregateAccum n elapsed nAboveSLA) =
+  AggregateTransaction n avg nAboveSLA pct
+  where
+    avg = fromIntegral elapsed / fromIntegral n
+    pct = fromIntegral nAboveSLA / fromIntegral n
+
+data AggregateReport = AggregateReport
+  { repPctAboveSLA :: !Double
+  , repNAboveSLA :: !Int
+  , repNObserved :: !Int
+  , repHighestAvg :: !Double
+  , repLowestAvg :: !Double
+  } deriving (Show, Eq)
+
+newtype Percentage = Percentage Double
+  deriving (Eq, Ord, Show, Read)
+
+showAggregateReport :: AggregateReport -> TL.Text
+showAggregateReport (AggregateReport pct nAbove observed highest lowest)
+  = format ( "% of Recorded Response Times greater than 5 seconds: " % fixed 2 % "%  (" % int % "/" % int % ")\n"
+           % "Highest Average Response Time: " % fixed 2 % " seconds\n"
+           % "Lowest Average Response Time: " % fixed 2 % " seconds\n"
+           ) pct nAbove observed (highest / 1000) (lowest / 1000)
+
+
+instance Default AggregateReport where
+  def = AggregateReport 0 0 0 0 (0/0)
+
+mkAggregateReport :: Map Text AggregateTransaction -> AggregateReport
+mkAggregateReport transactions = getPctg $ foldl' accumReport def transactions
+  where
+    accumReport (AggregateReport _ n1 observed1 highest lowest) (AggregateTransaction observed2 avg n2 _) =
+      AggregateReport 0 (n1 + n2) (observed1 + observed2) (max highest avg) (min lowest avg)
+    getPctg rep@(AggregateReport {repNAboveSLA=nAbove, repNObserved=observed}) = rep {repPctAboveSLA = pctg nAbove observed}
+    pctg above observed = (fromIntegral above / fromIntegral observed) * 100
+
+data JMeterResponseCode
+  = HTTPResponseCode Int
+  | NonHTTPResponseCode Text
   deriving Show
+
+readJMeterResponseCode :: Text -> JMeterResponseCode
+readJMeterResponseCode txt = case HTTPResponseCode <$> readMay txt of
+  Just resp -> resp
+  Nothing -> NonHTTPResponseCode txt
 
 type ReadMap = Map Text AggregateAccum
 
 type Row a = [a]
+
+toReading :: (ArrowApply a, MonadThrow m) => ProcessA a (Event (m [Text])) (Event (m JMeterReading))
+toReading = dSwitch before after
+  where
+    before = proc input -> do
+      header <- evMap (join . fmap fromHeader) -< input
+      returnA -< (header, header)
+    after _ = evMap (join . fmap fromRow)
+
+fromHeader :: MonadThrow m => Row Text -> m JMeterReading
+fromHeader [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, grpThreads, allThreads, latency, idleTime]
+  = return $ ReadingHeader ts elpsd label respCode respMsg threadName dataType success failureMessage bytes grpThreads allThreads latency idleTime
+fromHeader row = throwM $ InvalidCSVRow $ "Could not read row " <> tshow row
 
 fromRow :: MonadThrow m => Row Text -> m JMeterReading
 fromRow [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, grpThreads, allThreads, latency, idleTime]
@@ -99,7 +191,7 @@ fromRow [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, fai
   <$> readJMeterTimeStamp ts
   <*> readThrow elpsd
   <*> pure label
-  <*> readThrow respCode
+  <*> pure (readJMeterResponseCode respCode) -- readThrow respCode
   <*> pure respMsg
   <*> pure threadName
   <*> pure dataType
@@ -128,10 +220,14 @@ exprDetailsFromRow [ts, name, typ, totalCount, meanTotalTime, minTotalTime, maxT
 exprDetailsFromRow row = throwM $ InvalidCSVRow $ "Could not read row " <> tshow row
 
 addReading :: JMeterReading -> ReadMap -> ReadMap
-addReading reading readingMap = alterMap alterReading (label reading) readingMap
+addReading ReadingHeader {} readingMap = readingMap
+addReading JMeterReading {readLabel = label, readElapsed = elapsed} readingMap = alterMap alterReading label readingMap
   where
-    alterReading Nothing = Just (AggregateAccum 1 $ elapsed reading)
-    alterReading (Just (AggregateAccum n et)) = Just (AggregateAccum (n+1) (et + elapsed reading))
+    alterReading Nothing = Just (AggregateAccum 1 elapsed aboveSLA)
+    alterReading (Just (AggregateAccum n et nAboveSLA)) = Just (AggregateAccum (n+1) (et + elapsed) (aboveSLA + nAboveSLA))
+    aboveSLA
+      | elapsed > 5000 = 1
+      | otherwise = 0
 
 readLowerBool :: MonadThrow m => Text -> m Bool
 readLowerBool "false" = return False
@@ -143,24 +239,105 @@ readThrow entry =
     Nothing -> throwM $ InvalidCSVEntry $ "Could not read value " <> entry
     Just v -> return v
 
-main :: IO ()
-main = do
-  (logPathGlob:outputDir:startTimeIn:endTimeIn:_) <- getArgs
-  inFiles <- namesMatching $ unpack logPathGlob
-  let eStartTime = readTime startTimeIn
-      eEndTime = readTime endTimeIn
-      outFiles = fmap (\x -> unpack outputDir </> takeFileName x) inFiles
-  case eStartTime of
-    Left err -> print err
-    Right startTime -> case eEndTime of
-      Left err' -> print err'
-      Right endTime ->
-        evalStateT (
-          runRMachine_ ( readLogs startTime endTime ) (zip inFiles outFiles)
-          ) Init
+data Options
+  = LogFiles FilePath FilePath JMeterTimeStamp JMeterTimeStamp
+  | Report FilePath
+  | Memory FilePath
+
+parseJMeterTimeStamp :: ReadM JMeterTimeStamp
+parseJMeterTimeStamp = do
+  input <- readerAsk
+  let mTs = JMeterTimeStamp . posixSecondsToUTCTime <$> (\x -> fromIntegral x / 1000) <$> (readMay input)
+  case mTs of
+    Nothing -> readerError $ show input <> " does not appear to be a valid JMeterTimeStamp."
+    Just ts -> return ts
+
+optionsParser :: Parser Options
+optionsParser = logsParser <|> reportParser <|> memoryParser
+
+logsParser :: Parser Options
+logsParser = LogFiles
+  <$> strOption
+    (  long "logPathGlob"
+    OA.<> metavar "LOGPATH_GLOB"
+    OA.<> help "Glob for the logfiles"
+    )
+  <*> strOption
+    (  long "outputDir"
+    OA.<> metavar "OUTPUD_DIR"
+    OA.<> help "The directory to put the result files in"
+    )
+  <*> option parseJMeterTimeStamp
+    (  long "start-time"
+    OA.<> metavar "START_TIME"
+    OA.<> help "The time at which the test started."
+    )
+  <*> option parseJMeterTimeStamp
+    (  long "end-time"
+    OA.<> metavar "END_TIME"
+    OA.<> help "The time at which the test finished."
+    )
+
+reportParser :: Parser Options
+reportParser = Report
+  <$> strOption
+    (  long "testPath"
+    OA.<> metavar "TEST_PATH"
+    OA.<> help "The directory holding all of the runs for a given test."
+    )
+
+memoryParser :: Parser Options
+memoryParser = Memory
+  <$> strOption
+    (  long "csvPath"
+    OA.<> metavar "CSV_PATH"
+    OA.<> help "The path to the csv file to parse."
+    )
+
+optsInfo :: ParserInfo Options
+optsInfo = info (helper <*> optionsParser)
+  (  fullDesc
+  OA.<> progDesc "Print a greeting for TARGET"
+  OA.<> header "hello - a test for optparse-applicative"
+  )
+
+processLogs :: FilePath -> FilePath -> JMeterTimeStamp -> JMeterTimeStamp -> IO ()
+processLogs logPathGlob outputDir startTime endTime = do
+  inFiles <- namesMatching $ logPathGlob
+  let outFiles = fmap (\x -> outputDir </> takeFileName x) inFiles
+  evalStateT (
+    runRMachine_ (readLogs startTime endTime) (zip inFiles outFiles)
+    ) Init
+
+dispatch :: Options -> IO ()
+dispatch (LogFiles p o s e) = processLogs p o s e
+dispatch (Report path) = runRMachine_ aggregateReport [path]
   where
-    readTime :: Text -> Either SomeException JMeterTimeStamp
-    readTime = readJMeterTimeStamp
+    aggregateReport = getReadMap
+      >>> evMap ((fmap . fmap) mkAggregateTransaction)
+      >>> evMap (fmap mkAggregateReport)
+      >>> evMap (fmap showAggregateReport)
+      >>> machine (mapM_ (putStrLn . toStrict))
+dispatch (Memory path) = runRMachine_ ( sourceDirectory
+                                       >>> sourceDirectory
+                                       >>> filter (arr $ isSuffixOf ".csv")
+                                       >>> evMap id &&& (
+                                              sourceFile
+                                          >>> machineParser (parseRow def)
+                                          )
+                                       >>> switchTest toReading
+                                       >>> accumulate
+                                       >>> evMap asEither
+                                       >>> machine print
+                                      ) [path]
+  where
+    accumulate = proc input -> do
+      res <- evMap (fmap addReading) >>> evMap (<*>) >>> accum (pure mempty) -< input
+      ended <- onEnd -< res <$ input
+      returnA -< res <$ ended
+
+main :: IO ()
+main = execParser optsInfo >>= dispatch
 
 readLogs :: (MonadResource m, MonadState FilterState m) => JMeterTimeStamp -> JMeterTimeStamp -> ProcessA (Kleisli m) (Event (FilePath, FilePath)) (Event ())
 readLogs startTime endTime = proc input -> do
@@ -243,11 +420,59 @@ getCurrMax = constructT kleisli0 $ loop Nothing
           yield v
           loop (Just v)
 
-
-
 data FilterState
   = Init
   | Between
   | GatherAllLast UTCTime
   | Done
   deriving Show
+
+isError :: JMeterReading -> Bool
+isError ReadingHeader {} = False
+isError JMeterReading {readResponseCode = respCode} =
+  case respCode of
+    NonHTTPResponseCode _ -> True
+    HTTPResponseCode c -> c /= 200
+
+getErrors :: Either SomeException JMeterReading -> Bool
+getErrors (Left _) = False
+getErrors (Right reading) = isError reading
+
+data AverageResp = AverageResp Integer Integer Double
+
+getReadMap :: (MonadResource m, MonadMask m) =>
+     ProcessA (Kleisli m) (Event FilePath) (Event (Either SomeException ReadMap))
+getReadMap = accumulateIt
+  where
+    fileList = sourceDirectory >>> sourceDirectory >>> filter (arr $ isSuffixOf ".csv")
+    readings = fileList >>> evMap id &&& (sourceFile >>> machineParser (parseRow def)) >>> switchTest toReading
+    accumulateIt = proc input -> do
+      agg <- readings >>> filter (arr (not . getErrors)) >>> filter (arr removeLoop) >>> evMap (fmap addReading) >>> evMap (<*>) >>> accum (pure mempty) -< input
+      ended <- onEnd -< agg <$ input
+      returnA -< agg <$ ended
+    removeLoop (Left _) = True
+    removeLoop (Right (ReadingHeader {})) = True
+    removeLoop (Right (JMeterReading {readLabel=label})) = label /= "Loop through FRNs" && label /= "Login / Landing Page"
+
+switchTest :: ArrowApply cat => ProcessA cat (Event b) (Event c) -> ProcessA cat (Event a, Event b) (Event c)
+switchTest arr = go
+  where
+    go = proc (evt, input) -> do
+      res <- rSwitch arr -< (input, arr <$ evt)
+      returnA -< res
+
+filterFcn :: Either SomeException [Text] -> Bool
+filterFcn (Left _) = False
+filterFcn (Right (_:_:x:_)) = checkIt $ headMay x
+  where
+    checkIt Nothing = False
+    checkIt (Just c) = not $ isDigit c
+
+onEnd' :: ArrowApply a => ProcessA a (Event b) (Event ())
+onEnd' = construct loop
+  where
+    loop = do
+      mX <- (Just <$> await) `catchP` pure Nothing
+      case mX of
+        (Just x) -> seq x loop
+        Nothing -> yield () >> stop

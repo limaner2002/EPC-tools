@@ -65,6 +65,8 @@ executable EPC-tools
                      , time
                      , smtp-mail
                      , mime-mail
+                     , optparse-applicative
+                     , exceptions
   default-language:    Haskell2010
 
 executable results
@@ -81,6 +83,10 @@ executable results
                      , mtl
                      , filemanip
                      , filepath
+                     , formatting
+                     , text
+                     , optparse-applicative
+                     , containers
   default-language:    Haskell2010
 
 test-suite EPC-tools-test
