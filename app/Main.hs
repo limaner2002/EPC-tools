@@ -28,6 +28,7 @@ import Path
 import Network.Wai.Handler.Warp
 import Server
 import SendMail
+import Results
 
 instance MonadThrow ReadM where
   throwM exc = readerError $ show exc
@@ -90,6 +91,7 @@ parseCommands :: Parser (IO ())
 parseCommands = subparser
   ( command "server" serverInfo
   OA.<> command "run-tests" testsInfo
+  OA.<> command "analyse" resultsInfo
   )
 
 commandsInfo :: ParserInfo (IO ())

@@ -4,6 +4,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE Arrows #-}
 
+module Results
+  ( resultsInfo
+  ) where
+
 import ClassyPrelude hiding (filter)
 import Control.Monad.Trans.Resource hiding (throwM)
 import Data.Time.Clock.POSIX
@@ -239,10 +243,10 @@ readThrow entry =
     Nothing -> throwM $ InvalidCSVEntry $ "Could not read value " <> entry
     Just v -> return v
 
-data Options
-  = LogFiles FilePath FilePath JMeterTimeStamp JMeterTimeStamp
-  | Report FilePath
-  | Memory FilePath
+-- data Options
+--   = LogFiles FilePath FilePath JMeterTimeStamp JMeterTimeStamp
+--   | Report FilePath
+--   | Memory FilePath
 
 parseJMeterTimeStamp :: ReadM JMeterTimeStamp
 parseJMeterTimeStamp = do
@@ -252,11 +256,17 @@ parseJMeterTimeStamp = do
     Nothing -> readerError $ show input <> " does not appear to be a valid JMeterTimeStamp."
     Just ts -> return ts
 
-optionsParser :: Parser Options
-optionsParser = logsParser <|> reportParser <|> memoryParser
+-- optionsParser :: Parser Options
+-- optionsParser = logsParser <|> reportParser <|> memoryParser
+commandsParser :: Parser (IO ())
+commandsParser = subparser
+  ( command "parselogs" logsInfo
+  OA.<> command "createreport" reportInfo
+  OA.<> command "testleak" memoryInfo
+  )
 
-logsParser :: Parser Options
-logsParser = LogFiles
+logsParser :: Parser (IO ())
+logsParser = processLogs
   <$> strOption
     (  long "logPathGlob"
     OA.<> metavar "LOGPATH_GLOB"
@@ -278,27 +288,48 @@ logsParser = LogFiles
     OA.<> help "The time at which the test finished."
     )
 
-reportParser :: Parser Options
-reportParser = Report
+logsInfo :: ParserInfo (IO ())
+logsInfo = info (helper <*> logsParser)
+  (  fullDesc
+  OA.<> header "Log Parser"
+  OA.<> progDesc "This is used to extract the relevant sections of the expression rules details logfiles from Appian."
+  )
+
+reportParser :: Parser (IO ())
+reportParser = createReport
   <$> strOption
     (  long "testPath"
     OA.<> metavar "TEST_PATH"
     OA.<> help "The directory holding all of the runs for a given test."
     )
 
-memoryParser :: Parser Options
-memoryParser = Memory
+reportInfo :: ParserInfo (IO ())
+reportInfo = info (helper <*> reportParser)
+  (  fullDesc
+  OA.<> header "Report Creator"
+  OA.<> progDesc "Use this to create a simple report that contains the maximum/minimum request time and the percentage of requests that were above 3seconds."
+  )
+
+memoryParser :: Parser (IO ())
+memoryParser = testSpaceLeak
   <$> strOption
     (  long "csvPath"
     OA.<> metavar "CSV_PATH"
     OA.<> help "The path to the csv file to parse."
     )
 
-optsInfo :: ParserInfo Options
-optsInfo = info (helper <*> optionsParser)
+memoryInfo :: ParserInfo (IO ())
+memoryInfo = info (helper <*> memoryParser)
   (  fullDesc
-  OA.<> progDesc "Print a greeting for TARGET"
-  OA.<> header "hello - a test for optparse-applicative"
+  OA.<> header "Space Leak Test"
+  OA.<> progDesc "This is for testing the space leak found during RC2.0 performance analysis."
+  )
+
+resultsInfo :: ParserInfo (IO ())
+resultsInfo = info (helper <*> commandsParser)
+  (  fullDesc
+  OA.<> progDesc "This contains some tools to help analyse the results of running performance tests."
+  OA.<> header "Performance Result Analysis Tools"
   )
 
 processLogs :: FilePath -> FilePath -> JMeterTimeStamp -> JMeterTimeStamp -> IO ()
@@ -309,16 +340,20 @@ processLogs logPathGlob outputDir startTime endTime = do
     runRMachine_ (readLogs startTime endTime) (zip inFiles outFiles)
     ) Init
 
-dispatch :: Options -> IO ()
-dispatch (LogFiles p o s e) = processLogs p o s e
-dispatch (Report path) = runRMachine_ aggregateReport [path]
+-- dispatch :: Options -> IO ()
+-- dispatch (LogFiles p o s e) = processLogs p o s e
+
+createReport :: FilePath -> IO ()
+createReport path = runRMachine_ aggregateReport [path]
   where
     aggregateReport = getReadMap
       >>> evMap ((fmap . fmap) mkAggregateTransaction)
       >>> evMap (fmap mkAggregateReport)
       >>> evMap (fmap showAggregateReport)
       >>> machine (mapM_ (putStrLn . toStrict))
-dispatch (Memory path) = runRMachine_ ( sourceDirectory
+
+testSpaceLeak :: FilePath -> IO ()
+testSpaceLeak path = runRMachine_ ( sourceDirectory
                                        >>> sourceDirectory
                                        >>> filter (arr $ isSuffixOf ".csv")
                                        >>> evMap id &&& (
@@ -336,8 +371,8 @@ dispatch (Memory path) = runRMachine_ ( sourceDirectory
       ended <- onEnd -< res <$ input
       returnA -< res <$ ended
 
-main :: IO ()
-main = execParser optsInfo >>= dispatch
+-- main :: IO ()
+-- main = execParser optsInfo >>= dispatch
 
 readLogs :: (MonadResource m, MonadState FilterState m) => JMeterTimeStamp -> JMeterTimeStamp -> ProcessA (Kleisli m) (Event (FilePath, FilePath)) (Event ())
 readLogs startTime endTime = proc input -> do
