@@ -15,6 +15,7 @@ import Types ( JMeterOpts (..)
              , createBatchOpts
              , BatchOpts
              , Validated
+             , LogSettings (..)
              )
 import Data.Time
 import qualified System.IO as SIO
@@ -29,9 +30,64 @@ import Network.Wai.Handler.Warp
 import Server
 import SendMail
 import Results
+import GetLogs (downloadLogs)
 
 instance MonadThrow ReadM where
   throwM exc = readerError $ show exc
+
+logsParser :: Parser (IO ())
+logsParser = downloadLogs <$>
+  ( LogSettings
+  <$> txtOption
+  (  long "username"
+  OA.<> short 'u'
+  OA.<> help "The username to use to login to the Appian environment."
+  OA.<> metavar "USERNAME"
+  )
+  <*> txtOption
+  (  long "password"
+  OA.<> short 'p'
+  OA.<> help "The password of the user to login to the Appian environment."
+  OA.<> metavar "PASSWORD"
+  )
+  <*> option (fmap pack <$> parseMany)
+  (  long "nodes"
+  OA.<> short 'n'
+  OA.<> help "A list of nodes to download the logs from. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
+  OA.<> metavar "\"NODE1 <NODE2 ...>\""
+  )
+  -- <*> option (do
+  --                input <- readerAsk
+  --                rf <- parseRelFile input
+  --                return $ Just rf
+  --            )
+  <*> option (readerAsk >>= parseRelFile >>= pure . Just)
+  (  long "logfile"
+  OA.<> short 'l'
+  OA.<> help "The name of the logfile to download."
+  OA.<> metavar "LOGFILE"
+  )
+  <*> option (readerAsk >>= parseRelDir >>= pure . Just)
+  (  long "dest"
+  OA.<> short 'd'
+  OA.<> help "The directory to download the logfiles to."
+  OA.<> metavar "DEST_DIR"
+  )
+  <*> txtOption
+  (  long "url"
+  OA.<> short 'a'
+  OA.<> help "The url of the Appian environment to download the logs from."
+  OA.<> metavar "APPIAN_ENVIRONMENT_ADDRESS"
+  ))
+
+logsInfo :: ParserInfo (IO ())
+logsInfo = info (helper <*> logsParser)
+  (  fullDesc
+  OA.<> header "Log Downloader Command-Line"
+  OA.<> progDesc "A tool to download log files from an Appian Cloud environment."
+  )
+
+txtOption = option (readerAsk >>= pure . pack)
 
 serverParser :: Parser (IO ())
 serverParser = runServer
@@ -44,14 +100,14 @@ serverParser = runServer
 serverInfo :: ParserInfo (IO ())
 serverInfo = info (helper <*> serverParser)
   (  fullDesc
-  OA.<> header "Log Downloader"
+  OA.<> header "Log Downloader Server"
   OA.<> progDesc "Runs a simple webserver for automatically downloading log files from Appian Cloud environments."
   )
 
 testsParser :: Parser (IO ())
 testsParser = runTests
   <$> parseToScheduledTime
-  <*> option parseConfigs
+  <*> option parseMany
    (  short 'c'
    OA.<> help "list of config files to read"
    OA.<> metavar "\"CONFIG1 <CONFIG2 ...>\""
@@ -64,8 +120,8 @@ testsInfo = info (helper <*> testsParser)
   OA.<> progDesc "Runs the performance tests at a specified time."
   )
 
-parseConfigs :: ReadM [FilePath]
-parseConfigs = readerAsk >>= pure . words
+parseMany :: ReadM [String]
+parseMany = readerAsk >>= pure . words
 
 parseToScheduledTime :: Parser ToScheduledTime
 parseToScheduledTime =
@@ -92,6 +148,7 @@ parseCommands = subparser
   ( command "server" serverInfo
   OA.<> command "run-tests" testsInfo
   OA.<> command "analyse" resultsInfo
+  OA.<> command "download-log" logsInfo
   )
 
 commandsInfo :: ParserInfo (IO ())
