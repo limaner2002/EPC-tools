@@ -82,16 +82,20 @@ getNode nodeName = repeatedlyT kleisli0 go
 
 getNode' nodeName = doTill (any (== nodeName)) (getCookie >>> destroyCookies >>> extractSession >>> extractNode)
 
-downloadLog :: MonadResource m => String -> Text -> Manager -> ProcessA (Kleisli m) (Event (ReleaseKey, Response BodyReader)) (Event (ReleaseKey, Response BodyReader))
-downloadLog logBaseUrl logName mgr = machine (downloadLog_ logBaseUrl logName mgr) >>> makeRequest
+-- downloadLog :: MonadResource m => String -> [Text] -> Manager -> ProcessA (Kleisli m) (Event (ReleaseKey, Response BodyReader))
+--   (Event Text, Event (ReleaseKey, Response BodyReader))
+-- downloadLog logBaseUrl logNames mgr = proc input -> do
+--   logs <- blockingSource (zip3 (repeat logBaseUrl) logNames (repeat mgr)) -< ()
+--   evts <- mergeEvents >>> evMap (\((rk, br), (burl, lName, mgr)) -> (lName, (burl, lName, mgr, rk, br))) >>> evMap fst &&& (evMap snd >>> machine downloadLog_ >>> makeRequest) -< (input, logs)
+--   returnA -< evts
 
-downloadLog_ :: (MonadResource m, MonadThrow m) => String -> Text -> Manager -> (ReleaseKey, Response BodyReader) -> m (Request, Manager)
-downloadLog_ logBaseUrl logName mgr (key, resp) = do
-  req <- logReq logBaseUrl logName
-  req' <- insertCookies cookieJar req
-  return (req', mgr)
-  where
-    cookieJar = responseCookieJar resp
+-- downloadLog_ :: (MonadResource m, MonadThrow m) => (String, Text, Manager, ReleaseKey, Response BodyReader) -> m (Request, Manager)
+-- downloadLog_ (logBaseUrl, logName, mgr, key, resp) = do
+--   req <- logReq logBaseUrl logName
+--   req' <- insertCookies cookieJar req
+--   return (req', mgr)
+--   where
+--     cookieJar = responseCookieJar resp
 
 login :: (MonadResource m, MonadThrow m) => String -> Manager -> Text -> Text -> ProcessA (Kleisli m) (Event (ReleaseKey, Response BodyReader)) (Event (ReleaseKey, Response BodyReader))
 login baseUrl mgr un pw = proc input -> do
@@ -205,6 +209,19 @@ instance Exception NoTokenException
 cookieHasName :: ArrowList a => ByteString -> a Cookie Cookie
 cookieHasName str = isA (\c -> cookie_name c == str)
 
+insertCookies' :: MonadIO m => ProcessA (Kleisli m) (Event CookieJar, Event Request) (Event Request)
+insertCookies' = proc (cookiesEvt, reqEvt) -> do
+  cookies <- hold mempty -< cookiesEvt
+  mReq <- evMap Just >>> hold Nothing -< reqEvt
+  case mReq of
+    Nothing -> returnA -< noEvent
+    Just req -> do
+      newReq <- machine (uncurry insertCookies) -< (cookies, req) <$ reqEvt
+      returnA -< newReq
+
+makeLogReq :: MonadThrow m => ProcessA (Kleisli m) (Event (String, Path Rel File)) (Event Request)
+makeLogReq = evMap (id *** arr (pack . fromRelFile)) >>> machine (uncurry logReq)
+
 downloadLogs :: LogSettings -> IO ()
 downloadLogs logSettings = do
   mgr <- newManager tlsManagerSettings
@@ -221,17 +238,19 @@ downloadLogs logSettings = do
       downloadThem mgr req node =
         case mLog of
           Nothing -> putStrLn $ "Invalid log name: " <> tshow mLog
-          Just log ->
+          Just logs ->
             case mDest of
               Nothing -> putStrLn $ "Invalid destination: " <> tshow mDest
               Just dest ->
-                runRMachine_ (getNode (encodeUtf8 node)
-                          >>> anytime (passthroughK (const $ putStrLn $ "Logging in to " <> node))
-                          >>> login url mgr un pw
-                          >>> downloadLog logUrlBase (pack $ fromRelFile log) mgr
-                          >>> sourceHttp_
-                          >>> downloadHttp (saveName $ unpack node)
-                          >>> tee
+                runRMachine_ (proc input -> do
+                                 session <- getNode (encodeUtf8 node)
+                                   >>> anytime (passthroughK (const $ putStrLn $ "Logging in to " <> node))
+                                   >>> login url mgr un pw >>> evMap (responseCookieJar . snd) -< input
+                                 fileName <- blockingSource' -< zip (repeat logUrlBase) logs <$ input
+                                 logReq <- id *** makeLogReq >>> insertCookies' -< (session, fileName)
+                                 (progress, bs) <- makeRequest >>> sourceHttp_ >>> downloadHttp_ -< fmap (\r -> (r, mgr)) logReq
+                                 _ <- showItSink -< progress
+                                 fp <- evMap snd >>> evMap (\f -> fromRelFile (dest </> filename f) <> "." <> (unpack node)) -< fileName
+                                 sinkFile_ >>> returnA -< (fp, bs)
+                                 
                              ) [(req, mgr)]
-                where
-                  saveName node = fromRelFile (dest </> filename log) <> "." <> node

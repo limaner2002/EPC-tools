@@ -39,7 +39,7 @@ data LogSettings = LogSettings
   { username :: Text
   , password :: Text
   , nodeNames :: [Text]
-  , logName :: Maybe (Path Rel File)
+  , logName :: Maybe [Path Rel File]
   , logDestination :: Maybe (Path Rel Dir)
   , logUrl :: Text
   } deriving (Show, Generic)
