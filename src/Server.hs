@@ -25,6 +25,7 @@ import Path
 import GetLogs (downloadLogs)
 import MachineUtils
 import Execute (batchJMeterScripts)
+import Control.Monad.Trans.State
 
 type HomePageAPI = Get '[HTMLLucid] HomePage
 type SubmitAPI = "submit" :> ReqBody '[JSON] LogSettings :> Post '[JSON] SubmitStatus
@@ -117,7 +118,7 @@ serveFile scriptsDir fName = do
 
 startTests :: [JMeterOpts] -> Handler SubmitStatus
 startTests opts = do
-  validatedOpts <- validateBatchOpts $ createBatchOpts opts
+  (validatedOpts, _) <- runStateT (validateBatchOpts $ createBatchOpts opts) mempty
   res <- tryAny $ liftIO $ batchJMeterScripts validatedOpts
   case res of
     Left e -> return $ SubmissionError $ tshow e

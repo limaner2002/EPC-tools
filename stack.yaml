@@ -1,14 +1,14 @@
 # For more information, see: http://docs.haskellstack.org/en/stable/yaml_configuration.html
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
-resolver: lts-7.8
+resolver: lts-7.14
 
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
 - location:
     git: https://github.com/limaner2002/machinecell-contrib.git
-    commit: 0ff20d0521fe6887c19e1b0c298dc5b743592953
+    commit: d3f1ed6df2291a6b379f743ec7072ec93c343530
 - location: /Users/josh/workspace/machinecell
   extra-dep: true
 # - location:
