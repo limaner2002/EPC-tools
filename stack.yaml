@@ -9,6 +9,8 @@ packages:
 - location:
     git: https://github.com/limaner2002/machinecell-contrib.git
     commit: d3f1ed6df2291a6b379f743ec7072ec93c343530
+# - location: /Users/josh/workspace/machinecell-contrib
+#   extra-dep: true
 - location: /Users/josh/workspace/machinecell
   extra-dep: true
 # - location:

@@ -57,16 +57,11 @@ logsParser = downloadLogs <$>
   OA.<> help "A list of nodes to download the logs from. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
   OA.<> metavar "\"NODE1 <NODE2 ...>\""
   )
-  -- <*> option (do
-  --                input <- readerAsk
-  --                rf <- parseRelFile input
-  --                return $ Just rf
-  --            )
-  <*> option (readerAsk >>= parseRelFile >>= pure . Just)
-  (  long "logfile"
+  <*> option (parseMany >>= sequence . fmap parseRelFile >>= pure . Just)
+  (  long "logfiles"
   OA.<> short 'l'
-  OA.<> help "The name of the logfile to download."
-  OA.<> metavar "LOGFILE"
+  OA.<> help "A list of logfiles to download. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
+  OA.<> metavar "\"LOGFILE1 <LOGFILE2 ...>\""
   )
   <*> option (readerAsk >>= parseRelDir >>= pure . Just)
   (  long "dest"
