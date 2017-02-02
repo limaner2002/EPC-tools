@@ -83,5 +83,6 @@ getProperties = deep getThreadGroup &&& deep getAggFilename
 
 checkScript :: MonadIO m => FilePath -> m String
 checkScript fp = liftIO $ do
-  r <- runX $ readDocument [withValidate no, withWarnings no] fp >>> getProperties >>> checkProperties
+  ctnt <- readFile fp
+  r <- runX $ readString [withValidate no, withWarnings no] ctnt >>> getProperties >>> checkProperties
   return $ foldl' (<>) mempty $ fmap showValidations r

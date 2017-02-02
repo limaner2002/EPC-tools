@@ -224,7 +224,9 @@ initialize :: TimeZone -> ScheduledTime -> ScheduledTime -> ScheduledTime -> [JM
 initialize tz jobTime sendScheduledTime checkJobStatusTime opts = do
   (validatedOpts, msgs) <- runStateT (validateBatchOpts $ createBatchOpts opts) mempty
   let dispMsg (rn, msg) = show rn <> "\n" <> msg <> "\n\n"
+  print msgs
   mapM_ (putStr . pack . dispMsg) msgs
+  SIO.hFlush stdout
   runningStatus <- newTVarIO NotStarted
   _ <- concurrently
     ( do
