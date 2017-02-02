@@ -153,7 +153,9 @@ commandsInfo = info (helper <*> parseCommands)
   )
 
 main :: IO ()
-main = join $ execParser commandsInfo
+main = do
+  SIO.hSetBuffering stdout SIO.NoBuffering
+  join $ execParser commandsInfo
 
 data ExecutionStatus
   = NotStarted
@@ -179,28 +181,41 @@ readJMeterOpts cfg =
 
 runTests :: ToScheduledTime -> [FilePath] -> IO ()
 runTests timestamp configFiles = do
-  args <- getArgs
   tz <- getCurrentTimeZone
-  case args of
-    (timestamp:configFiles) -> do
-      cfgs <- mapM (readConfigFile . unpack) configFiles
-      let eOpts = sequence $ fmap readJMeterOpts cfgs
-      case eOpts of
-        Left msg -> fail $ show msg
-        Right opts -> do
-          let mTime = readMay timestamp
-          case mTime of
-            Nothing -> fail $ "could not read timestamp: " <> show timestamp
-            Just time -> do
-              ct <- getCurrentTime
-              let time' = mkScheduledTime tz time ct
-                  sendScheduledTime = mkScheduledTime tz sendScheduledInfo ct
-                  checkJobStatusTime' = mkScheduledTime tz checkJobStatusTime ct
-              initialize tz time' sendScheduledTime checkJobStatusTime' opts
-    _ -> do
-      putStrLn "usage: EPC-tools utc-timestamp configFile1 configFile2 ..."
+  cfgs <- mapM (readConfigFile . unpack) configFiles
+  let eOpts = sequence $ fmap readJMeterOpts cfgs
+  case eOpts of
+    Left msg -> fail $ show msg
+    Right opts -> do
       ct <- getCurrentTime
-      putStrLn $ "example: EPC-tools \"" <> tshow ct <> "\" /path/to/file1 /path/to/file2"
+      let time' = mkScheduledTime tz timestamp ct
+          sendScheduledTime = mkScheduledTime tz sendScheduledInfo ct
+          checkJobStatusTime' = mkScheduledTime tz checkJobStatusTime ct
+      initialize tz time' sendScheduledTime checkJobStatusTime' opts
+
+-- runTests timestamp configFiles = do
+--   args <- getArgs
+--   tz <- getCurrentTimeZone
+--   case args of
+--     (timestamp:configFiles) -> do
+--       cfgs <- mapM (readConfigFile . unpack) configFiles
+--       let eOpts = sequence $ fmap readJMeterOpts cfgs
+--       case eOpts of
+--         Left msg -> fail $ show msg
+--         Right opts -> do
+--           let mTime = readMay timestamp
+--           case mTime of
+--             Nothing -> fail $ "could not read timestamp: " <> show timestamp
+--             Just time -> do
+--               ct <- getCurrentTime
+--               let time' = mkScheduledTime tz time ct
+--                   sendScheduledTime = mkScheduledTime tz sendScheduledInfo ct
+--                   checkJobStatusTime' = mkScheduledTime tz checkJobStatusTime ct
+--               initialize tz time' sendScheduledTime checkJobStatusTime' opts
+--     _ -> do
+--       putStrLn "usage: EPC-tools utc-timestamp configFile1 configFile2 ..."
+--       ct <- getCurrentTime
+--       putStrLn $ "example: EPC-tools \"" <> tshow ct <> "\" /path/to/file1 /path/to/file2"
 
 -- initialize :: TimeZone -> UTCTime -> TimeOfDay -> TimeOfDay -> [JMeterOpts] -> IO ()
 -- initialize tz time sendScheduledTime checkJobStatusTime opts = do
