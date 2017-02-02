@@ -24,6 +24,7 @@ import Options.Applicative hiding ((<>))
 import qualified Options.Applicative as OA
 import Options.Applicative.Types
 import Control.Monad.Catch
+import Control.Monad.Trans.State
 
 import Path
 import Network.Wai.Handler.Warp
@@ -220,32 +221,28 @@ runTests timestamp configFiles = do
 -- initialize :: TimeZone -> UTCTime -> TimeOfDay -> TimeOfDay -> [JMeterOpts] -> IO ()
 -- initialize tz time sendScheduledTime checkJobStatusTime opts = do
 initialize :: TimeZone -> ScheduledTime -> ScheduledTime -> ScheduledTime -> [JMeterOpts] -> IO ()
-initialize tz jobTime sendScheduledTime checkJobStatusTime opts =
-  case validateBatchOpts $ createBatchOpts opts of
-    Left exc -> fail $ show exc
-    Right validatedOpts -> do
-        runningStatus <- newTVarIO NotStarted
-        -- let scheduledTime' = toUTCTime sendScheduledTime
-        --     checkJobStatusTime' = toUTCTime checkJobStatusTime
-        --     toUTCTime = localTimeToUTC tz . toLocalTime
-        --     toLocalTime t = LocalTime (localDay $ utcToLocalTime tz time) t
-        _ <- concurrently
-          ( do
-              schedule (trace ("scheduledMsg: " <> show sendScheduledTime) sendScheduledTime) $ do
-                putStrLn "Sending message now"
-                sendMessage $ scheduledMessage validatedOpts sendScheduledTime
-              schedule (trace ("checkMsg: " <> show checkJobStatusTime) checkJobStatusTime) $ checkStatus tz runningStatus validatedOpts
-          )
-          (
-            doIfDirIsEmpty $ do
-              atomically $ writeTVar runningStatus Running
-              sendMessage $ scheduledMessage validatedOpts jobTime
-              schedule jobTime $ batchJMeterScripts $ validatedOpts
-              atomically $ writeTVar runningStatus Finished
-              clt <- utcToLocalTime tz <$> getCurrentTime
-              sendMessage $ jobsCompletedMessage clt
-          )
-        return ()
+initialize tz jobTime sendScheduledTime checkJobStatusTime opts = do
+  (validatedOpts, msgs) <- runStateT (validateBatchOpts $ createBatchOpts opts) mempty
+  let dispMsg (rn, msg) = show rn <> "\n" <> msg <> "\n\n"
+  mapM_ (putStr . pack . dispMsg) msgs
+  runningStatus <- newTVarIO NotStarted
+  _ <- concurrently
+    ( do
+        schedule (trace ("scheduledMsg: " <> show sendScheduledTime) sendScheduledTime) $ do
+          putStrLn "Sending message now"
+          sendMessage $ scheduledMessage validatedOpts sendScheduledTime
+        schedule (trace ("checkMsg: " <> show checkJobStatusTime) checkJobStatusTime) $ checkStatus tz runningStatus validatedOpts
+    )
+    (
+      doIfDirIsEmpty $ do
+        atomically $ writeTVar runningStatus Running
+        sendMessage $ scheduledMessage validatedOpts jobTime
+        schedule jobTime $ batchJMeterScripts $ validatedOpts
+        atomically $ writeTVar runningStatus Finished
+        clt <- utcToLocalTime tz <$> getCurrentTime
+        sendMessage $ jobsCompletedMessage clt
+    )
+  return ()
 
 checkStatus :: TimeZone -> TVar ExecutionStatus -> BatchOpts Validated -> IO ()
 checkStatus tz runningStatus opts = go

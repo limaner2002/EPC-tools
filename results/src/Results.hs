@@ -38,10 +38,12 @@ data JMeterReading = JMeterReading
   , readSuccess :: !Bool
   , readFailureMessage :: !Text
   , readBytes :: !Int
+  , readSentBytes :: !Int
   , readGrpThreads :: !Text
   , readAllThreads :: !Int
   , readLatency :: !Int
   , readIdleTime :: !Int
+  , readConnect :: !Int
   } | ReadingHeader
   { rheadTimeStamp :: !Text
   , rheadElapsed :: !Text
@@ -53,10 +55,12 @@ data JMeterReading = JMeterReading
   , rheadSuccess :: !Text
   , rheadFailureMessage :: !Text
   , rheadBytes :: !Text
+  , rheadSentBytes :: !Text
   , rheadGrpThreads :: !Text
   , rheadAllThreads :: !Text
   , rheadLatency :: !Text
   , rheadIdleTime :: !Text
+  , rheadConnect :: !Text
   } deriving Show
 
 data ExpressionDetails = ExpressionDetails
@@ -185,12 +189,12 @@ toReading = dSwitch before after
     after _ = evMap (join . fmap fromRow)
 
 fromHeader :: MonadThrow m => Row Text -> m JMeterReading
-fromHeader [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, grpThreads, allThreads, latency, idleTime]
-  = return $ ReadingHeader ts elpsd label respCode respMsg threadName dataType success failureMessage bytes grpThreads allThreads latency idleTime
+fromHeader [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, sentBytes, grpThreads, allThreads, latency, idleTime, connect]
+  = return $ ReadingHeader ts elpsd label respCode respMsg threadName dataType success failureMessage bytes sentBytes grpThreads allThreads latency idleTime connect
 fromHeader row = throwM $ InvalidCSVRow $ "Could not read row " <> tshow row
 
 fromRow :: MonadThrow m => Row Text -> m JMeterReading
-fromRow [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, grpThreads, allThreads, latency, idleTime]
+fromRow [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, sentBytes, grpThreads, allThreads, latency, idleTime, connect]
   = JMeterReading
   <$> readJMeterTimeStamp ts
   <*> readThrow elpsd
@@ -202,10 +206,12 @@ fromRow [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, fai
   <*> readLowerBool success
   <*> pure failureMessage
   <*> readThrow bytes
+  <*> readThrow bytes
   <*> pure grpThreads
   <*> readThrow allThreads
   <*> readThrow latency
   <*> readThrow idleTime
+  <*> readThrow connect
 fromRow row = throwM $ InvalidCSVRow $ "Could not read row " <> tshow row
 
 readJMeterTimeStamp ts = JMeterTimeStamp . posixSecondsToUTCTime <$> (\x -> fromIntegral x / 1000) <$> (readThrow ts)

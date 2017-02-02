@@ -50,6 +50,7 @@ library
                      , text
                      , xlsx
                      , lens
+                     , transformers
   default-language:    Haskell2010
 
 executable EPC-tools
