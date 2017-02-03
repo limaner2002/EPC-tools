@@ -1,9 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE FlexibleContexts #-}
-
 
 module Types
   ( LogSettings (..)
@@ -21,10 +18,9 @@ module Types
   , ToScheduledTime (..)
   , scheduledTimeToLocalTime
   , SubmitStatus (..)
-  , BatchOpts
+  , BatchOpts (..)
   , fromBatchOpts
   , createBatchOpts
-  , validateBatchOpts
   , showRunName
   , showJobDelay
   ) where
@@ -34,9 +30,9 @@ import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
 import Path
 import Data.Time
-import Validate
-import MachineUtils
-import Control.Monad.State
+-- import Validate
+-- import MachineUtils
+-- import Control.Monad.State
 
 data LogSettings = LogSettings
   { username :: Text
@@ -139,33 +135,6 @@ data InvalidBatchOpts = InvalidBatchOpts Text
   deriving Show
 
 instance Exception InvalidBatchOpts
-
-validateBatchOpts :: (MonadThrow m, MonadState [(RunName, String)] m, MonadIO m)
-  => BatchOpts UnValidated -> m (BatchOpts Validated)
-validateBatchOpts (BatchOpts opts) = do
-  res <- runKleisli (checkBatchOpts >>> checkScripts) opts
-  return $ BatchOpts res
-
-checkScripts :: (MonadState [(RunName, String)] m, MonadIO m) => Kleisli m [JMeterOpts] [JMeterOpts]
-checkScripts = (arr (fmap getIt) >>> Kleisli (mapM checkScript') >>> Kleisli put) &&& id >>> arr snd
-  where
-    getIt opt = (runName opt, jmxPath opt)
-    checkScript' (rn, fp) = do
-      res <- checkScript fp
-      return (rn, res)
-
-checkBatchOpts :: MonadThrow m => Kleisli m [JMeterOpts] [JMeterOpts]
-checkBatchOpts = Kleisli checkIt
-  where
-    checkRunNames = all (==1) . countRunNames
-    countRunNames opts = foldl' insertName (mempty :: Map RunName Int) opts
-    insertName mp v = alterMap countName (runName v) mp
-    countName Nothing = Just 1
-    countName (Just n) = Just (n + 1)
-    checkIt opts = case checkRunNames opts of
-      True -> return $ opts
-      False -> throwM $ InvalidBatchOpts "Each test should have a unique name."
-
 
 createBatchOpts :: [JMeterOpts] -> BatchOpts UnValidated
 createBatchOpts opts = BatchOpts opts

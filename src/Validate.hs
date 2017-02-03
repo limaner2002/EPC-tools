@@ -1,14 +1,27 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 
 module Validate
-  ( checkScript
+  ( validateBatchOpts
+  , Types.BatchOpts
   ) where
 
 import ClassyPrelude
 import Text.XML.HXT.Core
-import Control.Monad.Writer (MonadWriter)
+import Control.Monad.State
+import Types
+
+data ValidationResult = ValidationResult
+  { valMsgs :: [(RunName, String)]
+  , valErrors :: Bool
+  } deriving Show
+
+instance Monoid ValidationResult where
+  mempty = ValidationResult mempty False
+  (ValidationResult msgA errA) `mappend` (ValidationResult msgB errB) = ValidationResult (msgA <> msgB) (errA || errB)
 
 data ThreadGroup = ThreadGroup
   { nThreads :: String
@@ -86,3 +99,35 @@ checkScript fp = liftIO $ do
   ctnt <- readFile fp
   r <- runX $ readString [withValidate no, withWarnings no] ctnt >>> getProperties >>> checkProperties
   return $ foldl' (<>) mempty $ fmap showValidations r
+
+validateBatchOpts :: (MonadThrow m, MonadState ValidationResult m, MonadIO m)
+  => BatchOpts UnValidated -> m (BatchOpts Validated)
+validateBatchOpts (BatchOpts opts) = do
+  res <- runKleisli (checkBatchOpts >>> checkScripts) opts
+  return $ BatchOpts res
+
+checkScripts :: (MonadState ValidationResult m, MonadIO m) => Kleisli m [JMeterOpts] [JMeterOpts]
+checkScripts = (arr (fmap getIt) >>> Kleisli (mapM checkScript') >>> mkValidation >>> Kleisli addCheck) &&& id >>> arr snd
+  where
+    getIt opt = (runName opt, jmxPath opt)
+    checkScript' (rn, fp) = do
+      res <- checkScript fp
+      return (rn, res)
+    mkValidation = arr $ \v -> ValidationResult v False
+
+checkBatchOpts :: (MonadState ValidationResult m) => Kleisli m [JMeterOpts] [JMeterOpts]
+checkBatchOpts = Kleisli checkIt
+  where
+    checkRunNames = all (==1) . countRunNames
+    countRunNames opts = foldl' insertName (mempty :: Map RunName Int) opts
+    insertName mp v = alterMap countName (runName v) mp
+    countName Nothing = Just 1
+    countName (Just n) = Just (n + 1)
+    checkIt opts = case checkRunNames opts of
+      True -> return $ opts
+      False -> throwM $ InvalidBatchOpts "Each test should have a unique name."
+
+addCheck :: MonadState ValidationResult m => ValidationResult -> m ()
+addCheck new = do
+  old <- get
+  put (old <> new)
