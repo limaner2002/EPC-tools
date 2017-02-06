@@ -26,6 +26,7 @@ import GetLogs (downloadLogs)
 import MachineUtils
 import Execute (batchJMeterScripts)
 import Control.Monad.Trans.State
+import Validate
 
 type HomePageAPI = Get '[HTMLLucid] HomePage
 type SubmitAPI = "submit" :> ReqBody '[JSON] LogSettings :> Post '[JSON] SubmitStatus

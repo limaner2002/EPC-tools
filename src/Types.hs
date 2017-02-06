@@ -23,6 +23,7 @@ module Types
   , createBatchOpts
   , showRunName
   , showJobDelay
+  , InvalidBatchOpts (..)
   ) where
 
 import ClassyPrelude

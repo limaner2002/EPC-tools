@@ -3,6 +3,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Results
   ( resultsInfo
@@ -17,7 +18,6 @@ import Control.Arrow
 import MachineUtils
 import ParseCSV
 import Data.Default
-import Control.Monad.State hiding (mapM_)
 import System.FilePath.Glob
 import System.FilePath
 import Formatting
@@ -26,6 +26,10 @@ import Data.Char (isDigit)
 import Options.Applicative hiding ((<>))
 import qualified Options.Applicative as OA
 import Options.Applicative.Types
+import Control.Monad.State hiding (mapM_)
+
+import JBossLog
+import Common
 
 data JMeterReading = JMeterReading
   { readTimeStamp :: !JMeterTimeStamp
@@ -73,6 +77,9 @@ data ExpressionDetails = ExpressionDetails
   , exprMaxTotalTimems :: Int
   } deriving Show
 
+instance ToUTCTime ExpressionDetails where
+  toUTCTime = exprTimeStamp
+
 data System = System
   { sysTimeStamp :: UTCTime
   , sysThreadCount :: Int
@@ -101,19 +108,6 @@ data System = System
 showExpressionDetails :: ExpressionDetails -> Text
 showExpressionDetails (ExpressionDetails ts name typ total mean min max)
   = tshow ts <> "\t" <> name <> "\t" <> typ <> "\t" <> tshow total <> "\t" <> tshow mean <> "\t" <> tshow min <> "\t" <> tshow max
-
-newtype InvalidCSVEntry = InvalidCSVEntry Text
-  deriving Show
-
-instance Exception InvalidCSVEntry
-
-newtype InvalidCSVRow = InvalidCSVRow Text
-  deriving Show
-
-instance Exception InvalidCSVRow
-
-newtype JMeterTimeStamp = JMeterTimeStamp UTCTime
-  deriving Show
 
 data AggregateAccum = AggregateAccum
   { aggNObservations :: !Int
@@ -178,8 +172,6 @@ readJMeterResponseCode txt = case HTTPResponseCode <$> readMay txt of
 
 type ReadMap = Map Text AggregateAccum
 
-type Row a = [a]
-
 toReading :: (ArrowApply a, MonadThrow m) => ProcessA a (Event (m [Text])) (Event (m JMeterReading))
 toReading = dSwitch before after
   where
@@ -193,28 +185,26 @@ fromHeader [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, 
   = return $ ReadingHeader ts elpsd label respCode respMsg threadName dataType success failureMessage bytes sentBytes grpThreads allThreads latency idleTime connect
 fromHeader row = throwM $ InvalidCSVRow $ "Could not read row " <> tshow row
 
-fromRow :: MonadThrow m => Row Text -> m JMeterReading
-fromRow [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, sentBytes, grpThreads, allThreads, latency, idleTime, connect]
-  = JMeterReading
-  <$> readJMeterTimeStamp ts
-  <*> readThrow elpsd
-  <*> pure label
-  <*> pure (readJMeterResponseCode respCode) -- readThrow respCode
-  <*> pure respMsg
-  <*> pure threadName
-  <*> pure dataType
-  <*> readLowerBool success
-  <*> pure failureMessage
-  <*> readThrow bytes
-  <*> readThrow bytes
-  <*> pure grpThreads
-  <*> readThrow allThreads
-  <*> readThrow latency
-  <*> readThrow idleTime
-  <*> readThrow connect
-fromRow row = throwM $ InvalidCSVRow $ "Could not read row " <> tshow row
-
-readJMeterTimeStamp ts = JMeterTimeStamp . posixSecondsToUTCTime <$> (\x -> fromIntegral x / 1000) <$> (readThrow ts)
+instance FromRow [] Text JMeterReading where
+  fromRow [ts, elpsd, label, respCode, respMsg, threadName, dataType, success, failureMessage, bytes, sentBytes, grpThreads, allThreads, latency, idleTime, connect]
+    = JMeterReading
+    <$> readJMeterTimeStamp ts
+    <*> readThrow elpsd
+    <*> pure label
+    <*> pure (readJMeterResponseCode respCode) -- readThrow respCode
+    <*> pure respMsg
+    <*> pure threadName
+    <*> pure dataType
+    <*> readLowerBool success
+    <*> pure failureMessage
+    <*> readThrow bytes
+    <*> readThrow bytes
+    <*> pure grpThreads
+    <*> readThrow allThreads
+    <*> readThrow latency
+    <*> readThrow idleTime
+    <*> readThrow connect
+  fromRow row = throwM $ InvalidCSVRow $ "Could not read row " <> tshow row
 
 exprDetailsFromRow :: MonadThrow m => Row Text -> m ExpressionDetails
 exprDetailsFromRow [ts, name, typ, totalCount, meanTotalTime, minTotalTime, maxTotalTime] =
@@ -244,23 +234,10 @@ readLowerBool "false" = return False
 readLowerBool "true" = return True
 readLowerBool entry = throwM $ InvalidCSVEntry $ "Could not read value " <> entry
 
-readThrow entry =
-  case readMay entry of
-    Nothing -> throwM $ InvalidCSVEntry $ "Could not read value " <> entry
-    Just v -> return v
-
 -- data Options
 --   = LogFiles FilePath FilePath JMeterTimeStamp JMeterTimeStamp
 --   | Report FilePath
 --   | Memory FilePath
-
-parseJMeterTimeStamp :: ReadM JMeterTimeStamp
-parseJMeterTimeStamp = do
-  input <- readerAsk
-  let mTs = JMeterTimeStamp . posixSecondsToUTCTime <$> (\x -> fromIntegral x / 1000) <$> (readMay input)
-  case mTs of
-    Nothing -> readerError $ show input <> " does not appear to be a valid JMeterTimeStamp."
-    Just ts -> return ts
 
 -- optionsParser :: Parser Options
 -- optionsParser = logsParser <|> reportParser <|> memoryParser
@@ -268,7 +245,7 @@ commandsParser :: Parser (IO ())
 commandsParser = subparser
   ( command "parselogs" logsInfo
   OA.<> command "createreport" reportInfo
-  OA.<> command "testleak" memoryInfo
+  OA.<> command "jbosslogs" jbossInfo
   )
 
 logsParser :: Parser (IO ())
@@ -316,21 +293,6 @@ reportInfo = info (helper <*> reportParser)
   OA.<> progDesc "Use this to create a simple report that contains the maximum/minimum request time and the percentage of requests that were above 3seconds."
   )
 
-memoryParser :: Parser (IO ())
-memoryParser = testSpaceLeak
-  <$> strOption
-    (  long "csvPath"
-    OA.<> metavar "CSV_PATH"
-    OA.<> help "The path to the csv file to parse."
-    )
-
-memoryInfo :: ParserInfo (IO ())
-memoryInfo = info (helper <*> memoryParser)
-  (  fullDesc
-  OA.<> header "Space Leak Test"
-  OA.<> progDesc "This is for testing the space leak found during RC2.0 performance analysis."
-  )
-
 resultsInfo :: ParserInfo (IO ())
 resultsInfo = info (helper <*> commandsParser)
   (  fullDesc
@@ -358,28 +320,6 @@ createReport path = runRMachine_ aggregateReport [path]
       >>> evMap (fmap showAggregateReport)
       >>> machine (mapM_ (putStrLn . toStrict))
 
-testSpaceLeak :: FilePath -> IO ()
-testSpaceLeak path = runRMachine_ ( sourceDirectory
-                                       >>> sourceDirectory
-                                       >>> filter (arr $ isSuffixOf ".csv")
-                                       >>> evMap id &&& (
-                                              sourceFile
-                                          >>> machineParser (parseRow def)
-                                          )
-                                       >>> switchTest toReading
-                                       >>> accumulate
-                                       >>> evMap asEither
-                                       >>> machine print
-                                      ) [path]
-  where
-    accumulate = proc input -> do
-      res <- evMap (fmap addReading) >>> evMap (<*>) >>> accum (pure mempty) -< input
-      ended <- onEnd -< res <$ input
-      returnA -< res <$ ended
-
--- main :: IO ()
--- main = execParser optsInfo >>= dispatch
-
 readLogs :: (MonadResource m, MonadState FilterState m) => JMeterTimeStamp -> JMeterTimeStamp -> ProcessA (Kleisli m) (Event (FilePath, FilePath)) (Event ())
 readLogs startTime endTime = proc input -> do
   mX <- evMap Just >>> hold Nothing -< input
@@ -398,48 +338,6 @@ readLogs startTime endTime = proc input -> do
       >>> evMap (join . mapM exprDetailsFromRow)
       >>> filter (Kleisli $ filterTime 1800 startTime endTime)
     unsafeFromEither (Right v) = v
-
-isBetween_
-  :: JMeterTimeStamp
-     -> JMeterTimeStamp -> Either t ExpressionDetails -> Bool
-isBetween_ start end (Left _) = False
-isBetween_ start end (Right v) = isBetween start end v
-
-isBetween
-  :: JMeterTimeStamp -> JMeterTimeStamp -> ExpressionDetails -> Bool
-isBetween (JMeterTimeStamp startTime) (JMeterTimeStamp endTime) exprDetails
-  = startTime <= time && time <= endTime
-  where
-    time = exprTimeStamp exprDetails
-
-filterTime
-  :: MonadState FilterState m =>
-     NominalDiffTime
-     -> JMeterTimeStamp
-     -> JMeterTimeStamp
-     -> Either t ExpressionDetails
-     -> m Bool
-filterTime logTimeDiff start end (Left _) = return False
-filterTime logTimeDiff start end (Right v) = filterTime_ logTimeDiff start end v
-
-                                             -- Stateful filter to get timestamps that occurred after the endtime in the log file
-filterTime_ :: MonadState FilterState m => NominalDiffTime -> JMeterTimeStamp -> JMeterTimeStamp -> ExpressionDetails -> m Bool
-filterTime_ logTimeDiff start@(JMeterTimeStamp startTime) end@(JMeterTimeStamp endTime) exprDetails = do
-  filterState <- get
-  case filterState of
-    Init -> case isBetween start end exprDetails of
-      False -> case endTime < (exprTimeStamp exprDetails) of
-        False -> return False
-        True -> put (GatherAllLast $ exprTimeStamp exprDetails) >> return True
-      True -> put Between >> return True
-    Between -> case isBetween start end exprDetails of
-      True -> return True
-      False -> put (GatherAllLast $ exprTimeStamp exprDetails) >> return True
-    GatherAllLast ts ->
-      case diffUTCTime (exprTimeStamp exprDetails) ts > logTimeDiff of
-        False -> return True
-        True -> put Done >> return False
-    Done -> return False
 
 asEither :: Either SomeException a -> Either SomeException a
 asEither = id
@@ -460,13 +358,6 @@ getCurrMax = constructT kleisli0 $ loop Nothing
         False -> do
           yield v
           loop (Just v)
-
-data FilterState
-  = Init
-  | Between
-  | GatherAllLast UTCTime
-  | Done
-  deriving Show
 
 isError :: JMeterReading -> Bool
 isError ReadingHeader {} = False

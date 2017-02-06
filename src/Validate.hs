@@ -7,6 +7,7 @@
 module Validate
   ( validateBatchOpts
   , Types.BatchOpts
+  , ValidationResult (..)
   ) where
 
 import ClassyPrelude
@@ -115,7 +116,7 @@ checkScripts = (arr (fmap getIt) >>> Kleisli (mapM checkScript') >>> mkValidatio
       return (rn, res)
     mkValidation = arr $ \v -> ValidationResult v False
 
-checkBatchOpts :: (MonadState ValidationResult m) => Kleisli m [JMeterOpts] [JMeterOpts]
+checkBatchOpts :: (MonadState ValidationResult m, MonadThrow m) => Kleisli m [JMeterOpts] [JMeterOpts]
 checkBatchOpts = Kleisli checkIt
   where
     checkRunNames = all (==1) . countRunNames
@@ -130,4 +131,4 @@ checkBatchOpts = Kleisli checkIt
 addCheck :: MonadState ValidationResult m => ValidationResult -> m ()
 addCheck new = do
   old <- get
-  put (old <> new)
+  put (old `mappend` new)

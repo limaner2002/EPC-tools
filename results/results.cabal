@@ -28,4 +28,6 @@ library
                      , formatting
                      , text
                      , machinecell-contrib
+  other-modules:       Common
+                     , JBossLog
   default-language:    Haskell2010

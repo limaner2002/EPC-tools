@@ -11,7 +11,6 @@ import Types ( JMeterOpts (..)
              , ToScheduledTime (..)
              , mkScheduledTime
              , ScheduledTime
-             , validateBatchOpts
              , createBatchOpts
              , BatchOpts
              , Validated
@@ -32,6 +31,10 @@ import Server
 import SendMail
 import Results
 import GetLogs (downloadLogs)
+
+import Validate ( validateBatchOpts,
+                  ValidationResult (..)
+                )
 
 instance MonadThrow ReadM where
   throwM exc = readerError $ show exc
@@ -194,38 +197,12 @@ runTests timestamp configFiles = do
           checkJobStatusTime' = mkScheduledTime tz checkJobStatusTime ct
       initialize tz time' sendScheduledTime checkJobStatusTime' opts
 
--- runTests timestamp configFiles = do
---   args <- getArgs
---   tz <- getCurrentTimeZone
---   case args of
---     (timestamp:configFiles) -> do
---       cfgs <- mapM (readConfigFile . unpack) configFiles
---       let eOpts = sequence $ fmap readJMeterOpts cfgs
---       case eOpts of
---         Left msg -> fail $ show msg
---         Right opts -> do
---           let mTime = readMay timestamp
---           case mTime of
---             Nothing -> fail $ "could not read timestamp: " <> show timestamp
---             Just time -> do
---               ct <- getCurrentTime
---               let time' = mkScheduledTime tz time ct
---                   sendScheduledTime = mkScheduledTime tz sendScheduledInfo ct
---                   checkJobStatusTime' = mkScheduledTime tz checkJobStatusTime ct
---               initialize tz time' sendScheduledTime checkJobStatusTime' opts
---     _ -> do
---       putStrLn "usage: EPC-tools utc-timestamp configFile1 configFile2 ..."
---       ct <- getCurrentTime
---       putStrLn $ "example: EPC-tools \"" <> tshow ct <> "\" /path/to/file1 /path/to/file2"
-
--- initialize :: TimeZone -> UTCTime -> TimeOfDay -> TimeOfDay -> [JMeterOpts] -> IO ()
--- initialize tz time sendScheduledTime checkJobStatusTime opts = do
 initialize :: TimeZone -> ScheduledTime -> ScheduledTime -> ScheduledTime -> [JMeterOpts] -> IO ()
 initialize tz jobTime sendScheduledTime checkJobStatusTime opts = do
-  (validatedOpts, msgs) <- runStateT (validateBatchOpts $ createBatchOpts opts) mempty
+  (validatedOpts, vr) <- runStateT (validateBatchOpts $ createBatchOpts opts) mempty
   let dispMsg (rn, msg) = show rn <> "\n" <> msg <> "\n\n"
-  print msgs
-  mapM_ (putStr . pack . dispMsg) msgs
+  print vr
+  mapM_ (putStr . pack . dispMsg) $ valMsgs vr
   SIO.hFlush stdout
   runningStatus <- newTVarIO NotStarted
   _ <- concurrently
