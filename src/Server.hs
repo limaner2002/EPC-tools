@@ -112,7 +112,7 @@ checkLogSettings logSettings = do
 
 serveFile :: Path Rel Dir -> Path Rel File -> Handler BL.ByteString
 serveFile scriptsDir fName = do
-  eBS <- tryAny . readFile . fromRelFile $ scriptsDir </> fName
+  eBS <- tryAny . liftIO . BL.readFile . fromRelFile $ scriptsDir </> fName
   case eBS of
     Left _ -> return "Resource not found"
     Right bs -> return bs

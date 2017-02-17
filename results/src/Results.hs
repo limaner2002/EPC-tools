@@ -23,8 +23,7 @@ import System.FilePath
 import Formatting
 import qualified Data.Text.Lazy as TL
 import Data.Char (isDigit)
-import Options.Applicative hiding ((<>))
-import qualified Options.Applicative as OA
+import Options.Applicative
 import Options.Applicative.Types
 import Control.Monad.State hiding (mapM_)
 
@@ -244,60 +243,60 @@ readLowerBool entry = throwM $ InvalidCSVEntry $ "Could not read value " <> entr
 commandsParser :: Parser (IO ())
 commandsParser = subparser
   ( command "parselogs" logsInfo
-  OA.<> command "createreport" reportInfo
-  OA.<> command "jbosslogs" jbossInfo
+  <> command "createreport" reportInfo
+  <> command "jbosslogs" jbossInfo
   )
 
 logsParser :: Parser (IO ())
 logsParser = processLogs
   <$> strOption
     (  long "logPathGlob"
-    OA.<> metavar "LOGPATH_GLOB"
-    OA.<> help "Glob for the logfiles"
+    <> metavar "LOGPATH_GLOB"
+    <> help "Glob for the logfiles"
     )
   <*> strOption
     (  long "outputDir"
-    OA.<> metavar "OUTPUD_DIR"
-    OA.<> help "The directory to put the result files in"
+    <> metavar "OUTPUD_DIR"
+    <> help "The directory to put the result files in"
     )
   <*> option parseJMeterTimeStamp
     (  long "start-time"
-    OA.<> metavar "START_TIME"
-    OA.<> help "The time at which the test started."
+    <> metavar "START_TIME"
+    <> help "The time at which the test started."
     )
   <*> option parseJMeterTimeStamp
     (  long "end-time"
-    OA.<> metavar "END_TIME"
-    OA.<> help "The time at which the test finished."
+    <> metavar "END_TIME"
+    <> help "The time at which the test finished."
     )
 
 logsInfo :: ParserInfo (IO ())
 logsInfo = info (helper <*> logsParser)
   (  fullDesc
-  OA.<> header "Log Parser"
-  OA.<> progDesc "This is used to extract the relevant sections of the expression rules details logfiles from Appian."
+  <> header "Log Parser"
+  <> progDesc "This is used to extract the relevant sections of the expression rules details logfiles from Appian."
   )
 
 reportParser :: Parser (IO ())
 reportParser = createReport
   <$> strOption
     (  long "testPath"
-    OA.<> metavar "TEST_PATH"
-    OA.<> help "The directory holding all of the runs for a given test."
+    <> metavar "TEST_PATH"
+    <> help "The directory holding all of the runs for a given test."
     )
 
 reportInfo :: ParserInfo (IO ())
 reportInfo = info (helper <*> reportParser)
   (  fullDesc
-  OA.<> header "Report Creator"
-  OA.<> progDesc "Use this to create a simple report that contains the maximum/minimum request time and the percentage of requests that were above 3seconds."
+  <> header "Report Creator"
+  <> progDesc "Use this to create a simple report that contains the maximum/minimum request time and the percentage of requests that were above 3seconds."
   )
 
 resultsInfo :: ParserInfo (IO ())
 resultsInfo = info (helper <*> commandsParser)
   (  fullDesc
-  OA.<> progDesc "This contains some tools to help analyse the results of running performance tests."
-  OA.<> header "Performance Result Analysis Tools"
+  <> progDesc "This contains some tools to help analyse the results of running performance tests."
+  <> header "Performance Result Analysis Tools"
   )
 
 processLogs :: FilePath -> FilePath -> JMeterTimeStamp -> JMeterTimeStamp -> IO ()

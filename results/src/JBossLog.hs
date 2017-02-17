@@ -15,8 +15,7 @@ import Common
 import Control.Monad.State
 import Data.Default
 
-import Options.Applicative hiding ((<>))
-import qualified Options.Applicative as OA
+import Options.Applicative
 import Options.Applicative.Types
 
 data JBossLog = JBossLog
@@ -67,37 +66,37 @@ jbossParser :: Parser (IO ())
 jbossParser = processLog
   <$> strOption
     (  long "source"
-    OA.<> short 's'
-    OA.<> metavar "DESTINATION"
-    OA.<> help "The JBoss log to filter."
+    <> short 's'
+    <> metavar "DESTINATION"
+    <> help "The JBoss log to filter."
     )
   <*> option parseJMeterTimeStamp
     (  long "start-time"
-    OA.<> metavar "START_TIME"
-    OA.<> help "The time at which the test started."
+    <> metavar "START_TIME"
+    <> help "The time at which the test started."
     )
   <*> option parseJMeterTimeStamp
     (  long "end-time"
-    OA.<> metavar "END_TIME"
-    OA.<> help "The time at which the test finished."
+    <> metavar "END_TIME"
+    <> help "The time at which the test finished."
     )
   <*> option parseDay
     (  long "day"
-    OA.<> metavar "DAY"
-    OA.<> help "The JBoss logs do not include the day in the timestamp, but the JMeter timestamps do have day information. This option is used to add the day to the JBoss timestamp."
+    <> metavar "DAY"
+    <> help "The JBoss logs do not include the day in the timestamp, but the JMeter timestamps do have day information. This option is used to add the day to the JBoss timestamp."
     )
   <*> strOption
     (  long "dest"
-    OA.<> short 'd'
-    OA.<> metavar "DESTINATION"
-    OA.<> help "The file path to put the filtered results."
+    <> short 'd'
+    <> metavar "DESTINATION"
+    <> help "The file path to put the filtered results."
     )
 
 jbossInfo :: ParserInfo (IO ())
 jbossInfo = info (helper <*> jbossParser)
   (  fullDesc
-  OA.<> header "JBoss Log Parser"
-  OA.<> progDesc "This is used to extract the relevant sections of the jboss-stdout logfiles from Appian."
+  <> header "JBoss Log Parser"
+  <> progDesc "This is used to extract the relevant sections of the jboss-stdout logfiles from Appian."
   )
 
 parseDay :: ReadM Day

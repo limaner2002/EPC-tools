@@ -19,8 +19,7 @@ import Types ( JMeterOpts (..)
 import Data.Time
 import qualified System.IO as SIO
 
-import Options.Applicative hiding ((<>))
-import qualified Options.Applicative as OA
+import Options.Applicative
 import Options.Applicative.Types
 import Control.Monad.Catch
 import Control.Monad.Trans.State
@@ -36,6 +35,8 @@ import Validate ( validateBatchOpts,
                   ValidationResult (..)
                 )
 
+import Sheets.Opts
+
 instance MonadThrow ReadM where
   throwM exc = readerError $ show exc
 
@@ -44,46 +45,46 @@ logsParser = downloadLogs <$>
   ( LogSettings
   <$> txtOption
   (  long "username"
-  OA.<> short 'u'
-  OA.<> help "The username to use to login to the Appian environment."
-  OA.<> metavar "USERNAME"
+  <> short 'u'
+  <> help "The username to use to login to the Appian environment."
+  <> metavar "USERNAME"
   )
   <*> txtOption
   (  long "password"
-  OA.<> short 'p'
-  OA.<> help "The password of the user to login to the Appian environment."
-  OA.<> metavar "PASSWORD"
+  <> short 'p'
+  <> help "The password of the user to login to the Appian environment."
+  <> metavar "PASSWORD"
   )
   <*> option (fmap pack <$> parseMany)
   (  long "nodes"
-  OA.<> short 'n'
-  OA.<> help "A list of nodes to download the logs from. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
-  OA.<> metavar "\"NODE1 <NODE2 ...>\""
+  <> short 'n'
+  <> help "A list of nodes to download the logs from. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
+  <> metavar "\"NODE1 <NODE2 ...>\""
   )
   <*> option (parseMany >>= sequence . fmap parseRelFile >>= pure . Just)
   (  long "logfiles"
-  OA.<> short 'l'
-  OA.<> help "A list of logfiles to download. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
-  OA.<> metavar "\"LOGFILE1 <LOGFILE2 ...>\""
+  <> short 'l'
+  <> help "A list of logfiles to download. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
+  <> metavar "\"LOGFILE1 <LOGFILE2 ...>\""
   )
   <*> option (readerAsk >>= parseRelDir >>= pure . Just)
   (  long "dest"
-  OA.<> short 'd'
-  OA.<> help "The directory to download the logfiles to."
-  OA.<> metavar "DEST_DIR"
+  <> short 'd'
+  <> help "The directory to download the logfiles to."
+  <> metavar "DEST_DIR"
   )
   <*> txtOption
   (  long "url"
-  OA.<> short 'a'
-  OA.<> help "The url of the Appian environment to download the logs from."
-  OA.<> metavar "APPIAN_ENVIRONMENT_ADDRESS"
+  <> short 'a'
+  <> help "The url of the Appian environment to download the logs from."
+  <> metavar "APPIAN_ENVIRONMENT_ADDRESS"
   ))
 
 logsInfo :: ParserInfo (IO ())
 logsInfo = info (helper <*> logsParser)
   (  fullDesc
-  OA.<> header "Log Downloader Command-Line"
-  OA.<> progDesc "A tool to download log files from an Appian Cloud environment."
+  <> header "Log Downloader Command-Line"
+  <> progDesc "A tool to download log files from an Appian Cloud environment."
   )
 
 txtOption = option (readerAsk >>= pure . pack)
@@ -92,15 +93,15 @@ serverParser :: Parser (IO ())
 serverParser = runServer
   <$> option (readerAsk >>= parseRelDir)
   (  long "scriptsdir"
-  OA.<> short 's'
-  OA.<> help "The path where the java scripts are located."
+  <> short 's'
+  <> help "The path where the java scripts are located."
   )
 
 serverInfo :: ParserInfo (IO ())
 serverInfo = info (helper <*> serverParser)
   (  fullDesc
-  OA.<> header "Log Downloader Server"
-  OA.<> progDesc "Runs a simple webserver for automatically downloading log files from Appian Cloud environments."
+  <> header "Log Downloader Server"
+  <> progDesc "Runs a simple webserver for automatically downloading log files from Appian Cloud environments."
   )
 
 testsParser :: Parser (IO ())
@@ -108,15 +109,15 @@ testsParser = runTests
   <$> parseToScheduledTime
   <*> option parseMany
    (  short 'c'
-   OA.<> help "list of config files to read"
-   OA.<> metavar "\"CONFIG1 <CONFIG2 ...>\""
+   <> help "list of config files to read"
+   <> metavar "\"CONFIG1 <CONFIG2 ...>\""
    )
 
 testsInfo :: ParserInfo (IO ())
 testsInfo = info (helper <*> testsParser)
   (  fullDesc
-  OA.<> header "Run Performance Tests"
-  OA.<> progDesc "Runs the performance tests at a specified time."
+  <> header "Run Performance Tests"
+  <> progDesc "Runs the performance tests at a specified time."
   )
 
 parseMany :: ReadM [String]
@@ -126,12 +127,12 @@ parseToScheduledTime :: Parser ToScheduledTime
 parseToScheduledTime =
   At <$> option (readTime' "%X %Z")
   (  long "at"
-  OA.<> help "Schedule the tests for a specific time and day."
+  <> help "Schedule the tests for a specific time and day."
   )
   <|>
   TOD <$> option (readTime' "%X %Z")
   (  long "tod"
-  OA.<> help "Schedule the tests for a specific time of day. If the time of day is before the current time, the tests will be scheduled for the next day at that time."
+  <> help "Schedule the tests for a specific time of day. If the time of day is before the current time, the tests will be scheduled for the next day at that time."
   )
 
 readTime' :: ParseTime a => String -> ReadM a
@@ -145,15 +146,16 @@ runServer scriptsDir = run 8081 (app scriptsDir)
 parseCommands :: Parser (IO ())
 parseCommands = subparser
   ( command "server" serverInfo
-  OA.<> command "run-tests" testsInfo
-  OA.<> command "analyse" resultsInfo
-  OA.<> command "download-log" logsInfo
+  <> command "run-tests" testsInfo
+  <> command "analyse" resultsInfo
+  <> command "download-log" logsInfo
+  <> command "create-sheet" sheetsInfo
   )
 
 commandsInfo :: ParserInfo (IO ())
 commandsInfo = info (helper <*> parseCommands)
   (  fullDesc
-  OA.<> progDesc "This is a collection of various tools to help aid in EPC Post Commit performance testing."
+  <> progDesc "This is a collection of various tools to help aid in EPC Post Commit performance testing."
   )
 
 main :: IO ()

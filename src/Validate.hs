@@ -3,6 +3,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE Strict #-}
 
 module Validate
   ( validateBatchOpts
@@ -97,7 +98,7 @@ getProperties = deep getThreadGroup &&& deep getAggFilename
 
 checkScript :: MonadIO m => FilePath -> m String
 checkScript fp = liftIO $ do
-  ctnt <- readFile fp
+  ctnt <- unpack <$> readFileUtf8 fp
   r <- runX $ readString [withValidate no, withWarnings no] ctnt >>> getProperties >>> checkProperties
   return $ foldl' (<>) mempty $ fmap showValidations r
 
@@ -132,3 +133,31 @@ addCheck :: MonadState ValidationResult m => ValidationResult -> m ()
 addCheck new = do
   old <- get
   put (old `mappend` new)
+
+checkDomains :: ArrowXml a => a XmlTree (Bool, String)
+checkDomains = hasAttrValue "name" (=="HTTPSampler.domain") /> getText >>> arr checkDomain &&& id
+  where
+    checkDomain d = d == "portal-preprod.usac.org" || d == "${appianHost}"
+
+checkReferer :: ArrowXml a => a XmlTree (Bool, String)
+checkReferer = hasAttrValue "name" (=="Referer")
+  /> hasAttrValue "name" (=="Header.value")
+  /> getText
+  >>> arr checkDomain &&& id
+  where
+    checkDomain d = isInfixOf "${appianHost}" d || isInfixOf "portal-preprod.usac.org" d
+
+checkOrigin :: ArrowXml a => a XmlTree (Bool, String)
+checkOrigin = hasAttrValue "name" (=="Origin")
+  /> hasAttrValue "name" (=="Header.value")
+  /> getText
+  >>> arr (isInfixOf "${appianHost}") &&& id
+  where
+    checkDomain d = isInfixOf "${appianHost}" d || isInfixOf "portal-preprod.usac.org" d
+
+checkHost :: ArrowXml a => a XmlTree (Bool, [String])
+checkHost = deep (checkDomains `orElse` checkReferer `orElse` checkOrigin) >. foldl' red (True, mempty)
+  where
+    red (aBool, aVal) (bBool, bVal) 
+      | bBool = (aBool, aVal)
+      | otherwise = (bBool, aVal <> pure bVal)

@@ -88,7 +88,7 @@ sendMessage txt = do
       message = htmlPart (fromJobMessage txt) `cons` mempty
   res <- tryAny $ sendIt $ makeMail localTime message
   case res of
-    Left exc -> hPutStrLn stderr $ tshow exc
+    Left exc -> hSay stderr $ tshow exc
     Right x -> return x
 
 fromJobMessage :: JobMessage -> TL.Text
