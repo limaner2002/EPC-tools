@@ -24,9 +24,20 @@ sheetsOptParser = createSheet
   <> help "The path of the file to write the output to."
   )
 
-sheetsInfo :: ParserInfo (IO ())
-sheetsInfo = info (helper <*> sheetsOptParser)
+expressionInfo :: ParserInfo (IO ())
+expressionInfo = info (helper <*> sheetsOptParser)
   (  fullDesc
-  <> header "Sheet Creator"
+  <> header "Expression Details Sheet Creator"
   <> progDesc "Gathers reslut and log .csv files and collects them into a single .xslx file."
+  )
+
+sheetsCommands :: Parser (IO ())
+sheetsCommands = subparser
+  ( command "expression-details" expressionInfo
+  )
+
+sheetsInfo :: ParserInfo (IO ())
+sheetsInfo = info (helper <*> sheetsCommands)
+  ( fullDesc
+  <> header "Sheet Creater"
   )
