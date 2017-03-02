@@ -6,11 +6,12 @@ module Sheets.Opts
   ) where
 
 import ClassyPrelude
-import Sheets.ExpressionDetailsSheet
+import qualified Sheets.ExpressionDetailsSheet as Exp
 import Options.Applicative
+import qualified Sheets.AggregateSheets as Agg
 
 sheetsOptParser :: Parser (IO ())
-sheetsOptParser = createSheet
+sheetsOptParser = Exp.createSheet
   <$> strOption
   (  long "sourceDir"
   <> short 's'
@@ -31,9 +32,26 @@ expressionInfo = info (helper <*> sheetsOptParser)
   <> progDesc "Gathers reslut and log .csv files and collects them into a single .xslx file."
   )
 
+aggregateOptParser :: Parser (IO ())
+aggregateOptParser = Agg.createSheet
+  <$> strOption
+  (  long "outFile"
+  <> short 'o'
+  <> metavar "OUT_FILE"
+  <> help "The file to write the resulting .xlss to."
+  )
+
+aggregateInfo :: ParserInfo (IO ())
+aggregateInfo = info (helper <*> aggregateOptParser)
+  (  fullDesc
+  <> header "Aggregate Report Sheet Creator"
+  <> progDesc "Creates a sheet from the aggregate reports."
+  )
+
 sheetsCommands :: Parser (IO ())
 sheetsCommands = subparser
-  ( command "expression-details" expressionInfo
+  (  command "expression-details" expressionInfo
+  <> command "aggregate-sheet" aggregateInfo
   )
 
 sheetsInfo :: ParserInfo (IO ())

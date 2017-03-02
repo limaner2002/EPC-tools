@@ -2,7 +2,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Arrows #-}
 
-module Sheets.AggregateSheets where
+module Sheets.AggregateSheets
+  ( createSheet
+  ) where
 
 import ClassyPrelude hiding (throwM)
 import Codec.Xlsx
@@ -113,9 +115,10 @@ filterFcn (Right (x:_)) = checkIt $ headMay x
     checkIt (Just c) = not $ isDigit c
 
 doIt :: MonadResource m =>
-  POSIXTime -> 
+  POSIXTime ->
+  FilePath ->
   ProcessA (Kleisli m) (Event (Text, FilePath)) (Event ())
-doIt t = makeWorkbook t myArr >>> addStyleSheet >>> serializeSheet t >>> writeSheet "/tmp/result.xlsx"
+doIt t outPath = makeWorkbook t myArr >>> addStyleSheet >>> serializeSheet t >>> writeSheet outPath
   where
     myArr = sourceFile >>> readRows def >>> makeRow_ >>> evMap (id *** fmap asAggRow) >>> makeSheet >>> conditionalFormatting >>> addViewSheet
     asAggRow :: AggregateRow -> AggregateRow
@@ -148,7 +151,7 @@ addStyleSheet :: (ArrowApply a, Functor f) =>
      ProcessA a (Event (f Xlsx)) (Event (f Xlsx))
 addStyleSheet = evMap (fmap $ xlStyles .~ renderStyleSheet styleSheet)
 
-createSheet :: IO ()
-createSheet = do
+createSheet :: FilePath -> IO ()
+createSheet outPath = do
   ct <- getPOSIXTime
-  runRMachine_ (doIt ct) [("5 Users", "/tmp/aggregate_5.csv"), ("25 Users", "/tmp/aggregate_25.csv"), ("50 Users", "/tmp/aggregate_50.csv"), ("100 Users", "/tmp/aggregate_100.csv")]
+  runRMachine_ (doIt ct outPath) [("5 Users", "/tmp/aggregate_5.csv"), ("25 Users", "/tmp/aggregate_25.csv"), ("50 Users", "/tmp/aggregate_50.csv"), ("100 Users", "/tmp/aggregate_100.csv")]
