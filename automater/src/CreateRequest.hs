@@ -15,7 +15,10 @@ import Data.Default
 import Control.Arrow
 
 data Action a
-  = HRef Text
+  = HRef
+    { href :: Text
+    , hrMethod :: Text
+    }
   | Update
     { saveInto :: [SaveInto]
     , value :: Value_ a
@@ -31,7 +34,7 @@ instance ToJSON a => ToJSON (Action a) where
     , "atomic" .= at
     , "#t" .= typ
     ]
-  toJSON (HRef t) = object
+  toJSON (HRef t _) = object
     [ "link" .= t
     ]
 
@@ -90,10 +93,10 @@ openCaseLink = proc input -> do
   link <- getKeyValue  "link" >>> getKeyValue "uri" >>> valToText -< linkItem
   mActID <- arr (lastMay . splitElem '/') -< link
   case mActID of
-    Nothing -> returnA -< HRef link
+    Nothing -> returnA -< HRef link "GET"
     Just actionID -> do
       actionLink <- arr mkActionLink -< actionID
-      unlistA >>> returnA -< fmap HRef [link, actionLink]
+      unlistA >>> returnA -< fmap (\x -> HRef x "GET") [link, actionLink]
   where
     mkActionLink actionID = baseURL <> actionID
     baseURL = "/suite/api/tempo/open-a-case/action/"
@@ -121,3 +124,4 @@ maybeL = proc input -> do
   case input of
     Nothing -> none >>> returnA -< input
     Just a -> returnA -< a
+
