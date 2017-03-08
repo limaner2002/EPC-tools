@@ -96,7 +96,7 @@ openCaseLink = proc input -> do
     Nothing -> returnA -< HRef link "GET"
     Just actionID -> do
       actionLink <- arr mkActionLink -< actionID
-      unlistA >>> returnA -< fmap (\x -> HRef x "GET") [link, actionLink]
+      unlistA >>> returnA -< fmap (\x -> HRef x "GET") [actionLink]
   where
     mkActionLink actionID = baseURL <> actionID
     baseURL = "/suite/api/tempo/open-a-case/action/"

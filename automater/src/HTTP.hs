@@ -2,12 +2,13 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecursiveDo #-}
 
 module HTTP where
 
 import ClassyPrelude
 
-import MachineUtils hiding (filter)
+import MachineUtils hiding (filter, mergeEvents)
 import qualified MachineUtils as MU
 import ParseCSV
 import Data.Aeson (json, Value, ToJSON, FromJSON, encode, eitherDecode)
@@ -40,7 +41,7 @@ getCookies :: MonadResource m => ProcessA (Kleisli m) (Event (Request, Manager))
 getCookies = makeRequest >>> evMap (responseCookieJar . snd)
 
 getCsrfToken :: ArrowApply a => ProcessA a (Event CookieJar) (Event Cookie)
-getCsrfToken = evMap destroyCookieJar >>> evMap (\l -> filter (\c -> cookie_name c == "__appianCsrfToken") l) >>> blockingSource'
+getCsrfToken = evMap destroyCookieJar >>> evMap (\l -> filter (\c -> cookie_name c == "__appianCsrfToken") l) >>> MU.fork
 
 csrfTokenBSPair :: Arrow a => a Cookie Header
 csrfTokenBSPair = arr (const $ CI.mk "X-APPIAN-CSRF-TOKEN") &&& arr (cookie_value)
@@ -55,86 +56,54 @@ insertHeader = arr (uncurry insertHeader_)
 
 type RsrcResp = (ReleaseKey, Response BodyReader)
 
--- reqManager' :: MonadResource m => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event Request, Event (Response BodyReader)) (Event (ReleaseKey, Response BodyReader), Event (Response BodyReader))
--- reqManager' mgr initReq loginReq = switch before after
---   where
---     before = proc (req, _) -> do
---       resp <- makeRequest >>> evMap snd -< (initReq, mgr) <$ req
---       csrfToken <- csrfTokenHeader -< resp
-
---       req' <- id *** evMap responseCookieJar >>> mergeEvents >>> machine (uncurry nowInsert) >>> evMap fst >>> evMap (addRequestHeaders baseHeaders) -< (loginReq <$ resp, resp)
---       req'' <- mergeEvents >>> anytime insertHeader -< (csrfToken, req')
---       req''' <- mergeEvents >>> evMap (uncurry appendQueryString) -< (csrfToken, req'')
-
---       respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\req -> (req, mgr)) req'''
---       resp' <- evMap snd -< respWithKey
-
---       returnA -< ((respWithKey, resp'), resp')
---     after initResp = proc (reqEvt, respFB) -> do
---       oldResp <- anytime (passthroughK $ const $ putStrLn "Feedback fired!") >>> hold initResp -< respFB
-
---       req <- setReq mgr -< (reqEvt, oldResp <$ reqEvt)
---       respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\req -> (req, mgr)) req
-
---       oldResp' <- evMap snd -< respWithKey
---       returnA -< (respWithKey, oldResp')
-
--- reqManager :: (FromJSON a, ToJSON a, MonadResource m, Show a) => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event (LA (Either SomeException Value) (Action a)), Event RsrcResp) (Event RsrcResp, Event RsrcResp)
--- reqManager mgr initReq loginReq = switch before after
-reqManager :: (FromJSON a, ToJSON a, MonadResource m, Show a) => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event (LA Value (Action a))) (Event RsrcResp)
-reqManager mgr initReq loginReq = switch before (reqManager_ mgr)
+reqManager :: (FromJSON a, ToJSON a, MonadResource m) => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event (LA Value (Action a))) (Event RsrcResp)
+reqManager mgr initReq loginReq = switch (login mgr initReq loginReq) after
   where
-    before = proc act -> do
-      resp <- makeRequest -< (initReq, mgr) <$ act
-      csrfToken <- evMap snd >>> csrfTokenHeader -< resp
+    after initResp = proc actEvt -> do
+      rec
+        req <- updateRequest -< fmap (\act -> (act, oldResp)) actEvt
+        req' <- setReq -< fmap (\r -> (r, oldResp)) req
+        respWithKey <- makeRequest -< fmap (\r -> (r, mgr)) req'
+        oldResp <- dHold initResp -< respWithKey
+      returnA -< respWithKey
 
-      req' <- id *** evMap (responseCookieJar . snd) >>> mergeEvents >>> machine (uncurry nowInsert) >>> evMap fst >>> evMap (addRequestHeaders baseHeaders) -< (loginReq <$ resp, resp)
-      req'' <- mergeEvents >>> anytime insertHeader -< (csrfToken, req')
-      req''' <- mergeEvents >>> evMap (uncurry appendQueryString) -< (csrfToken, req'')
-
-      respWithKey <- makeRequest -< fmap (\req -> (req, mgr)) req'''
-
-      returnA -< (respWithKey, respWithKey)
-
-reqManager_ :: (FromJSON a, ToJSON a, MonadResource m, Show a) => Manager -> RsrcResp -> ProcessA (Kleisli m) (Event (LA Value (Action a))) (Event RsrcResp)
-reqManager_ mgr oldResp = switch before after
+cookieManager :: MonadResource m => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event Request) (Event RsrcResp)
+cookieManager mgr initReq loginReq = switch (login mgr initReq loginReq) after
   where
-    before = proc actEvt -> do
-      req <- updateRequest -< fmap (\act -> (act, oldResp)) actEvt
-      req' <- id *** evMap snd >>> setReq mgr -< (req, oldResp <$ req)
-      respWithKey <- makeRequest >>> anytime (passthroughK $ const $ putStrLn "Made request") -< fmap (\r -> (r, mgr)) req'
+    after initResp = proc reqEvt -> do
+      rec
+        req <- anytime (passthroughK (print . fst)) >>> setReq -< fmap (\r -> (r, oldResp)) reqEvt
+        respWithKey <- makeRequest -< fmap (\r -> (r, mgr)) req
+        oldResp <- dHold initResp -< respWithKey
+      returnA -< respWithKey
 
-      returnA -< (respWithKey, respWithKey)
-    after old = reqManager_ mgr old
-      
-
-setReq :: MonadResource m => Manager -> ProcessA (Kleisli m) (Event Request, Event (Response BodyReader)) (Event Request)
-setReq mgr = proc (reqEvt, oldResp) -> do
-  csrfToken <- csrfTokenHeader -< oldResp
-  req' <- mergeEventsL >>> evMap (id *** arr responseCookieJar) >>> machine (uncurry nowInsert) >>> evMap fst >>> evMap (addRequestHeaders baseHeaders) -< (reqEvt, oldResp)
-  req'' <- mergeEventsL >>> anytime insertHeader -< (csrfToken, req')
+setReq :: MonadResource m => ProcessA (Kleisli m) (Event (Request, RsrcResp)) (Event Request)
+setReq = proc input -> do
+  csrfToken <- evMap (snd . snd) >>> csrfTokenHeader -< input
+  req' <- evMap (id *** arr (responseCookieJar . snd)) >>> machine (uncurry nowInsert) >>> evMap fst >>> evMap (addRequestHeaders baseHeaders) -< input
+  req'' <- mergeEventsR >>> anytime insertHeader -< (csrfToken, req')
   returnA -< req''
 
 
-login :: MonadResource m => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event a, Event RsrcResp) ((Event RsrcResp, Event RsrcResp), Event RsrcResp)
-login mgr initReq loginReq = proc (a, _) -> do
+login :: MonadResource m => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event a) (Event RsrcResp, Event RsrcResp)
+login mgr initReq loginReq = proc a -> do
   resp <- makeRequest >>> evMap snd -< (initReq, mgr) <$ a
   csrfToken <- csrfTokenHeader -< resp
 
-  req' <- id *** evMap responseCookieJar >>> mergeEvents >>> machine (uncurry nowInsert) >>> evMap fst >>> evMap (addRequestHeaders baseHeaders) -< (loginReq <$ resp, resp)
-  req'' <- mergeEvents >>> anytime insertHeader -< (csrfToken, req')
-  req''' <- mergeEvents >>> evMap (uncurry appendQueryString) -< (csrfToken, req'')
+  req' <- id *** evMap responseCookieJar >>> mergeEventsL >>> machine (uncurry nowInsert) >>> evMap fst >>> evMap (addRequestHeaders baseHeaders) -< (loginReq <$ resp, resp)
+  req'' <- mergeEventsR >>> anytime insertHeader -< (csrfToken, req')
+  req''' <- mergeEventsR >>> evMap (uncurry appendQueryString) -< (csrfToken, req'')
 
   respWithKey <- makeRequest -< fmap (\req -> (req, mgr)) req'''
 
-  returnA -< ((respWithKey, respWithKey), respWithKey)
+  returnA -< (respWithKey, respWithKey)
 
-updateRequest :: (ToJSON a, FromJSON a, MonadResource m, Show a) => ProcessA (Kleisli m) (Event (LA Value (Action a), RsrcResp)) (Event Request)
+updateRequest :: (ToJSON a, FromJSON a, MonadResource m) => ProcessA (Kleisli m) (Event (LA Value (Action a), RsrcResp)) (Event Request)
 updateRequest =
   evMap fst &&& (evMap snd >>> sourceHttp_ >>> evMap snd >>> machineParser' appianResponseParser)
-  >>> mergeEventsL
-  >>> evMap (\(act, resp) -> runLA act resp)
-  >>> blockingSource'
+  >>> mergeEventsR
+  >>> evMap (\(act, resp) -> take 1 $ runLA act resp)
+  >>> MU.fork
   >>> machine mkUpdateRequest
   >>> anytime (passthroughK $ \x -> putStrLn $ "Creating new request: " <> tshow x)
 
@@ -144,32 +113,42 @@ testIt = do
   siteReq <- parseRequest "https://portal-test.usac.org"
   loginReq <- authReq baseUrl "app1_lb1_full1@mailinator.com" "USACuser123$" mempty
 
+  -- loadRepReq <- parseRequest "https://portal-test.usac.org/suite/rest/a/uicontainer/latest/YB7oUg/view"
+  -- logoutReq <- parseRequest "https://portal-test.usac.org/suite/logout"
+
+  -- runRMachine_ (cookieManager mgr siteReq loginReq >>> evMap snd >>> evMap responseStatus >>> machine print)
+  --   [ loadRepReq
+  --   , logoutReq
+  --   ]
+
   let loadRep = mkHRef "/suite/rest/a/uicontainer/latest/YB7oUg/view" "GET" :: Action Text
       logoutReq = mkHRef "/suite/logout" "GET"  :: Action Text
       caseReq = mkHRef "https://portal-test.usac.org/suite/api/tempo/open-a-case/action/ksBnWUR1XjkLMmEri-oDn0gL2Fmrr_v3Fcs3gqyQpKrFxfzkjtesbm7cYTL9ZE8wYQ1dhVXb6DJV6r4NQGEX3geSw_O-io80YMwqMk" "GET" :: Action Text
       taskReq = mkHRef "https://portal-test.usac.org/suite/rest/a/model/latest/4064" "POST"
 
-  runRMachine_ (reqManager mgr siteReq loginReq >>> evMap snd >>> evMap responseStatus >>> machine print)
+  runRMachine_ (reqManager mgr siteReq loginReq >>> evMap (responseStatus . snd) >>> machine print) -- mkFileName "/tmp/req_" >>> id *** (sourceHttp_ >>> evMap snd) >>> sinkFile_) -- sourceHttp_ >>> evMap snd >>> machine (putStr . decodeUtf8))
     [ arr (const loadRep)
-    -- , openCaseLink
+    , openCaseLink
     -- , arr (const taskReq)
     -- , text "Nickname" "PerfTest"
-    , arr (const loadRep)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
-    , arr (const logoutReq)
+    -- , arr (const loadRep)
     , arr (const logoutReq)
     ]
-  -- runRMachine_ (machine mkUpdateRequest >>> loop (reqManager' mgr siteReq loginReq) >>> evMap snd >>> evMap responseStatus >>> machine print) [loadRep, caseReq, logoutReq]
-  where
-    asEither :: Either SomeException a -> Either SomeException a
-    asEither = id
+  -- where
+  --   runIt :: MonadResource m => ProcessA (Kleisli m) (Event (ReleaseKey, Response BodyReader)) (Event FilePath, Event ByteString)
+  --   runIt = proc input -> do
+  --     res <- mkFileName "/tmp/req_" -< input
+  --     bs <- sourceHttp_ >>> evMap snd -< _
+  --     returnA -< (res, bs)
+
+mkFileName :: ArrowApply a => FilePath -> ProcessA a (Event b) (Event FilePath, Event b)
+mkFileName fpPrefix = proc input -> do
+  rec
+    fp <- arr mkFileName' -< (fpPrefix, n)
+    n <- hold 0 >>> arr (+1) -< n <$ input
+  returnA -< (fp <$ input, input)
+ where
+   mkFileName' (prefix, n) = prefix <> show n
 
 authReq :: MonadThrow m => String -> Text -> Text -> [(ByteString, Maybe ByteString)] -> m Request
 authReq baseUrl un pw params = setRequestMethod "POST"
@@ -237,6 +216,17 @@ mergeEventsL = proc (evtA, evtB) -> do
   where
     f mA mB = (,) <$> mA <*> mB
 
+-- Merge two events into one and fire when the right event fires
+mergeEventsR :: ArrowApply a => ProcessA a (Event b, Event c) (Event (b, c))
+mergeEventsR = proc (evtA, evtB) -> do
+  mA <- evMap Just >>> hold Nothing -< evtA
+  mB <- evMap Just >>> hold Nothing -< evtB
+  case f mA mB of
+    Nothing -> returnA -< noEvent
+    Just (a, b) -> returnA -< (a, b) <$ evtB
+  where
+    f mA mB = (,) <$> mA <*> mB
+
 mergeAccumL :: (ArrowApply a, Monoid c, Semigroup c) => ProcessA a (Event b, Event c) (Event (b, c))
 mergeAccumL = proc (evtA, evtB) -> do
   mA <- evMap Just >>> hold Nothing -< evtA
@@ -244,6 +234,32 @@ mergeAccumL = proc (evtA, evtB) -> do
   case mA of
     Nothing -> returnA -< noEvent
     Just a -> returnA -< (a, acc) <$ evtA
+
+mergeEvents :: ArrowApply a => ProcessA a (Event b, Event c) (Event (b, c))
+mergeEvents = proc (evtA, evtB) -> do
+  mA <- evMap Just >>> hold Nothing -< evtA
+  mB <- evMap Just >>> hold Nothing -< evtB
+  case f mA mB of
+    Nothing -> returnA -< noEvent
+    Just vals -> do
+      e <- gather -< [() <$ evtA, () <$ evtB]
+      returnA -< vals <$ e
+  where
+    f mA mB = (,) <$> mA <*> mB
+
+mergeEvents' :: ArrowApply a => ProcessA a (Event b, Event c) (Event (b, c))
+mergeEvents' = dSwitch before after
+  where
+    before = proc (evtA, evtB) -> do
+      mA <- evMap Just >>> hold Nothing -< evtA
+      mB <- evMap Just >>> hold Nothing -< evtB
+      case f mA mB of
+        Nothing -> returnA -< noEvent
+        Just vals -> do
+          e <- gather -< [() <$ evtA, () <$ evtB]
+          returnA -< (vals <$ e, e)
+    after _ = mergeEvents'
+    f mA mB = (,) <$> mA <*> mB
 
 (>>|) :: ArrowApply cat => ProcessA cat (Event a) (Event d) -> ProcessA cat (Event b) (Event d) -> ProcessA cat (Event (Either a b)) (Event d)
 (>>|) catA catB = proc input -> do
