@@ -18,6 +18,8 @@ data Action a
   = HRef
     { href :: Text
     , hrMethod :: Text
+    , hrBody :: ByteString
+    , hrAccept :: Maybe ByteString
     }
   | Update
     { saveInto :: [SaveInto]
@@ -34,7 +36,7 @@ instance ToJSON a => ToJSON (Action a) where
     , "atomic" .= at
     , "#t" .= typ
     ]
-  toJSON (HRef t _) = object
+  toJSON (HRef t _ _ _) = object
     [ "link" .= t
     ]
 
@@ -93,10 +95,10 @@ openCaseLink = proc input -> do
   link <- getKeyValue  "link" >>> getKeyValue "uri" >>> valToText -< linkItem
   mActID <- arr (lastMay . splitElem '/') -< link
   case mActID of
-    Nothing -> returnA -< HRef link "GET"
+    Nothing -> returnA -< HRef link "GET" mempty Nothing
     Just actionID -> do
       actionLink <- arr mkActionLink -< actionID
-      unlistA >>> returnA -< fmap (\x -> HRef x "GET") [actionLink]
+      unlistA >>> returnA -< fmap (\x -> HRef x "GET" mempty Nothing) [actionLink]
   where
     mkActionLink actionID = baseURL <> actionID
     baseURL = "/suite/api/tempo/open-a-case/action/"
