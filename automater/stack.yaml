@@ -39,7 +39,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/limaner2002/machinecell-contrib.git
-    commit: 875cabce5171aeb4d6878642bda6f743be960542
+    commit: caac6d4d0aae951506f97093fcc6bbe5fb18b5fd
   extra-dep: true
 # - location: /Users/josh/workspace/machinecell-contrib
 #   extra-dep: true

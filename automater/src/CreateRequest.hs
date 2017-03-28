@@ -9,6 +9,7 @@ import Data.Aeson
 
 import Control.Arrow.ArrowList
 import Control.Arrow.ArrowIf
+import Control.Arrow.ListArrow (runLA)
 import JSONTreeLA
 
 import Data.Default
@@ -127,3 +128,22 @@ maybeL = proc input -> do
     Nothing -> none >>> returnA -< input
     Just a -> returnA -< a
 
+getAttrLinks :: (ArrowIf cat, ArrowChoice cat) => cat Value (Action Text)
+-- getAttrLinks = id //> hasKey "entries" >>> getKeyValue "entries" /> getKeyValue "links" /> hasKeyValue "rel" (=="task.attributes") >>> getKeyValue "href" >>> valToText >>> arr (\x -> HRef x "GET" mempty (Just "application/atom+json,application/json"))
+getAttrLinks = proc input -> do
+  taskID <- id //> hasKey "entries" >>> getKeyValue "entries" //> getKeyValue "id" >>> valToText >>> arr (stripPrefix "t-") >>> maybeL >>> arr (baseURL <>) -< input
+  attrAct <- arr (<> "/attributes") >>> arr (\x -> mkHRef x "GET" mempty (Just "application/json")) -< taskID
+  returnA -< attrAct
+  where
+    baseURL = "/suite/rest/a/task/latest/"
+
+getAttrLink :: ArrowList cat => cat Value (Action Text)
+getAttrLink = arr (runLA getAttrLinks) >>> arrL (take 1)
+
+mkHRef :: Text -> Text -> ByteString -> Maybe ByteString -> Action a
+mkHRef url method body mAccept
+  | isPrefixOf "http://" url || isPrefixOf "https://" url = HRef url method body mAccept
+  | otherwise = HRef (baseUrl <> url) method body mAccept
+
+baseUrl :: IsString t => t
+baseUrl = "https://portal-preprod.usac.org"
