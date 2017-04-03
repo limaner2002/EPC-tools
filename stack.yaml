@@ -1,7 +1,7 @@
 # For more information, see: http://docs.haskellstack.org/en/stable/yaml_configuration.html
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
-resolver: lts-8.0
+resolver: lts-8.5
 
 # Local packages, usually specified by relative directory name
 packages:
@@ -21,10 +21,11 @@ packages:
 #   extra-dep: true
 - location:
     git: https://github.com/limaner2002/hs-config.git
-    commit: 640c840b13f8caa5155117bfc2134ced70bf4afe
+    commit: c0bfd2df9a672587a7a88e01ffeb7193001ca36b
   extra-dep: true
 - location: results
 - location: sheets
+- location: scheduler-ui
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:

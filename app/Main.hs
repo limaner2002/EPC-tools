@@ -15,6 +15,8 @@ import Types ( JMeterOpts (..)
              , BatchOpts
              , Validated
              , LogSettings (..)
+             , Run (..)
+             , NUsers (..)
              )
 import Data.Time
 import qualified System.IO as SIO
@@ -29,6 +31,8 @@ import Network.Wai.Handler.Warp
 import Server
 import SendMail
 import Results
+import Scheduler.Server
+import Control.Arrow (Kleisli (..))
 import GetLogs (downloadLogs)
 
 import Validate ( validateBatchOpts,
@@ -106,7 +110,12 @@ serverInfo = info (helper <*> serverParser)
 
 testsParser :: Parser (IO ())
 testsParser = runTests
-  <$> parseToScheduledTime
+  <$> flag Execute DryRun
+  (  long "dryRun"
+  <> short 'd'
+  <> help "Run the tests with only 1 user and 1 loop"
+  )
+  <*> parseToScheduledTime
   <*> option parseMany
    (  short 'c'
    <> help "list of config files to read"
@@ -168,10 +177,10 @@ data ExecutionStatus
   | Running
   | Finished
 
-readJMeterOpts :: MonadThrow m => Config -> m JMeterOpts
-readJMeterOpts cfg =
-  JMeterOpts <$> getVal' "nRuns"
-             <*> getVal' "nUsers"
+readJMeterOpts :: MonadThrow m => ExecuteType -> Config -> m JMeterOpts
+readJMeterOpts execType cfg =
+  JMeterOpts <$> dryVal execType (pure $ Run 1) (getVal' "nRuns")
+             <*> dryVal execType (pure $ [NUsers 1]) (getVal' "nUsers")
              <*> getVal' "jmxPath"
              <*> getVal' "jmeterPath"
              <*> getVal' "runName"
@@ -184,12 +193,18 @@ readJMeterOpts cfg =
                 -- '=' characters.
     replaceIt :: [Text] -> [Text]
     replaceIt = fmap (replaceElem '@' '=')
+    dryVal DryRun f _ = f
+    dryVal Execute _ f = f
 
-runTests :: ToScheduledTime -> [FilePath] -> IO ()
-runTests timestamp configFiles = do
+data ExecuteType
+  = Execute
+  | DryRun
+
+runTests :: ExecuteType -> ToScheduledTime -> [FilePath] -> IO ()
+runTests execType timestamp configFiles = do
   tz <- getCurrentTimeZone
   cfgs <- mapM (readConfigFile . unpack) configFiles
-  let eOpts = sequence $ fmap readJMeterOpts cfgs
+  let eOpts = sequence $ fmap (readJMeterOpts execType) cfgs
   case eOpts of
     Left msg -> fail $ show msg
     Right opts -> do
@@ -255,3 +270,13 @@ checkJobStatusTime = TOD $ toTimeOfDay "21:00:00"
 
 sendScheduledInfo :: ToScheduledTime
 sendScheduledInfo = TOD $ toTimeOfDay "08:00:00"
+
+toJMeterOpts :: (MonadThrow m, MonadIO m) => FilePath -> m JMeterOpts
+toJMeterOpts fp = do
+  cfg <- readConfigFile fp
+  readJMeterOpts Execute cfg
+
+runServer' :: IO ()
+runServer' = do
+  v <- newTVarIO mempty
+  run 8080 $ application (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)) v

@@ -5,6 +5,7 @@ module Execute
   ( schedule
   , batchJMeterScripts
   , doIfDirIsEmpty
+  , runJMeter
   ) where
 
 import ClassyPrelude
@@ -50,8 +51,8 @@ runCommand _ = do
 isEmptyDirectory [] = True
 isEmptyDirectory _ = False
 
-runJMeter :: JMeterOpts -> IO ()
-runJMeter opts@(JMeterOpts n users _ jmeterPath _ _ _) = mapM_ runForNUsers users
+runJMeter_ :: JMeterOpts -> IO ()
+runJMeter_ opts@(JMeterOpts n users _ jmeterPath _ _ _) = mapM_ runForNUsers users
   where
     createNUsersDir (NUsers u) = do
       exists <- doesDirectoryExist $ show u
@@ -70,25 +71,25 @@ runJMeter opts@(JMeterOpts n users _ jmeterPath _ _ _) = mapM_ runForNUsers user
       setCurrentDirectory newDir
       putStrLn $ "Running command: " <> (pack $ showCmdSpec cmd)
       runCommand (newCP cmd)
-      putStrLn "Waiting for 1 minute"
-      threadDelay 60000000
       setCurrentDirectory "../"
     extractRun (Run n) = n
     extractUser (NUsers u) = u
 
 batchJMeterScripts :: BatchOpts Validated -> IO ()
-batchJMeterScripts batchOpts = mapM_ go runs
+batchJMeterScripts batchOpts = mapM_ runJMeter runs
   where
-    go run = do
+    runs = fromBatchOpts batchOpts
+
+runJMeter :: JMeterOpts -> IO ()
+runJMeter run = do
       createDirectoryIfMissing False $ unpack . fromRunName $ runName run
       setCurrentDirectory $ unpack . fromRunName $ runName run
-      res <- tryAny $ runJMeter run
+      res <- tryAny $ runJMeter_ run
       case res of
         Left exc -> print exc
         Right x -> return x
       setCurrentDirectory "../"
       delayJob $ sleepTime run
-    runs = fromBatchOpts batchOpts
 
 runningMessage :: JMeterOpts -> Text
 runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts sleepTime) = do

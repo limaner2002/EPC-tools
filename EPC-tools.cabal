@@ -51,6 +51,7 @@ library
                      , lens
                      , mtl
                      , transformers
+                     , scheduler-ui
   default-language:    Haskell2010
 
 executable EPC-tools

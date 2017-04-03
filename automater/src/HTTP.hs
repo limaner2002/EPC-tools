@@ -94,29 +94,43 @@ updateSessionInfo_ ct respWithKey req (SessionInfo {cookies = cj}) = SessionInfo
     respWithKey' = fmap (const resp') respWithKey
 
 reqManager :: (Show a, FromJSON a, ToJSON a, MonadResource m) => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event (LA Value (Action a))) (Event RsrcResp)
-reqManager mgr initReq loginReq = switch (login mgr initReq loginReq) (feedBack after)
-  where
-    after = proc input -> do
-      (actEvt, sInfo) <- evMap fst &&& evMap snd -< input
-      req <- evMap (id *** response) >>> updateRequest -< input -- fmap (\act -> (act, sInfo)) actEvt
-      req' <- mergeEvents' >>> setReq -< (req, sInfo) -- fmap (\r -> (r, sInfo)) req
-      respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
-
-      x <- mergeEvents' -< (respWithKey, req')
-      sInfo' <- mergeEvents' >>> evMap (\((x,y), z) -> (x, y, z)) >>> updateSessionInfo -< (x, sInfo) -- fmap (\(x, y) -> (x, y, sInfo)) x
-      res <- mergeEvents' -< (respWithKey, sInfo')
-      returnA -< res
+reqManager mgr initReq loginReq = switch (login mgr initReq loginReq) after
   -- where
-  --   after sInit = proc actEvt -> do
-  --     rec
-  --       req <- evMap (id *** response) >>> updateRequest -< fmap (\act -> (act, sInfo)) actEvt
-  --       req' <- setReq -< fmap (\r -> (r, sInfo)) req
-  --       respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
+  --   after = proc input -> do
+  --     (actEvt, sInfo) <- evMap fst &&& evMap snd -< input
+  --     req <- evMap (id *** response) >>> updateRequest -< input -- fmap (\act -> (act, sInfo)) actEvt
+  --     req' <- mergeEvents' >>> setReq -< (req, sInfo) -- fmap (\r -> (r, sInfo)) req
+  --     respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
 
-  --       x <- mergeEvents' -< (respWithKey, req')
-  --       sInfo' <- updateSessionInfo -< fmap (\(x, y) -> (x, y, sInfo)) x
-  --       sInfo <- hold sInit -< sInfo'
-  --     returnA -< respWithKey
+  --     x <- mergeEvents' -< (respWithKey, req')
+  --     sInfo' <- mergeEvents' >>> evMap (\((x,y), z) -> (x, y, z)) >>> updateSessionInfo -< (x, sInfo) -- fmap (\(x, y) -> (x, y, sInfo)) x
+  --     res <- mergeEvents' -< (respWithKey, sInfo')
+  --     returnA -< res
+  where
+    after sInit = proc actEvt -> do
+      rec
+        req <- evMap (id *** response) >>> updateRequest -< fmap (\act -> (act, sInfo)) actEvt
+        req' <- setReq -< fmap (\r -> (r, sInfo)) req
+        respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
+
+        x <- mergeEvents' -< (respWithKey, req')
+        sInfo' <- updateSessionInfo -< fmap (\(x, y) -> (x, y, sInfo)) x
+        sInfo <- hold sInit -< sInfo'
+      returnA -< respWithKey
+  -- where
+  --   after sInit = evMap (\act -> (act, sInit)) >>> feedback f id
+  --   f = proc input -> do
+  --     sInfo <- evMap snd -< input
+  --     req <- evMap (id *** response) >>> updateRequest -< input
+  --     req' <- mergeEvents' >>> setReq -< (req, sInfo)
+  --     respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
+
+  --     x <- mergeEvents' -< (respWithKey, req')
+  --     y <- mergeEvents' >>> evMap (\((x, y), z) -> (x, y, z)) -< (x, sInfo)
+
+  --     sInfo'
+
+  --     returnA -< _
 
     -- This is causing the problem as well as updateRequest
 setReq :: MonadResource m => ProcessA (Kleisli m) (Event (Request, SessionInfo)) (Event Request)
@@ -373,3 +387,14 @@ mergeEvents' = proc (evtA, evtB) -> do
   returnA -< res
   where
     f mA mB = (,) <$> mA <*> mB
+
+feedback :: ArrowApply a => ProcessA a (Event (b, c)) (Event [d]) -> ProcessA a (Event d) (Event c) -> ProcessA a (Event (b, c)) (Event c)
+feedback f g = go
+  where
+    go = proc input -> do
+      b <- evMap fst -< input
+      ds <- f -< input
+      c <- MU.fork >>> g -< ds
+      x <- mergeEvents' -< (b, c)
+      res <- drSwitch (evMap snd) -< (x, go <$ x)
+      returnA -< res

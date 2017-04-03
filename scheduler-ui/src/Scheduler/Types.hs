@@ -1,24 +1,31 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module Types
+module Scheduler.Types
   ( JobStatus (..)
   , Job (..)
   , JobQueue
+  , jobName
+  , jobStatus
   ) where
 
 import ClassyPrelude
+import Control.Lens
 
 data JobStatus
   = Queued
   | Running
   | Finished
-  deriving (Show, Generic)
+  deriving (Show, Eq, Generic)
 
-data Job = Job
-  { jobName :: Text
-  , jobStatus :: JobStatus
+data Job a = Job
+  { _jobName :: Text
+  , _jobStatus :: JobStatus
+  , _jobVal :: a
   } deriving (Show, Generic)
 
-type JobQueue = Map Text Job
+type JobQueue a = [Job a]
+
+makeLenses ''Job
