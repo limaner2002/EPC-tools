@@ -60,6 +60,7 @@ extra-deps:
 - arrows-0.4.4.1
 - Stream-0.4.7.2
 - lazysmallcheck-0.6
+- Stack-0.3.2
 
 # Override default flag values for local packages and extra-deps
 flags: {}

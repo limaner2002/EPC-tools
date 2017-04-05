@@ -3,6 +3,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module HTTP where
 
@@ -24,6 +25,8 @@ import Network.HTTP.Simple (setRequestMethod, addRequestHeader, setRequestHeader
 import Data.Time
 import JSONTreeLA
 import Control.Arrow.ListArrow
+
+import Control.Concurrent.STM.Stack
 
 import CreateRequest
 import Parsers
@@ -93,8 +96,57 @@ updateSessionInfo_ ct respWithKey req (SessionInfo {cookies = cj}) = SessionInfo
     resp = snd respWithKey
     respWithKey' = fmap (const resp') respWithKey
 
-reqManager :: (Show a, FromJSON a, ToJSON a, MonadResource m) => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event (LA Value (Action a))) (Event RsrcResp)
+data FeedbackEvt a
+  = Req Request
+  | Act (LA Value (Action a))
+  | Resp RsrcResp
+  | NoEvent
+  
+instance Show a => Show (FeedbackEvt a) where
+  show (Req _) = "Request"
+  show (Act _) = "Action"
+  show (Resp _) = "Response"
+  show NoEvent = "NoEvent"
+
+reqManager :: (FromJSON a, ToJSON a, MonadResource m, Show a) => Manager -> Request -> Request -> ProcessA (Kleisli m) (Event (FeedbackEvt a)) (Event RsrcResp)
 reqManager mgr initReq loginReq = switch (login mgr initReq loginReq) after
+  where
+    after sInit = feedbackIV (after' sInit) >>> fromFeedbackEvt
+    after' sInit = proc actEvt -> do
+      evt <- anytime (passthroughK print) >>> hold NoEvent -< actEvt
+      -- sInfo <- hold sInit -< sInfoFB
+      rec
+        (newEvt, newSInfo) <- case evt of
+          NoEvent -> returnA -< (noEvent, sInit <$ actEvt)
+          Act action -> do
+            req <- evMap (id *** response) >>> updateRequest >>> evMap (fmap Req) -< (action, sInfo) <$ actEvt
+
+            returnA -< (req, noEvent)
+          Req req -> do
+            req' <- setReq -< (req, sInfo) <$ actEvt
+            respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
+
+            x <- mergeEvents' -< (respWithKey, req')
+            sInfo' <- updateSessionInfo -< fmap (\(x, y) -> (x, y, sInfo)) x
+            resp <- evMap (\resp -> [Resp resp]) -< respWithKey
+
+            _ <- evMap response >>> printBody -< sInfo <$ resp
+
+            returnA -< (resp, sInfo')
+          Resp _ -> returnA -< (noEvent, noEvent)
+
+        sInfo <- dHold sInit -< newSInfo
+
+      returnA -< newEvt
+        -- Resp _ -> machine (const $ fail "Unexpected Response. Expecting one of 'NoEvent', 'Act', or 'Req'") <- actEvt
+
+    fromFeedbackEvt = proc fbEvt -> do
+      fb <- hold NoEvent -< fbEvt
+      case fb of
+        Resp resp -> returnA -< resp <$ fbEvt
+        _ -> returnA -< noEvent
+    printBody = sourceHttp_ >>> evMap snd >>> machine (putStr . decodeUtf8)
+
   -- where
   --   after = proc input -> do
   --     (actEvt, sInfo) <- evMap fst &&& evMap snd -< input
@@ -106,17 +158,17 @@ reqManager mgr initReq loginReq = switch (login mgr initReq loginReq) after
   --     sInfo' <- mergeEvents' >>> evMap (\((x,y), z) -> (x, y, z)) >>> updateSessionInfo -< (x, sInfo) -- fmap (\(x, y) -> (x, y, sInfo)) x
   --     res <- mergeEvents' -< (respWithKey, sInfo')
   --     returnA -< res
-  where
-    after sInit = proc actEvt -> do
-      rec
-        req <- evMap (id *** response) >>> updateRequest -< fmap (\act -> (act, sInfo)) actEvt
-        req' <- setReq -< fmap (\r -> (r, sInfo)) req
-        respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
+  -- where
+  --   after sInit = proc actEvt -> do
+  --     rec
+  --       req <- evMap (id *** response) >>> updateRequest -< fmap (\act -> (act, sInfo)) actEvt
+  --       req' <- setReq -< fmap (\r -> (r, sInfo)) req
+  --       respWithKey <- anytime (passthroughK $ print . fst) >>> makeRequest -< fmap (\r -> (r, mgr)) req'
 
-        x <- mergeEvents' -< (respWithKey, req')
-        sInfo' <- updateSessionInfo -< fmap (\(x, y) -> (x, y, sInfo)) x
-        sInfo <- hold sInit -< sInfo'
-      returnA -< respWithKey
+  --       x <- mergeEvents' -< (respWithKey, req')
+  --       sInfo' <- updateSessionInfo -< fmap (\(x, y) -> (x, y, sInfo)) x
+  --       sInfo <- hold sInit -< sInfo'
+  --     returnA -< respWithKey
   -- where
   --   after sInit = evMap (\act -> (act, sInit)) >>> feedback f id
   --   f = proc input -> do
@@ -157,15 +209,16 @@ login mgr initReq loginReq = proc a -> do
   returnA -< (respWithKey, sInfo') -- (respWithKey, respWithKey)
 
     -- This is causing the problem as well as setReq
-updateRequest :: (Show a, ToJSON a, FromJSON a, MonadResource m) => ProcessA (Kleisli m) (Event (LA Value (Action a), RsrcResp)) (Event Request)
+updateRequest :: (ToJSON a, FromJSON a, MonadResource m) => ProcessA (Kleisli m) (Event (LA Value (Action a), RsrcResp)) (Event [Request])
 updateRequest =
-  evMap fst &&& (evMap snd >>> sourceHttp_ >>> evMap snd >>> machineParser appianResponseParser)
+  evMap fst &&& (evMap snd >>> sourceHttp_ >>> evMap snd >>> anytime (passthroughK $ putStrLn . decodeUtf8) >>> machineParser appianResponseParser)
   >>> mergeEvents'
   >>> evMap parseResp
   -- >>> evMap (\(act, resp) -> runLA act resp)
   -- evMap (\(act, _) -> runLA act (Object mempty))
-  >>> MU.fork
-  >>> machine mkUpdateRequest
+  -- >>> MU.fork
+  -- >>> machine mkUpdateRequest
+  >>> machine (mapM mkUpdateRequest)
   where
     parseResp (act, Left exc) = runLA act (Object mempty)
     parseResp (act, Right resp) = runLA act resp
@@ -173,28 +226,29 @@ updateRequest =
 testIt :: IO ()
 testIt = do
   mgr <- newManager tlsManagerSettings
-  siteReq <- parseRequest "https://portal-preprod.usac.org"
-  loginReq <- authReq baseUrl "marjorie.allen@sl.universalservice.org" "USACpreprod1!" mempty
+  siteReq <- parseRequest "https://portal-test4.appiancloud.com"
+  loginReq <- authReq baseUrl "app1_sd1_full1@mailinator.com" "USACuser123$" mempty
 
   let loadRep = mkHRef "/suite/rest/a/uicontainer/latest/YB7oUg/view" "GET" mempty Nothing :: Action Text
       logoutReq = mkHRef "/suite/logout" "GET" mempty Nothing :: Action Text
-      caseReq = mkHRef "https://portal-preprod.usac.org/suite/api/tempo/open-a-case/action/ksBnWUR1XjkLMmEri-oDn0gL2Fmrr_v3Fcs3gqyQpKrFxfzkjtesbm7cYTL9ZE8wYQ1dhVXb6DJV6r4NQGEX3geSw_O-io80YMwqMk" "GET" mempty Nothing :: Action Text
-      taskReq = mkHRef "https://portal-preprod.usac.org/suite/rest/a/uicontainer/latest/report/YB7oUg" "GET" mempty (Just "application/atom+json,application/json")
-      taskReq' = mkHRef "https://portal-preprod.usac.org/suite/rest/a/model/latest/4064" "POST" "{}" (Just "application/vnd.appian.tv.ui+json")
+      caseReq = mkHRef "https://portal-test4.appiancloud.com/suite/api/tempo/open-a-case/action/ksBnWUR1XjkLMmEri-oDn0gL2Fmrr_v3Fcs3gqyQpKrFxfzkjtesbm7cYTL9ZE8wYQ1dhVXb6DJV6r4NQGEX3geSw_O-io80YMwqMk" "GET" mempty Nothing :: Action Text
+      taskReq = mkHRef "https://portal-test4.appiancloud.com/suite/rest/a/uicontainer/latest/report/YB7oUg" "GET" mempty (Just "application/atom+json,application/json")
+      taskReq' = mkHRef "https://portal-test4.appiancloud.com/suite/rest/a/model/latest/4064" "POST" "{}" (Just "application/vnd.appian.tv.ui+json")
       tasksReq = mkHRef "/suite/api/feed/tempo?m=menu-tasks&t=t&s=pt&defaultFacets=%5Dstatus-open%5D" "GET" mempty (Just "application/json")
       broadReq = mkHRef "/suite/api/groups/broadcast-targets" "GET" mempty (Just "application/json")
 
   runRMachine_ (reqManager mgr siteReq loginReq >>> evMap (responseStatus . snd) >>> machine print) -- mkFileName "/tmp/req_" >>> id *** (sourceHttp_ >>> evMap snd) >>> sinkFile_) -- sourceHttp_ >>> evMap snd >>> machine (putStr . decodeUtf8))
-    [ arr (const broadReq)
-    , arr (const tasksReq)
-    , getAttrLinks
+    [ Act (arr (const broadReq))
+    , Act (arr (const tasksReq))
+    , Act getAttrLinks
     -- , arr (const taskReq)
     -- , openCaseLink
     -- , arr (const taskReq')
     -- , text "Nickname" "PerfTest"
     -- , arr (const loadRep)
-    , arr (const logoutReq)
+    , Act (arr (const logoutReq))
     ]
+  putStrLn "Finished"
 
 mkFileName :: ArrowApply a => FilePath -> ProcessA a (Event b) (Event FilePath, Event b)
 mkFileName fpPrefix = proc input -> do
@@ -398,3 +452,63 @@ feedback f g = go
       x <- mergeEvents' -< (b, c)
       res <- drSwitch (evMap snd) -< (x, go <$ x)
       returnA -< res
+
+feedback' :: Monad m => d -> ProcessA (Kleisli m) (Event (b, d)) (Event (c, [d])) -> ProcessA (Kleisli m) (Event b) (Event c)
+feedback' init f = constructT kleisli0 go
+  where
+    go = do
+      b <- await
+      x <- lift $ runKleisli (run f) [(b, init)]
+      mapM_ (loop b) x
+    loop _ (_, []) = go
+    loop b (c, d:ds) = do
+      yield c
+      x <- lift $ runKleisli (run f) [(b, d)]
+      mapM_ (\(c', xs) -> loop b (c', xs <> ds)) x
+
+feedbackIV :: (MonadIO m, Show b) => ProcessA (Kleisli m) (Event b) (Event [b]) -> ProcessA (Kleisli m) (Event b) (Event b)
+feedbackIV f = proc input -> do
+  inVar <- mkStack -< input
+  fbVar <- mkStack -< input
+  res <- mergeEvents' >>> machine (atomically . uncurry stackPush) -< (inVar, input)
+  cs <- mergeEvents' >>> readStackP >>> f -< (fbVar, inVar)
+  y <- mergeEvents' >>> sendFeedback -< (cs, fbVar)
+  returnA -< y
+
+mkStack :: MonadIO m => ProcessA (Kleisli m) (Event b) (Event (Stack c))
+mkStack = switch mkStack_ sendStack
+  where
+    mkStack_ = proc input -> do
+      stack <- machine (const $ atomically stackNew) -< input
+      returnA -< (noEvent, stack)
+    sendStack stack = evMap (const stack)
+
+readStackP :: MonadIO m => ProcessA (Kleisli m) (Event (Stack b, Stack b)) (Event b)
+readStackP = constructT kleisli0 go
+  where
+    go = do
+      (fbStack, inStack) <- await
+      b <- lift . atomically $ stackPop inStack
+      yield b
+      loop fbStack
+    loop fbStack = do
+      empty <- lift . atomically $ stackIsEmpty fbStack
+      case empty of
+        True -> go
+        False -> do
+          b' <- lift . atomically $ stackPop fbStack
+          yield b'
+          loop fbStack
+
+sendFeedback :: (MonadIO m, Show b) => ProcessA (Kleisli m) (Event ([b], Stack b)) (Event b)
+sendFeedback = repeatedlyT kleisli0 $ do
+  (bs, stack) <- await
+  mapM_ (\b -> do
+            lift $ atomically $ stackPush stack b
+            yield b
+        ) bs
+
+    -- Takes two lists and interleaves them. Stops on the shorter of the two lists.
+blend :: [a] -> [a] -> [a]
+blend (x:xs) ys = x:(blend ys xs)
+blend _ _ = []

@@ -31,9 +31,11 @@ library
                      , http-conduit
                      , case-insensitive
                      , http-types
+                     , machinecell
                      , machinecell-contrib
                      , attoparsec
                      , bytestring
+                     , Stack
   default-language:    Haskell2010
 
 -- executable automater-exe

@@ -146,4 +146,4 @@ mkHRef url method body mAccept
   | otherwise = HRef (baseUrl <> url) method body mAccept
 
 baseUrl :: IsString t => t
-baseUrl = "https://portal-preprod.usac.org"
+baseUrl = "https://portal-test4.appiancloud.com"
