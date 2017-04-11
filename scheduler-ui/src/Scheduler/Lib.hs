@@ -8,6 +8,7 @@ module Scheduler.Lib
     , createJob
     , header
     , runJobsButton
+    , scheduleInput
     ) where
 
 import Lucid
@@ -26,7 +27,7 @@ jobTable jobs = do
       th_ "#"
       th_ "Job Name"
       th_ "Status"
-    tbody_ $ mapM_ (tr_ . dispJob) $ zip [1..] jobs
+    tbody_ $ mapM_ (tr_ . dispJob) $ zip [1..] (jobs ^. qJobs)
   addJobButton
  where
    dispJob (n, job) = td_ (toHtml $ tshow n) <> (td_ $ toHtml $ job ^. jobName) <> (td_ $ toHtml $ tshow $ job ^. jobStatus)
@@ -51,3 +52,13 @@ runJobsButton = a_ [class_ "pure-button", href_ "/runJobs"] "Run Jobs Now"
 
 dryRunButton :: Html ()
 dryRunButton = a_ [class_ "pure-button", href_ "/dryRun"] "Dry Run"
+
+scheduleInput :: Html ()
+scheduleInput = do
+  form_ [class_ "pure-form pure-form-stacked", action_ "/schedule", method_ "post", enctype_ "application/json"] $
+    fieldset_ $ do
+      label_ [for_ "when"] "Start jobs at:"
+      input_ [id_ "when", name_ "date", type_ "date"]
+      input_ [id_ "when", name_ "time", type_ "time"]
+
+      button_ [type_ "submit", class_ "pure-button pure-button-primary"] "Schedule"

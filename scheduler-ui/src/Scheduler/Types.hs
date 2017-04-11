@@ -9,6 +9,9 @@ module Scheduler.Types
   , JobQueue
   , jobName
   , jobStatus
+  , qJobs
+  , qStartTime
+  , emptyQueue
   ) where
 
 import ClassyPrelude
@@ -26,6 +29,12 @@ data Job a = Job
   , _jobVal :: a
   } deriving (Show, Generic)
 
-type JobQueue a = [Job a]
+data JobQueue a = JobQueue
+  { _qJobs :: [Job a]
+  , _qStartTime :: Maybe UTCTime
+  } deriving Generic
 
 makeLenses ''Job
+makeLenses ''JobQueue
+
+emptyQueue = JobQueue mempty Nothing

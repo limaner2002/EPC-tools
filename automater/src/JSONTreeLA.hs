@@ -13,10 +13,22 @@ import Control.Arrow
 import Control.Arrow.ArrowIf
 import Control.Arrow.ListArrow
 
-import Data.Tree.Class
+class JSONTree cat a where
+  hasKey :: Arrow cat => Text -> cat a a
+  hasKeyValue :: Arrow cat => Text -> (Text -> Bool) -> cat a a
+  getChildren :: Arrow cat => cat a a
+  getKeyValue :: Arrow cat => Text -> cat a a
+  deep :: Arrow cat => cat a a -> cat a a
 
-hasKey :: ArrowList a => Text -> a Value Value
-hasKey k = arrL (hasKey_ k)
+instance JSONTree LA Value where
+  hasKey k = arrL (hasKey_ k)
+  hasKeyValue k cmp = arrL (hasKeyValue_ k cmp)
+  getChildren = arrL getChildren_
+  getKeyValue k = arrL (getKeyValue_ k)
+  deep = deep_
+
+-- hasKey :: ArrowList a => Text -> a Value Value
+-- hasKey k = arrL (hasKey_ k)
 
 hasKey_ :: Text -> Value -> [Value]
 hasKey_ k obj@(Object o) = case lookup k o of
@@ -24,8 +36,8 @@ hasKey_ k obj@(Object o) = case lookup k o of
   Just _ -> [obj]
 hasKey_ _ _ = []
 
-hasKeyValue :: ArrowList a => Text -> (Text -> Bool) -> a Value Value
-hasKeyValue k cmp = arrL (hasKeyValue_ k cmp)
+-- hasKeyValue :: ArrowList a => Text -> (Text -> Bool) -> a Value Value
+-- hasKeyValue k cmp = arrL (hasKeyValue_ k cmp)
 
 hasKeyValue_ :: Text -> (Text -> Bool) -> Value -> [Value]
 hasKeyValue_ k cmp val@(Object o) = case lookItUp of
@@ -47,8 +59,8 @@ getChildren_ (Object o) = fmap snd $ mapToList o
 getChildren_ (Array arr) = toList arr
 getChildren_ _ = []
 
-getKeyValue :: ArrowList a => Text -> a Value Value
-getKeyValue k = arrL (getKeyValue_ k)
+-- getKeyValue :: ArrowList a => Text -> a Value Value
+-- getKeyValue k = arrL (getKeyValue_ k)
 
 getKeyValue_ :: Text -> Value -> [Value]
 getKeyValue_ k (Object o) = case lookup k o of

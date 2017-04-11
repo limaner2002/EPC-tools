@@ -19,14 +19,18 @@ import qualified Data.Text.Lazy as TL
 import Network.HTTP.Media ((//), (/:))
 import Network.HTTP.Types (parseQueryText)
 import qualified Scheduler.Arrow as Scheduler
+import qualified Scheduler as Sched
 import Control.Monad.Trans.Except
 import Control.Arrow
+import Control.Lens
+import Data.Time
 
 type HomePageAPI = Get '[HTML] (Html ())
 type CreateJobAPI = "new" :> Get '[HTML] (Html ())
 type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
 type RemoveJob = "remJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
+type ScheduleJobsAPI = "schedule" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
 
 data BodyParams
 newtype BodyMap = BodyMap (Map Text Text)
@@ -48,6 +52,7 @@ type API = HomePageAPI
   :<|> CreateJobAPI
   :<|> AddJobAPI
   :<|> RunJobsAPI
+  :<|> ScheduleJobsAPI
 
 type ServantHandler = (ExceptT ServantErr IO)
 
@@ -59,11 +64,13 @@ server mkJob jobAct jobsT = homepage jobsT
   :<|> newJob
   :<|> addJob mkJob jobsT
   :<|> runJobs jobAct jobsT
+  :<|> scheduleJobs jobsT
 
 homepage :: TVar (JobQueue a) -> Server HomePageAPI
 homepage jobsT = do
   jobs <- atomically $ readTVar jobsT
-  return $ renderHomepage jobs
+  tz <- liftIO getCurrentTimeZone
+  return $ renderHomepage tz jobs
 
 newJob :: Server CreateJobAPI
 newJob = return $ do
@@ -82,36 +89,66 @@ addJob mkJob jobsT (BodyMap bodyParams) = do
           case eJobVal of
             Left err -> return $ p_ $ toHtml $ tshow err
             Right jobVal -> do
-              jobs <- atomically $ do
-                modifyTVar jobsT (addIt jobVal)
+              _ <- atomically $ do
+                modifyTVar jobsT (Sched.addJob $ job jobVal)
                 readTVar jobsT
               redirect303 "/"
         where
-          addIt :: a -> JobQueue a -> JobQueue a
-          addIt jobVal jobs = jobs <> [job jobVal]
+          -- addIt :: a -> JobQueue a -> JobQueue a
+          -- addIt jobVal jobs = jobs <> [job jobVal]
           job jobVal = Job jobName Queued jobVal
 
 application :: (Text -> ServantHandler a) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
 application mkJob jobAct jobsT = serve proxyAPI (server mkJob jobAct jobsT)
 
-renderHomepage :: JobQueue a -> Html ()
-renderHomepage jobs =
-  case onull jobs of
+renderHomepage :: TimeZone -> JobQueue a -> Html ()
+renderHomepage tz jobs = 
+  case onull (jobs ^. qJobs) of
     True -> do
       header
       p_ "No jobs queued"
       a_ [class_ "pure-button pure-button-primary", href_ "/new"] "Add Job"
+      case jobs ^. qStartTime of
+        Nothing -> do
+          p_ "No start time set"
+          br_ mempty
+          br_ mempty
+          scheduleInput
+        Just t -> p_ $ toHtml $ showTime t
+      br_ mempty
+      br_ mempty
       runJobsButton
     False -> do
       header
       jobTable jobs
       br_ mempty
+      br_ mempty
+      scheduleInput
+      br_ mempty
+      br_ mempty
       runJobsButton
+    where
+      showTime t = formatTime defaultTimeLocale "%F %I:%M %p" $ utcToLocalTime tz t
 
 runJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> Server RunJobsAPI
 runJobs f jobsT = do
   _ <- fork $ (Scheduler.runJobs f) jobsT
   redirect303 "/"
+
+scheduleJobs :: TVar (JobQueue a) -> Server ScheduleJobsAPI
+scheduleJobs jobsT (BodyMap bodyParams) = do
+  tz <- liftIO getCurrentTimeZone
+  case mTime of
+    Nothing -> throwE $ err500 { errBody = "Could not parse the time " }
+    Just time -> do
+      _ <- atomically $ do
+        modifyTVar jobsT (qStartTime .~ Just (localTimeToUTC tz time))
+      redirect303 "/"
+  where
+    timeTup = (,) <$> lookup "date" bodyParams <*> lookup "time" bodyParams
+    timeStr (date, time) = date <> " " <> time <> " "
+    mTime :: Maybe LocalTime
+    mTime = join $ mapM (parseTimeM True defaultTimeLocale "%F %R %Z") $ fmap (unpack . timeStr) timeTup
 
 redirect303 :: Monad m => ByteString -> ExceptT ServantErr m a
 redirect303 url = throwE $ err303 { errHeaders = [("Location", url)] }

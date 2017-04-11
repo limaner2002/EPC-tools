@@ -32,6 +32,7 @@ import Server
 import SendMail
 import Results
 import Scheduler.Server
+import Scheduler.Types (emptyQueue)
 import Control.Arrow (Kleisli (..))
 import GetLogs (downloadLogs)
 
@@ -278,5 +279,5 @@ toJMeterOpts fp = do
 
 runServer' :: IO ()
 runServer' = do
-  v <- newTVarIO mempty
+  v <- newTVarIO emptyQueue
   run 8080 $ application (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)) v

@@ -19,12 +19,14 @@ incJobStatus Running = Finished
 incJobStatus Finished = Finished
 
 getNotFinished :: MonadThrow m => JobQueue a -> m (Job a, JobQueue a)
-getNotFinished q = (,) <$> job <*> (mappend <$> pure done <*> rest'')
+getNotFinished q = (,) <$> job <*> ((fmap (qJobs .~) newList) <*> pure q)
   where
-    (done, rest) = (takeWhile isFinished q, dropWhile isFinished q)
+    (done, rest) = (takeWhile isFinished jobList, dropWhile isFinished jobList)
     (job, rest') = (headThrow rest, drop 1 rest)
     rest'' = (:) <$> job' <*> pure rest'
     job' = fmap (jobStatus .~ Running) $ job
+    jobList = q ^. qJobs
+    newList = mappend <$> pure done <*> rest''
 
 checkRunning :: MonadThrow m => Job a -> m (Job a)
 checkRunning job = case isRunning job of
@@ -57,7 +59,7 @@ headThrow l = case headMay l of
             Just v -> return v
 
 addJob :: Job a -> JobQueue a -> JobQueue a
-addJob = (:)
+addJob job = qJobs %~ (\q -> job : q)
 
 getQueue :: MonadBase IO m => TVar (JobQueue a) -> m (JobQueue a)
 getQueue = liftBase . atomically . readTVar
@@ -66,9 +68,9 @@ setQueue :: MonadBase IO m => TVar (JobQueue a) -> JobQueue a -> m ()
 setQueue var q = liftBase $ atomically $ writeTVar var q
 
 setJob :: Job a -> JobQueue a -> JobQueue a
-setJob job q = first <> [job] <> drop 1 rest
+setJob job q = qJobs .~ (first <> [job] <> drop 1 rest) $ q
   where
-    (first, rest) = splitWhenFirst (\j -> j ^. jobName == job ^. jobName) q
+    (first, rest) = splitWhenFirst (\j -> j ^. jobName == job ^. jobName) (q ^. qJobs)
 
 splitWhenFirst :: IsSequence seq => (Element seq -> Bool) -> seq -> (seq, seq)
 splitWhenFirst f s = (takeWhile (not . f) s, dropWhile (not . f) s)

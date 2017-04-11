@@ -225,29 +225,29 @@ updateRequest =
 
 testIt :: IO ()
 testIt = do
-  mgr <- newManager tlsManagerSettings
-  siteReq <- parseRequest "https://portal-test4.appiancloud.com"
-  loginReq <- authReq baseUrl "app1_sd1_full1@mailinator.com" "USACuser123$" mempty
+  -- mgr <- newManager tlsManagerSettings
+  -- siteReq <- parseRequest "https://portal-test4.appiancloud.com"
+  -- loginReq <- authReq baseUrl "app1_sd1_full1@mailinator.com" "USACuser123$" mempty
 
-  let loadRep = mkHRef "/suite/rest/a/uicontainer/latest/YB7oUg/view" "GET" mempty Nothing :: Action Text
-      logoutReq = mkHRef "/suite/logout" "GET" mempty Nothing :: Action Text
-      caseReq = mkHRef "https://portal-test4.appiancloud.com/suite/api/tempo/open-a-case/action/ksBnWUR1XjkLMmEri-oDn0gL2Fmrr_v3Fcs3gqyQpKrFxfzkjtesbm7cYTL9ZE8wYQ1dhVXb6DJV6r4NQGEX3geSw_O-io80YMwqMk" "GET" mempty Nothing :: Action Text
-      taskReq = mkHRef "https://portal-test4.appiancloud.com/suite/rest/a/uicontainer/latest/report/YB7oUg" "GET" mempty (Just "application/atom+json,application/json")
-      taskReq' = mkHRef "https://portal-test4.appiancloud.com/suite/rest/a/model/latest/4064" "POST" "{}" (Just "application/vnd.appian.tv.ui+json")
-      tasksReq = mkHRef "/suite/api/feed/tempo?m=menu-tasks&t=t&s=pt&defaultFacets=%5Dstatus-open%5D" "GET" mempty (Just "application/json")
-      broadReq = mkHRef "/suite/api/groups/broadcast-targets" "GET" mempty (Just "application/json")
+  -- let loadRep = mkHRef "/suite/rest/a/uicontainer/latest/YB7oUg/view" "GET" mempty Nothing :: Action Text
+  --     logoutReq = mkHRef "/suite/logout" "GET" mempty Nothing :: Action Text
+  --     caseReq = mkHRef "https://portal-test4.appiancloud.com/suite/api/tempo/open-a-case/action/ksBnWUR1XjkLMmEri-oDn0gL2Fmrr_v3Fcs3gqyQpKrFxfzkjtesbm7cYTL9ZE8wYQ1dhVXb6DJV6r4NQGEX3geSw_O-io80YMwqMk" "GET" mempty Nothing :: Action Text
+  --     taskReq = mkHRef "https://portal-test4.appiancloud.com/suite/rest/a/uicontainer/latest/report/YB7oUg" "GET" mempty (Just "application/atom+json,application/json")
+  --     taskReq' = mkHRef "https://portal-test4.appiancloud.com/suite/rest/a/model/latest/4064" "POST" "{}" (Just "application/vnd.appian.tv.ui+json")
+  --     tasksReq = mkHRef "/suite/api/feed/tempo?m=menu-tasks&t=t&s=pt&defaultFacets=%5Dstatus-open%5D" "GET" mempty (Just "application/json")
+  --     broadReq = mkHRef "/suite/api/groups/broadcast-targets" "GET" mempty (Just "application/json")
 
-  runRMachine_ (reqManager mgr siteReq loginReq >>> evMap (responseStatus . snd) >>> machine print) -- mkFileName "/tmp/req_" >>> id *** (sourceHttp_ >>> evMap snd) >>> sinkFile_) -- sourceHttp_ >>> evMap snd >>> machine (putStr . decodeUtf8))
-    [ Act (arr (const broadReq))
-    , Act (arr (const tasksReq))
-    , Act getAttrLinks
-    -- , arr (const taskReq)
-    -- , openCaseLink
-    -- , arr (const taskReq')
-    -- , text "Nickname" "PerfTest"
-    -- , arr (const loadRep)
-    , Act (arr (const logoutReq))
-    ]
+  -- runRMachine_ (reqManager mgr siteReq loginReq >>> evMap (responseStatus . snd) >>> machine print) -- mkFileName "/tmp/req_" >>> id *** (sourceHttp_ >>> evMap snd) >>> sinkFile_) -- sourceHttp_ >>> evMap snd >>> machine (putStr . decodeUtf8))
+  --   [ Act (arr (const broadReq))
+  --   , Act (arr (const tasksReq))
+  --   , Act getAttrLinks
+  --   -- , arr (const taskReq)
+  --   -- , openCaseLink
+  --   -- , arr (const taskReq')
+  --   -- , text "Nickname" "PerfTest"
+  --   -- , arr (const loadRep)
+  --   , Act (arr (const logoutReq))
+  --   ]
   putStrLn "Finished"
 
 mkFileName :: ArrowApply a => FilePath -> ProcessA a (Event b) (Event FilePath, Event b)
