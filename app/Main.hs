@@ -31,8 +31,6 @@ import Network.Wai.Handler.Warp
 import Server
 import SendMail
 import Results
-import Scheduler.Server
--- import Scheduler.Types (emptyQueue)
 import Control.Arrow (Kleisli (..))
 import GetLogs (downloadLogs)
 
@@ -42,6 +40,7 @@ import Validate ( validateBatchOpts,
 
 import Sheets.Opts
 import Table
+import Scheduler.Opts
 
 instance MonadThrow ReadM where
   throwM exc = readerError $ show exc
@@ -93,6 +92,7 @@ logsInfo = info (helper <*> logsParser)
   <> progDesc "A tool to download log files from an Appian Cloud environment."
   )
 
+txtOption :: Mod OptionFields Text -> Parser Text
 txtOption = option (readerAsk >>= pure . pack)
 
 serverParser :: Parser (IO ())
@@ -162,6 +162,7 @@ parseCommands = subparser
   <> command "download-log" logsInfo
   <> command "create-sheet" sheetsInfo
   <> command "make-table" tableInfo
+  <> command "scheduler-ui" (schedulerInfo (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
   )
 
 commandsInfo :: ParserInfo (IO ())
@@ -267,6 +268,7 @@ toTimeOfDay txt = fromJust $ readMay txt
   where
     -- The value is hardcoded for now so this is safe to use
     fromJust (Just t) = t
+    fromJust _ = error "Should not have been called like this! Moreso this function should be removed."
 
 checkJobStatusTime :: ToScheduledTime
 checkJobStatusTime = TOD $ toTimeOfDay "21:00:00"
@@ -279,7 +281,3 @@ toJMeterOpts fp = do
   cfg <- readConfigFile fp
   readJMeterOpts Execute cfg
 
--- runServer' :: IO ()
--- runServer' = do
---   v <- newTVarIO emptyQueue
---   run 8080 $ application (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)) v

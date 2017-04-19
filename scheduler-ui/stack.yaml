@@ -10,7 +10,9 @@ packages:
     git: https://github.com/limaner2002/machinecell-contrib.git
     commit: 875cabce5171aeb4d6878642bda6f743be960542
   extra-dep: true
-- location: ../../machinecell
+- location:
+    git: https://github.com/as-capabl/machinecell.git
+    commit: 650cb798b6387cdf0a6fd5a737136609b81db30f
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

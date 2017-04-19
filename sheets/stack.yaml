@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-8.0
+resolver: lts-8.5
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -40,7 +40,9 @@ packages:
 - location:
     git: https://github.com/limaner2002/machinecell-contrib.git
     commit: d3f1ed6df2291a6b379f743ec7072ec93c343530
-- location: ../../machinecell
+- location:
+    git: https://github.com/as-capabl/machinecell.git
+    commit: 650cb798b6387cdf0a6fd5a737136609b81db30f
   extra-dep: true
 
 # Dependency packages to be pulled from upstream that are not in the resolver
