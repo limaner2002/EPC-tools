@@ -8,11 +8,6 @@ import Scheduler.Types
 import ClassyPrelude
 import Control.Lens
 
-data QueueException = QueueException Text
-  deriving (Show, Eq)
-
-instance Exception QueueException
-
 incJobStatus :: JobStatus -> JobStatus
 incJobStatus Queued = Running
 incJobStatus Running = Finished
@@ -33,6 +28,12 @@ checkRunning job = case isRunning job of
                      True -> throwM $ QueueException "There is a job still running."
                      False -> pure job
     
+checkQueueRunning :: MonadThrow m => JobQueue a -> m (JobQueue a)
+checkQueueRunning q =
+  case q ^. qStatus of
+    QRunning -> throwM $ QueueException "The queue is already running."
+    QWaiting -> pure q
+
 isQueued :: Job a -> Bool
 isQueued j = j ^. jobStatus == Queued
 
@@ -41,12 +42,6 @@ isFinished j = j ^. jobStatus == Finished
 
 isRunning :: Job a -> Bool
 isRunning j = j ^. jobStatus == Running
-
-q1 = [Job "6742" Queued Nothing, Job "6619" Queued Nothing]
-
-q2 = [Job "3761" Running Nothing, Job "6781" Queued Nothing]
-
-q3 = [Job "4222" Finished Nothing, Job "4313" Queued Nothing]
 
 data EmptyHeadException = EmptyHeadException Text
   deriving (Show, Eq)
@@ -80,3 +75,30 @@ getFirst f s = (,,) <$> a <*> pure first <*> pure rest'
   where
     (first, rest) = splitWhenFirst f s
     (a, rest') = (headThrow rest, drop 1 rest)
+
+schedule :: MonadBase IO m => TVar (JobQueue a) -> m () -> m ()
+schedule tScheduledTime action = loop
+  where
+    loop = do
+      mScheduledTime <- liftBase $ atomically $ readTVar tScheduledTime
+      case mScheduledTime ^. qStartTime of
+        Nothing -> do
+          liftBase $ putStrLn "The job has been cancelled."
+          return ()
+        Just scheduledTime -> do
+          ct <- liftBase getCurrentTime
+          case ct >= scheduledTime of
+            True -> do
+              liftBase $ putStrLn "Running job now"
+              action
+              liftBase $ atomically $ modifyTVar tScheduledTime (qStartTime .~ Nothing)
+            False -> do
+              liftBase $ threadDelay 1000000
+              loop
+
+q1 = qJobs .~ [Job "6742" Queued Nothing, Job "6619" Queued Nothing] $ emptyQueue
+
+q2 = (qJobs .~ [Job "3761" Running Nothing, Job "6781" Queued Nothing]) . (qStatus .~ QRunning) $ emptyQueue
+
+q3 = qJobs .~ [Job "4222" Finished Nothing, Job "4313" Queued Nothing] $ emptyQueue
+

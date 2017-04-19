@@ -22,8 +22,20 @@ getNotFinished = Kleisli S.getNotFinished
 checkRunning :: MonadThrow m => Kleisli m (Job a) (Job a)
 checkRunning = Kleisli S.checkRunning
 
+checkQueueRunning :: Kleisli STM (TVar (JobQueue a)) (JobQueue a)
+checkQueueRunning = Kleisli (\v -> readTVar v >>= S.checkQueueRunning)
+
+-- checkQueueRunning :: Kleisli STM (TVar (JobQueue a)) (Either QueueException (JobQueue a))
+-- checkQueueRunning = Kleisli (\v -> catchQueueException (readTVar v >>= S.checkQueueRunning))
+
+catchQueueException :: MonadCatch m => m a -> m (Either QueueException a)
+catchQueueException f = catch (Right <$> f) catchQueueException_
+  where
+    catchQueueException_ exc = pure $ Left exc
+
+               -- Will throw an exception if a job is already running.
 getNextQueued :: MonadThrow m => Kleisli m (JobQueue a) (Job a, JobQueue a)
-getNextQueued = getNotFinished >>> checkRunning *** id
+getNextQueued = Kleisli S.checkQueueRunning >>> getNotFinished -- getNotFinished >>> checkRunning *** id
 
 addJob :: Arrow a => a (Job b, JobQueue b) (JobQueue b)
 addJob = arr (uncurry S.addJob)
@@ -50,5 +62,14 @@ runJob f = proc var -> do
       _ <- setQueue -< (var, q')
       runJob f -< var
 
-runJobs :: MonadBase IO m => MonadBase IO m => Kleisli m a () -> TVar (JobQueue a) -> m ()
+setQueueRunning :: Arrow cat => cat (JobQueue a) (JobQueue a)
+setQueueRunning = arr (qStatus .~ QRunning)
+
+runJobs :: MonadBase IO m => Kleisli m a () -> TVar (JobQueue a) -> m ()
 runJobs f var = runKleisli (runJob f) var
+
+-- catchTest :: (MonadIO m, MonadCatch m) => TVar (JobQueue a) -> m (Either QueueException (JobQueue a))
+-- catchTest v = catch f g
+--   where
+--     f = Right <$> (atomically $ runKleisli checkQueueRunning v)
+--     g exc@(QueueException _) = pure $ Left exc

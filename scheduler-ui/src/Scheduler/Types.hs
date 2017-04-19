@@ -12,6 +12,9 @@ module Scheduler.Types
   , qJobs
   , qStartTime
   , emptyQueue
+  , qStatus
+  , QueueException (..)
+  , QStatus (..)
   ) where
 
 import ClassyPrelude
@@ -32,9 +35,21 @@ data Job a = Job
 data JobQueue a = JobQueue
   { _qJobs :: [Job a]
   , _qStartTime :: Maybe UTCTime
-  } deriving Generic
+  , _qStatus :: QStatus
+  } deriving (Generic, Show)
+
+data QStatus
+  = QRunning
+  | QWaiting
+  deriving Show
+
+data QueueException = QueueException Text
+  deriving (Show, Eq)
+
+instance Exception QueueException
 
 makeLenses ''Job
 makeLenses ''JobQueue
 
-emptyQueue = JobQueue mempty Nothing
+emptyQueue :: JobQueue a
+emptyQueue = JobQueue mempty Nothing QWaiting

@@ -9,6 +9,7 @@ module Scheduler.Lib
     , header
     , runJobsButton
     , scheduleInput
+    , pureButton
     ) where
 
 import Lucid
@@ -62,3 +63,6 @@ scheduleInput = do
       input_ [id_ "when", name_ "time", type_ "time"]
 
       button_ [type_ "submit", class_ "pure-button pure-button-primary"] "Schedule"
+
+pureButton :: Term [Attribute] result => Text -> result
+pureButton ref = a_ [class_ "pure-button pure-button-error", href_ ref]

@@ -32,7 +32,7 @@ import Server
 import SendMail
 import Results
 import Scheduler.Server
-import Scheduler.Types (emptyQueue)
+-- import Scheduler.Types (emptyQueue)
 import Control.Arrow (Kleisli (..))
 import GetLogs (downloadLogs)
 
@@ -41,6 +41,7 @@ import Validate ( validateBatchOpts,
                 )
 
 import Sheets.Opts
+import Table
 
 instance MonadThrow ReadM where
   throwM exc = readerError $ show exc
@@ -160,6 +161,7 @@ parseCommands = subparser
   <> command "analyse" resultsInfo
   <> command "download-log" logsInfo
   <> command "create-sheet" sheetsInfo
+  <> command "make-table" tableInfo
   )
 
 commandsInfo :: ParserInfo (IO ())
@@ -277,7 +279,7 @@ toJMeterOpts fp = do
   cfg <- readConfigFile fp
   readJMeterOpts Execute cfg
 
-runServer' :: IO ()
-runServer' = do
-  v <- newTVarIO emptyQueue
-  run 8080 $ application (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)) v
+-- runServer' :: IO ()
+-- runServer' = do
+--   v <- newTVarIO emptyQueue
+--   run 8080 $ application (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)) v

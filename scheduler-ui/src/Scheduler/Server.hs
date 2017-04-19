@@ -31,6 +31,7 @@ type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html
 type RemoveJob = "remJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
 type ScheduleJobsAPI = "schedule" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
+type CancelJobsAPI = "cancel" :> Get '[HTML] (Html ())
 
 data BodyParams
 newtype BodyMap = BodyMap (Map Text Text)
@@ -53,6 +54,7 @@ type API = HomePageAPI
   :<|> AddJobAPI
   :<|> RunJobsAPI
   :<|> ScheduleJobsAPI
+  :<|> CancelJobsAPI
 
 type ServantHandler = (ExceptT ServantErr IO)
 
@@ -64,7 +66,8 @@ server mkJob jobAct jobsT = homepage jobsT
   :<|> newJob
   :<|> addJob mkJob jobsT
   :<|> runJobs jobAct jobsT
-  :<|> scheduleJobs jobsT
+  :<|> scheduleJobs jobAct jobsT
+  :<|> cancelJobs jobsT
 
 homepage :: TVar (JobQueue a) -> Server HomePageAPI
 homepage jobsT = do
@@ -108,47 +111,56 @@ renderHomepage tz jobs =
       header
       p_ "No jobs queued"
       a_ [class_ "pure-button pure-button-primary", href_ "/new"] "Add Job"
-      case jobs ^. qStartTime of
-        Nothing -> do
-          p_ "No start time set"
-          br_ mempty
-          br_ mempty
-          scheduleInput
-        Just t -> p_ $ toHtml $ showTime t
+      showScheduledTime
       br_ mempty
       br_ mempty
       runJobsButton
     False -> do
       header
       jobTable jobs
-      br_ mempty
-      br_ mempty
-      scheduleInput
+      showScheduledTime
       br_ mempty
       br_ mempty
       runJobsButton
     where
       showTime t = formatTime defaultTimeLocale "%F %I:%M %p" $ utcToLocalTime tz t
+      showScheduledTime =
+        case jobs ^. qStartTime of
+          Nothing -> do
+            p_ "No start time set"
+            br_ mempty
+            br_ mempty
+            scheduleInput
+          Just t -> do
+            p_ $ toHtml $ showTime t
+            pureButton "/cancel" "Cancel Jobs"
+
 
 runJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> Server RunJobsAPI
 runJobs f jobsT = do
   _ <- fork $ (Scheduler.runJobs f) jobsT
   redirect303 "/"
 
-scheduleJobs :: TVar (JobQueue a) -> Server ScheduleJobsAPI
-scheduleJobs jobsT (BodyMap bodyParams) = do
+scheduleJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> Server ScheduleJobsAPI
+scheduleJobs f jobsT (BodyMap bodyParams) = do
   tz <- liftIO getCurrentTimeZone
   case mTime of
     Nothing -> throwE $ err500 { errBody = "Could not parse the time " }
     Just time -> do
       _ <- atomically $ do
         modifyTVar jobsT (qStartTime .~ Just (localTimeToUTC tz time))
+      fork $ Sched.schedule jobsT (Scheduler.runJobs f jobsT)
       redirect303 "/"
   where
     timeTup = (,) <$> lookup "date" bodyParams <*> lookup "time" bodyParams
     timeStr (date, time) = date <> " " <> time <> " "
     mTime :: Maybe LocalTime
     mTime = join $ mapM (parseTimeM True defaultTimeLocale "%F %R %Z") $ fmap (unpack . timeStr) timeTup
+
+cancelJobs :: TVar (JobQueue a) -> Server CancelJobsAPI
+cancelJobs jobsT = do
+  atomically $ modifyTVar jobsT (qStartTime .~ Nothing)
+  redirect303 "/"
 
 redirect303 :: Monad m => ByteString -> ExceptT ServantErr m a
 redirect303 url = throwE $ err303 { errHeaders = [("Location", url)] }
