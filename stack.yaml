@@ -12,11 +12,11 @@ packages:
   extra-dep: true
 # - location: /Users/josh/workspace/machinecell-contrib
 #   extra-dep: true
-- location: ../machinecell
-  extra-dep: true
-# - location:
-#     git: https://github.com/as-capabl/machinecell.git
-#     commit: dc436783f6e1cfe3a088e818dc94f503e1c5e709
+# - location: ../machinecell
+#   extra-dep: true
+- location:
+    git: https://github.com/as-capabl/machinecell.git
+    commit: 650cb798b6387cdf0a6fd5a737136609b81db30f
 # - location: /Users/josh/workspace/hs-config
 #   extra-dep: true
 - location:
