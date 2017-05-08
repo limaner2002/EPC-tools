@@ -44,9 +44,6 @@ newCP cs = (shell mempty) {cmdspec = cs}
 streamConsumer = CC.mapM_ (\bs -> putStr (decodeUtf8 bs) >> SIO.hFlush (stdout))
 
 runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
-runCommand _ = do
-  putStrLn "Executing process"
-  return (ExitSuccess, (), ())
 
 isEmptyDirectory [] = True
 isEmptyDirectory _ = False

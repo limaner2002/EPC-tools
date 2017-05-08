@@ -164,3 +164,20 @@ cancelJobs jobsT = do
 
 redirect303 :: Monad m => ByteString -> ExceptT ServantErr m a
 redirect303 url = throwE $ err303 { errHeaders = [("Location", url)] }
+
+schedule :: MonadBase IO m => TVar (JobQueue a) -> m () -> m ()
+schedule jobsT action = loop
+  where
+    loop = do
+      ct <- liftBase getCurrentTime
+      jobs <- liftBase $ atomically $ readTVar jobsT
+      mapM_
+        ( \time -> do
+            case ct >= time of
+              True -> do
+                liftBase $ putStrLn "Running job now"
+                action
+              False -> do
+                liftBase $ threadDelay 1000000
+                loop
+        ) (jobs ^. qStartTime)

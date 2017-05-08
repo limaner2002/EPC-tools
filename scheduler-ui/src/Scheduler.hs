@@ -54,7 +54,7 @@ headThrow l = case headMay l of
             Just v -> return v
 
 addJob :: Job a -> JobQueue a -> JobQueue a
-addJob job = qJobs %~ (\q -> job : q)
+addJob job = qJobs %~ (\q -> q <> [job])
 
 getQueue :: MonadBase IO m => TVar (JobQueue a) -> m (JobQueue a)
 getQueue = liftBase . atomically . readTVar

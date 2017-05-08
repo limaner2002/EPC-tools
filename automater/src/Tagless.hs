@@ -11,17 +11,19 @@
 module Tagless where
 
 import ClassyPrelude
-import Control.Arrow.ListArrow
+-- import Control.Arrow.ListArrow
 -- import Control.Arrow.ArrowList
 import Control.Arrow
+import JSONTree
 import JSONTreeLA
+import JSONTreeStreaming
 import Data.Aeson
 import CreateRequest (SaveInto (..))
 import Data.Default
 import Network.HTTP.Client (Request)
 import Network.HTTP.Types.Method
 import Network.HTTP.Simple
-import Lang
+-- import Lang
 
 class Auto repr where
   dropSelect :: Text -> Int -> repr
@@ -120,13 +122,13 @@ defaultUpdate val = Update mempty val False mempty
 defaultHref :: Action
 defaultHref = HRef mempty mempty mempty Nothing
 
-data Res = Res { unRes :: ([Result Action], Value)
+data Res a = Res { unRes :: ([Result Action], a)
                }
 
-runRes :: Res -> [Result Action]
+runRes :: Res a -> [Result Action]
 runRes (Res (results, _)) = results
 
-instance (Arrow cat, JSONTree cat Value) => Auto (cat Value Res) where
+instance (Arrow cat, JSONTree cat Value) => Auto (cat Value (Res Value)) where
   dropSelect label selection = proc input -> do
     drop <- fillField IntVal label selection -< input
     returnA -< Res ([drop], input)
@@ -135,7 +137,7 @@ instance (Arrow cat, JSONTree cat Value) => Auto (cat Value Res) where
     txt <- fillField TxtVal label selection -< input
     returnA -< Res ([txt], input)
 
-instance (Arrow cat, JSONTree cat Value) => Auto (cat Res Res) where
+instance (Arrow cat, JSONTree cat Value) => Auto (cat (Res Value) (Res Value)) where
   dropSelect label selection = proc input -> do
     (results, v) <- arr unRes -< input
     drop <- fillField IntVal label selection -< v
@@ -157,9 +159,6 @@ fillField f label v = proc input -> do
     createUpdate (Error str) _ = Error str
     createUpdate _ (Error str) = Error str
 
--- initRes :: LA Value Res -> LA Value Res
--- initRes = id
-
 getContext :: (Arrow cat, JSONTree cat Value) => cat (Result [Action], Value) (Result UI)
 getContext = proc (actions, v) -> do
   ctx <- getKeyValue "context" >>> arr fromJSON -< v
@@ -167,6 +166,6 @@ getContext = proc (actions, v) -> do
   typ <- getKeyValue "#t" >>> arr fromJSON -< v
   returnA -< UI <$> ctx <*> uuid <*> typ <*> actions
 
-runUI :: (Arrow cat, JSONTree cat Value) => cat Res (Result UI)
+runUI :: (Arrow cat, JSONTree cat Value) => cat (Res Value) (Result UI)
 runUI = arr unRes >>> arr sequence *** id >>> getContext
 
