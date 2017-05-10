@@ -9,6 +9,11 @@ module Validate
   ( validateBatchOpts
   , Types.BatchOpts
   , ValidationResult (..)
+  , nThreads
+  , nLoops
+  , propName
+  , propValue
+  , propValRes
   ) where
 
 import ClassyPrelude
@@ -111,7 +116,7 @@ validateBatchOpts (BatchOpts opts) = do
 checkScripts :: (MonadState ValidationResult m, MonadIO m) => Kleisli m [JMeterOpts] [JMeterOpts]
 checkScripts = (arr (fmap getIt) >>> Kleisli (mapM checkScript') >>> mkValidation >>> Kleisli addCheck) &&& id >>> arr snd
   where
-    getIt opt = (runName opt, jmxPath opt)
+    getIt opt = (opt ^. runName, opt ^. jmxPath)
     checkScript' (rn, fp) = do
       res <- checkScript fp
       return (rn, res)
@@ -122,7 +127,7 @@ checkBatchOpts = Kleisli checkIt
   where
     checkRunNames = all (==1) . countRunNames
     countRunNames opts = foldl' insertName (mempty :: Map RunName Int) opts
-    insertName mp v = alterMap countName (runName v) mp
+    insertName mp v = alterMap countName (v ^. runName) mp
     countName Nothing = Just 1
     countName (Just n) = Just (n + 1)
     checkIt opts = case checkRunNames opts of
@@ -134,30 +139,30 @@ addCheck new = do
   old <- get
   put (old `mappend` new)
 
-checkDomains :: ArrowXml a => a XmlTree (Bool, String)
-checkDomains = hasAttrValue "name" (=="HTTPSampler.domain") /> getText >>> arr checkDomain &&& id
-  where
-    checkDomain d = d == "portal-preprod.usac.org" || d == "${appianHost}"
+-- checkDomains :: ArrowXml a => a XmlTree (Bool, String)
+-- checkDomains = hasAttrValue "name" (=="HTTPSampler.domain") /> getText >>> arr checkDomain &&& id
+--   where
+--     checkDomain d = d == "portal-preprod.usac.org" || d == "${appianHost}"
 
-checkReferer :: ArrowXml a => a XmlTree (Bool, String)
-checkReferer = hasAttrValue "name" (=="Referer")
-  /> hasAttrValue "name" (=="Header.value")
-  /> getText
-  >>> arr checkDomain &&& id
-  where
-    checkDomain d = isInfixOf "${appianHost}" d || isInfixOf "portal-preprod.usac.org" d
+-- checkReferer :: ArrowXml a => a XmlTree (Bool, String)
+-- checkReferer = hasAttrValue "name" (=="Referer")
+--   /> hasAttrValue "name" (=="Header.value")
+--   /> getText
+--   >>> arr checkDomain &&& id
+--   where
+--     checkDomain d = isInfixOf "${appianHost}" d || isInfixOf "portal-preprod.usac.org" d
 
-checkOrigin :: ArrowXml a => a XmlTree (Bool, String)
-checkOrigin = hasAttrValue "name" (=="Origin")
-  /> hasAttrValue "name" (=="Header.value")
-  /> getText
-  >>> arr (isInfixOf "${appianHost}") &&& id
-  where
-    checkDomain d = isInfixOf "${appianHost}" d || isInfixOf "portal-preprod.usac.org" d
+-- checkOrigin :: ArrowXml a => a XmlTree (Bool, String)
+-- checkOrigin = hasAttrValue "name" (=="Origin")
+--   /> hasAttrValue "name" (=="Header.value")
+--   /> getText
+--   >>> arr (isInfixOf "${appianHost}") &&& id
+--   where
+--     checkDomain d = isInfixOf "${appianHost}" d || isInfixOf "portal-preprod.usac.org" d
 
-checkHost :: ArrowXml a => a XmlTree (Bool, [String])
-checkHost = deep (checkDomains `orElse` checkReferer `orElse` checkOrigin) >. foldl' red (True, mempty)
-  where
-    red (aBool, aVal) (bBool, bVal) 
-      | bBool = (aBool, aVal)
-      | otherwise = (bBool, aVal <> pure bVal)
+-- checkHost :: ArrowXml a => a XmlTree (Bool, [String])
+-- checkHost = deep (checkDomains `orElse` checkReferer `orElse` checkOrigin) >. foldl' red (True, mempty)
+--   where
+--     red (aBool, aVal) (bBool, bVal) 
+--       | bBool = (aBool, aVal)
+--       | otherwise = (bBool, aVal <> pure bVal)

@@ -49,7 +49,7 @@ isEmptyDirectory [] = True
 isEmptyDirectory _ = False
 
 runJMeter_ :: JMeterOpts -> IO ()
-runJMeter_ opts@(JMeterOpts n users _ jmeterPath _ _ _) = mapM_ runForNUsers users
+runJMeter_ opts = mapM_ runForNUsers (opts ^. nUsers)
   where
     createNUsersDir (NUsers u) = do
       exists <- doesDirectoryExist $ show u
@@ -59,8 +59,9 @@ runJMeter_ opts@(JMeterOpts n users _ jmeterPath _ _ _) = mapM_ runForNUsers use
     runForNUsers user@(NUsers u) = do
       createNUsersDir user
       setCurrentDirectory $ show u
-      mapM_ (run user) [1..(extractRun n)]
+      mapM_ (run user) [1..(extractRun $ opts ^. nRuns)]
       setCurrentDirectory "../"
+      threadDelay 60000000
     run u r = do
       let newDir = "Run " <> show r
           cmd = createCommand opts u
@@ -79,14 +80,14 @@ batchJMeterScripts batchOpts = mapM_ runJMeter runs
 
 runJMeter :: JMeterOpts -> IO ()
 runJMeter run = do
-      createDirectoryIfMissing False $ unpack . fromRunName $ runName run
-      setCurrentDirectory $ unpack . fromRunName $ runName run
+      createDirectoryIfMissing False $ unpack . fromRunName $ run ^. runName
+      setCurrentDirectory $ unpack . fromRunName $ run ^. runName
       res <- tryAny $ runJMeter_ run
       case res of
         Left exc -> print exc
         Right x -> return x
       setCurrentDirectory "../"
-      delayJob $ sleepTime run
+      delayJob $ run ^. sleepTime
 
 runningMessage :: JMeterOpts -> Text
 runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts sleepTime) = do

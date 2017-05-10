@@ -40,11 +40,11 @@ showBatchPlan batchOpts = -- foldl' (\x y -> x <> "&bull; " <> showRunName (runN
   where
     opts = fromBatchOpts batchOpts
     renderItem item = L.li_ $ do
-      L.toHtml $ showRunName $ runName item
+      L.toHtml $ showRunName $ item ^. runName
       L.ul_ $ do
-        L.li_ $ L.toHtml $ showJobDelay (sleepTime item)
-        L.li_ $ L.toHtml $ showRuns (nRuns item)
-        L.li_ $ L.toHtml $ showUsers (nUsers item)
+        L.li_ $ L.toHtml $ showJobDelay (item ^. sleepTime)
+        L.li_ $ L.toHtml $ showRuns (item ^. nRuns)
+        L.li_ $ L.toHtml $ showUsers (item ^. nUsers)
     showRuns (Run n) = tshow n <> " runs"
     showUsers l = "For " <> intercalate ", " (lead l) <> ", and " <> showNUsers (lastEx l) <> " users."
     lead = fmap showNUsers . reverse . drop 1 . reverse

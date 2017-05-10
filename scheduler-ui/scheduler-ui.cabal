@@ -27,17 +27,21 @@ library
                      , servant-lucid
                      , text
                      , http-types
-                     , machinecell-contrib
                      , lens
                      , transformers
                      , time
                      , optparse-applicative
+                     , streaming-commons
+                     , streaming
+                     , streaming-bytestring
+                     , constraints
   default-language:    Haskell2010
   other-modules:       Scheduler.Types
                      , Scheduler.Arrow
                      , Scheduler
                      , Scheduler.Lib
                      , Scheduler.Server
+                     , Scheduler.Execute
 
 source-repository head
   type:     git

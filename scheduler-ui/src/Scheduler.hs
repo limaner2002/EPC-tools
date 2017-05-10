@@ -48,13 +48,18 @@ data EmptyHeadException = EmptyHeadException Text
 
 instance Exception EmptyHeadException
 
+         -- This is a bad way of doing this. I should refactor this
+         -- possibly using an Either type to indicate that there are
+         -- no jobs queued and leave the exception handling to the
+         -- actual exceptions.
 headThrow :: (MonadThrow m, MonoFoldable mono) => mono -> m (Element mono)
 headThrow l = case headMay l of
-            Nothing -> throwM $ EmptyHeadException "headT: empty"
+            Nothing -> throwM $ EmptyHeadException "There are no jobs queued. Not doing anything."
             Just v -> return v
 
+-- Appends a job to the end of the queue
 addJob :: Job a -> JobQueue a -> JobQueue a
-addJob job = qJobs %~ (\q -> q <> [job])
+addJob job = qJobs %~ (|> job)
 
 getQueue :: MonadBase IO m => TVar (JobQueue a) -> m (JobQueue a)
 getQueue = liftBase . atomically . readTVar
@@ -96,9 +101,9 @@ schedule tScheduledTime action = loop
               liftBase $ threadDelay 1000000
               loop
 
-q1 = qJobs .~ [Job "6742" Queued Nothing, Job "6619" Queued Nothing] $ emptyQueue
+-- q1 = qJobs .~ [Job "6742" Queued Nothing, Job "6619" Queued Nothing] $ emptyQueue
 
-q2 = (qJobs .~ [Job "3761" Running Nothing, Job "6781" Queued Nothing]) . (qStatus .~ QRunning) $ emptyQueue
+-- q2 = (qJobs .~ [Job "3761" Running Nothing, Job "6781" Queued Nothing]) . (qStatus .~ QRunning) $ emptyQueue
 
-q3 = qJobs .~ [Job "4222" Finished Nothing, Job "4313" Queued Nothing] $ emptyQueue
+-- q3 = qJobs .~ [Job "4222" Finished Nothing, Job "4313" Queued Nothing] $ emptyQueue
 

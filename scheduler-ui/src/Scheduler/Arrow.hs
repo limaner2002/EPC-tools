@@ -14,7 +14,6 @@ import Control.Arrow
 import ClassyPrelude
 import Scheduler.Types
 import Control.Lens
-import MachineUtils
 
 getNotFinished :: MonadThrow m => Kleisli m (JobQueue a) (Job a, JobQueue a)
 getNotFinished = Kleisli S.getNotFinished
@@ -68,8 +67,7 @@ setQueueRunning = arr (qStatus .~ QRunning)
 runJobs :: MonadBase IO m => Kleisli m a () -> TVar (JobQueue a) -> m ()
 runJobs f var = runKleisli (runJob f) var
 
--- catchTest :: (MonadIO m, MonadCatch m) => TVar (JobQueue a) -> m (Either QueueException (JobQueue a))
--- catchTest v = catch f g
---   where
---     f = Right <$> (atomically $ runKleisli checkQueueRunning v)
---     g exc@(QueueException _) = pure $ Left exc
+passthroughK :: Monad m => (a -> m ()) -> Kleisli m a a
+passthroughK f = proc a -> do
+  _ <- Kleisli f -< a
+  returnA -< a

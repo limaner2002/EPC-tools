@@ -13,14 +13,14 @@ module Server where
 
 import ClassyPrelude hiding (Handler, (</>))
 
-import Data.Aeson
+-- import Data.Aeson
 import Servant
 import Types
 import Lucid
 import qualified Data.ByteString.Lazy as BL
 import Network.HTTP.Media ((//), (/:))
-import Network.Wai
-import Network.Wai.Handler.Warp
+-- import Network.Wai
+-- import Network.Wai.Handler.Warp
 import Path
 import GetLogs (downloadLogs)
 import MachineUtils
@@ -89,12 +89,13 @@ instance ToHttpApiData (Path Rel File) where
 proxyAPI :: Proxy API
 proxyAPI = Proxy
 
+homepage :: HomePage
 homepage = HomePage $ fmap (tshow . scriptLink) [rtsJS, libJS, outJS]
 
 checkLogSettings :: LogSettings -> Handler SubmitStatus
 checkLogSettings logSettings = do
   liftIO $ do
-    print "Downloading logs now"
+    putStrLn "Downloading logs now"
     res <- tryAny $ downloadLogs logSettings
     case res of
       Left e -> do
@@ -140,8 +141,14 @@ scriptLink = safeLink proxyAPI scpt
 app ::Path Rel Dir -> Application
 app scriptsDir = serve proxyAPI (server scriptsDir)
 
+rtsJS :: Path Rel File
 rtsJS = $(mkRelFile "rts.js")
+
+libJS :: Path Rel File
 libJS = $(mkRelFile "lib.js")
+
+outJS :: Path Rel File
 outJS = $(mkRelFile "out.js")
 
+logDir :: Path Rel Dir
 logDir = $(mkRelDir "logs")

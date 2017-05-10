@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Main where
 
@@ -42,8 +43,11 @@ import Sheets.Opts
 import Table
 import Scheduler.Opts
 
-instance MonadThrow ReadM where
-  throwM exc = readerError $ show exc
+newtype ReadMThrow a = ReadMThrow {runReadThrow :: ReadM a}
+  deriving (Functor, Applicative, Monad)
+
+instance MonadThrow ReadMThrow where
+  throwM exc = ReadMThrow $ readerError $ show exc
 
 logsParser :: Parser (IO ())
 logsParser = downloadLogs <$>
@@ -66,13 +70,13 @@ logsParser = downloadLogs <$>
   <> help "A list of nodes to download the logs from. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
   <> metavar "\"NODE1 <NODE2 ...>\""
   )
-  <*> option (parseMany >>= sequence . fmap parseRelFile >>= pure . Just)
+  <*> option (runReadThrow $ ReadMThrow parseMany >>= sequence . fmap parseRelFile >>= pure . Just)
   (  long "logfiles"
   <> short 'l'
   <> help "A list of logfiles to download. If more than one node is listed, the list must be separated by spaces and enclosed in double quotes\""
   <> metavar "\"LOGFILE1 <LOGFILE2 ...>\""
   )
-  <*> option (readerAsk >>= parseRelDir >>= pure . Just)
+  <*> option (runReadThrow $ ReadMThrow readerAsk >>= parseRelDir >>= pure . Just)
   (  long "dest"
   <> short 'd'
   <> help "The directory to download the logfiles to."
@@ -97,7 +101,7 @@ txtOption = option (readerAsk >>= pure . pack)
 
 serverParser :: Parser (IO ())
 serverParser = runServer
-  <$> option (readerAsk >>= parseRelDir)
+  <$> option (runReadThrow $ (ReadMThrow readerAsk) >>= parseRelDir)
   (  long "scriptsdir"
   <> short 's'
   <> help "The path where the java scripts are located."
@@ -219,7 +223,7 @@ runTests execType timestamp configFiles = do
       initialize tz time' sendScheduledTime checkJobStatusTime' opts
 
 initialize :: TimeZone -> ScheduledTime -> ScheduledTime -> ScheduledTime -> [JMeterOpts] -> IO ()
-initialize tz jobTime sendScheduledTime checkJobStatusTime opts = do
+initialize tz jobTime sendScheduledTime checkJobStatusTime' opts = do
   (validatedOpts, vr) <- runStateT (validateBatchOpts $ createBatchOpts opts) mempty
   let dispMsg (rn, msg) = show rn <> "\n" <> msg <> "\n\n"
   print vr
@@ -231,7 +235,7 @@ initialize tz jobTime sendScheduledTime checkJobStatusTime opts = do
         schedule (trace ("scheduledMsg: " <> show sendScheduledTime) sendScheduledTime) $ do
           putStrLn "Sending message now"
           sendMessage $ scheduledMessage validatedOpts sendScheduledTime
-        schedule (trace ("checkMsg: " <> show checkJobStatusTime) checkJobStatusTime) $ checkStatus tz runningStatus validatedOpts
+        schedule (trace ("checkMsg: " <> show checkJobStatusTime') checkJobStatusTime') $ checkStatus tz runningStatus validatedOpts
     )
     (
       doIfDirIsEmpty $ do

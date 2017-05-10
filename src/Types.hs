@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Types
   ( LogSettings (..)
@@ -24,16 +25,22 @@ module Types
   , showRunName
   , showJobDelay
   , InvalidBatchOpts (..)
+  , runName
+  , jmxPath
+  , sleepTime
+  , nRuns
+  , nUsers
+  , jmeterPath
+  , otherOpts
+  , module Control.Lens
   ) where
 
 import ClassyPrelude
 import Data.Aeson
-import qualified Data.ByteString.Lazy as BL
+-- import qualified Data.ByteString.Lazy as BL
 import Path
 import Data.Time
--- import Validate
--- import MachineUtils
--- import Control.Monad.State
+import Control.Lens hiding (deep, cons)
 
 data LogSettings = LogSettings
   { username :: Text
@@ -58,13 +65,13 @@ instance ToJSON SubmitStatus
 instance FromJSON SubmitStatus
 
 data JMeterOpts = JMeterOpts
-  { nRuns :: Run
-  , nUsers :: [NUsers]
-  , jmxPath :: FilePath
-  , jmeterPath :: FilePath
-  , runName :: RunName
-  , otherOpts :: [Text]
-  , sleepTime :: JobDelay
+  { _nRuns :: Run
+  , _nUsers :: [NUsers]
+  , _jmxPath :: FilePath
+  , _jmeterPath :: FilePath
+  , _runName :: RunName
+  , _otherOpts :: [Text]
+  , _sleepTime :: JobDelay
   } deriving (Show, Generic)
 
 instance ToJSON JMeterOpts
@@ -115,14 +122,14 @@ instance FromJSON ToScheduledTime
 
 mkScheduledTime :: TimeZone -> ToScheduledTime -> UTCTime -> ScheduledTime
 mkScheduledTime tz (At t) _ = ScheduledTime $ localTimeToUTC tz t
-mkScheduledTime tz (TOD localTimeOfDay) utcTime
+mkScheduledTime tz (TOD localTimeOfDay') utcTime
   | localScheduledTime >= localTime = ScheduledTime $ localTimeToUTC tz localScheduledTime
   | otherwise = ScheduledTime $ localTimeToUTC tz nextDay
   where
     localTime = utcToLocalTime tz utcTime
     localDay' = localDay localTime
-    localScheduledTime = LocalTime localDay' localTimeOfDay
-    nextDay = LocalTime (addDays 1 localDay') localTimeOfDay
+    localScheduledTime = LocalTime localDay' localTimeOfDay'
+    nextDay = LocalTime (addDays 1 localDay') localTimeOfDay'
 
 fromScheduledTime :: ScheduledTime -> UTCTime
 fromScheduledTime (ScheduledTime t) = t
@@ -151,3 +158,4 @@ showJobDelay (Delay n) = "Wait for " <> tshow n <> " seconds."
 showJobDelay (AtTime (TOD t)) = "Wait until " <> tshow t <> " or until current job completes. Whichever is later."
 showJobDelay (AtTime (At t)) = "Wait until " <> tshow t <> " or until current job completes. Whichever is later."
 
+makeLenses ''JMeterOpts
