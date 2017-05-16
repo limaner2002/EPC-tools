@@ -7,6 +7,9 @@ module Scheduler.Arrow
   ( runJobs
   , getQueue
   , setQueue
+  , moveJobUpK
+  , moveJobDownK
+  , removeJobK
   ) where
 
 import qualified Scheduler as S
@@ -71,3 +74,19 @@ passthroughK :: Monad m => (a -> m ()) -> Kleisli m a a
 passthroughK f = proc a -> do
   _ <- Kleisli f -< a
   returnA -< a
+
+-- moveJobUp :: MonadBase IO m => Int -> TVar (JobQueue a) -> m ()
+moveJobUpK :: MonadBase IO m => Int -> Kleisli m (TVar (JobQueue a)) ()
+moveJobUpK idx = id &&& getQueue
+  >>> id *** arr (qJobs %~ S.moveUp idx)
+  >>> setQueue
+
+moveJobDownK :: MonadBase IO m => Int -> Kleisli m (TVar (JobQueue a)) ()
+moveJobDownK idx = id &&& getQueue
+  >>> id *** arr (qJobs %~ S.moveBack idx)
+  >>> setQueue
+
+removeJobK :: MonadBase IO m => Int -> Kleisli m (TVar (JobQueue a)) ()
+removeJobK idx = id &&& getQueue
+  >>> id *** arr (qJobs %~ S.remove idx)
+  >>> setQueue

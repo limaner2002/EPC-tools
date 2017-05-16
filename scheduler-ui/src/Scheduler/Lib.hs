@@ -28,10 +28,16 @@ jobTable jobs = do
       th_ "#"
       th_ "Job Name"
       th_ "Status"
+      th_ mempty
     tbody_ $ mapM_ (tr_ . dispJob) $ zip [1..] (jobs ^. qJobs)
   addJobButton
  where
-   dispJob (n, job) = td_ (toHtml $ tshow n) <> (td_ $ toHtml $ job ^. jobName) <> (td_ $ toHtml $ tshow $ job ^. jobStatus)
+   dispJob (n, job) = td_ (toHtml $ tshow n) <> (td_ $ toHtml $ job ^. jobName) <> (td_ $ toHtml $ tshow $ job ^. jobStatus) <> (td_ $ modLinks n)
+   modLinks :: Int -> Html ()
+   modLinks n = do
+     a_ [href_ ("/remJob?idx=" <> tshow (n-1))] $ img_ [src_ "icon/remove"]
+     -- a_ [href_ ("/moveUp?idx=" <> tshow (n-1))] $ img_ [src_ "icon/arrUp"]
+     -- a_ [href_ ("/moveDown?idx=" <> tshow (n-1))] $ img_ [src_ "icon/arrDown"]
 
 createJob :: Html ()
 createJob = form_ [class_ "pure-form pure-form-stacked", action_ "/addJob", method_ "post", enctype_ "application/json"] $ fieldset_ $ do

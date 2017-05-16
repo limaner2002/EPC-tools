@@ -60,15 +60,19 @@ runJMeter_ opts = mapM_ runForNUsers (opts ^. nUsers)
       createNUsersDir user
       setCurrentDirectory $ show u
       mapM_ (run user) [1..(extractRun $ opts ^. nRuns)]
+      putStrLn "runForNUsers: Moving to parent"
       setCurrentDirectory "../"
-      threadDelay 60000000
     run u r = do
       let newDir = "Run " <> show r
           cmd = createCommand opts u
       createDirectory newDir
       setCurrentDirectory newDir
       putStrLn $ "Running command: " <> (pack $ showCmdSpec cmd)
-      runCommand (newCP cmd)
+      res <- tryAny $ runCommand (newCP cmd)
+      case res of
+        Left exc -> print exc
+        Right x -> return ()
+      putStrLn "run: Moving to parent"
       setCurrentDirectory "../"
     extractRun (Run n) = n
     extractUser (NUsers u) = u
@@ -86,6 +90,7 @@ runJMeter run = do
       case res of
         Left exc -> print exc
         Right x -> return x
+      putStrLn "runJMeter: Moving to parent"
       setCurrentDirectory "../"
       delayJob $ run ^. sleepTime
 

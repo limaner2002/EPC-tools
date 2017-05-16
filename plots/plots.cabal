@@ -15,8 +15,9 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     PlotTest
-                     , PlotSystem
+  exposed-modules:     Plot.Opts
+  other-modules:       Plot
+                     , Plot.Metrics
                      , StreamParser
                      , ParseSystem
   build-depends:       base >= 4.7 && < 5
@@ -32,6 +33,7 @@ library
                      , resourcet
                      , lens
                      , time-lens
+                     , optparse-applicative
   default-language:    Haskell2010
 
 test-suite plots-test

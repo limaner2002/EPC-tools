@@ -2,10 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-}
 
-module PlotSystem where
+module Plot.Metrics where
 
 import ClassyPrelude as CP
-import PlotTest
+import Plot
 import Data.Time
 import qualified Data.ByteString.Streaming as BSS
 import qualified Streaming.Prelude as S
@@ -17,8 +17,8 @@ import Control.Monad.Trans.Resource
 import Graphics.Rendering.Chart.Backend.Diagrams
 import Graphics.Rendering.Chart.Easy
 
-plotSystem :: LocalTime -> LocalTime -> FilePath -> Int -> String -> IO ()
-plotSystem start end filePrefix column yAxisTitle = do
+plotSystem :: LocalTime -> LocalTime -> FilePath -> [(String, String)] -> Int -> String -> IO ()
+plotSystem start end filePrefix nodePairs column yAxisTitle = do
   tz <- getCurrentTimeZone
   l <- mapM
     ( \(filePath, nodeName) -> do
@@ -34,8 +34,14 @@ plotSystem start end filePrefix column yAxisTitle = do
     -- filterVals (vals, nodeName) = (filter between vals, nodeName)
     setTitle = layout_y_axis . laxis_title .~ yAxisTitle
     setYScale = layout_y_axis . laxis_generate .~ scaledAxis def (0, 300)
-    setXScale = layout_x_axis . laxis_generate .~ (autoTimeAxis . scaledLocalTimeAxis start end)
-    scaledLocalTimeAxis start end pts = start : end : pts
+    setXScale = layout_x_axis . laxis_generate .~ scaledLocalTimeAxis start end
+    scaledLocalTimeAxis start end pts = autoTimeAxis (start : end : pts)
+    toFilePaths (pfx, node) = (pfx <> "." <> node, node)
+    before x = x ^. timeStamp <= start
+    after x = x ^. timeStamp >= end
+
+plotSystem' start end filePrefix column yAxisTitle = plotSystem start end filePrefix nodePairs column yAxisTitle
+  where
     nodePairs = zip (repeat filePrefix)
         [ "node1873"
         , "node1894"
@@ -46,6 +52,3 @@ plotSystem start end filePrefix column yAxisTitle = do
         , "node1899"
         , "node1900"
         ]
-    toFilePaths (pfx, node) = (pfx <> "." <> node, node)
-    before x = x ^. timeStamp <= start
-    after x = x ^. timeStamp >= end

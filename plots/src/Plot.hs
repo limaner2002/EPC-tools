@@ -1,7 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module PlotTest where
+module Plot where
 
 import ClassyPrelude as CP
 import Graphics.Rendering.Chart.Easy

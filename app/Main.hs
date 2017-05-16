@@ -29,7 +29,7 @@ import Control.Monad.Trans.State
 
 import Path
 import Network.Wai.Handler.Warp
-import Server
+-- import Server
 import SendMail
 import Results
 import Control.Arrow (Kleisli (..))
@@ -42,6 +42,7 @@ import Validate ( validateBatchOpts,
 import Sheets.Opts
 import Table
 import Scheduler.Opts
+import Plot.Opts
 
 newtype ReadMThrow a = ReadMThrow {runReadThrow :: ReadM a}
   deriving (Functor, Applicative, Monad)
@@ -99,20 +100,20 @@ logsInfo = info (helper <*> logsParser)
 txtOption :: Mod OptionFields Text -> Parser Text
 txtOption = option (readerAsk >>= pure . pack)
 
-serverParser :: Parser (IO ())
-serverParser = runServer
-  <$> option (runReadThrow $ (ReadMThrow readerAsk) >>= parseRelDir)
-  (  long "scriptsdir"
-  <> short 's'
-  <> help "The path where the java scripts are located."
-  )
+-- serverParser :: Parser (IO ())
+-- serverParser = runServer
+--   <$> option (runReadThrow $ (ReadMThrow readerAsk) >>= parseRelDir)
+--   (  long "scriptsdir"
+--   <> short 's'
+--   <> help "The path where the java scripts are located."
+--   )
 
-serverInfo :: ParserInfo (IO ())
-serverInfo = info (helper <*> serverParser)
-  (  fullDesc
-  <> header "Log Downloader Server"
-  <> progDesc "Runs a simple webserver for automatically downloading log files from Appian Cloud environments."
-  )
+-- serverInfo :: ParserInfo (IO ())
+-- serverInfo = info (helper <*> serverParser)
+--   (  fullDesc
+--   <> header "Log Downloader Server"
+--   <> progDesc "Runs a simple webserver for automatically downloading log files from Appian Cloud environments."
+--   )
 
 testsParser :: Parser (IO ())
 testsParser = runTests
@@ -155,30 +156,31 @@ readTime' fmt = do
   input <- readerAsk
   parseTimeM True defaultTimeLocale fmt input
 
-runServer :: Path Rel Dir -> IO ()
-runServer scriptsDir = run 8081 (app scriptsDir)
+-- runServer :: Path Rel Dir -> IO ()
+-- runServer scriptsDir = run 8081 (app scriptsDir)
 
-parseCommands :: Parser (IO ())
-parseCommands = subparser
-  ( command "server" serverInfo
-  <> command "run-tests" testsInfo
+parseCommands :: TimeZone -> Parser (IO ())
+parseCommands tz = subparser
+  ( command "run-tests" testsInfo
   <> command "analyse" resultsInfo
   <> command "download-log" logsInfo
   <> command "create-sheet" sheetsInfo
   <> command "make-table" tableInfo
   <> command "scheduler-ui" (schedulerInfo (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
+  <> command "plot-metrics" (plotInfo tz)
   )
 
-commandsInfo :: ParserInfo (IO ())
-commandsInfo = info (helper <*> parseCommands)
+commandsInfo :: TimeZone -> ParserInfo (IO ())
+commandsInfo tz = info (helper <*> parseCommands tz)
   (  fullDesc
   <> progDesc "This is a collection of various tools to help aid in EPC Post Commit performance testing."
   )
 
 main :: IO ()
 main = do
+  tz <- getCurrentTimeZone
   SIO.hSetBuffering stdout SIO.NoBuffering
-  join $ execParser commandsInfo
+  join $ execParser (commandsInfo tz)
 
 data ExecutionStatus
   = NotStarted

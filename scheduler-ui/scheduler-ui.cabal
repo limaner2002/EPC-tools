@@ -35,6 +35,10 @@ library
                      , streaming
                      , streaming-bytestring
                      , constraints
+                     , diagrams
+                     , diagrams-svg
+                     , diagrams-lib
+                     , svg-builder
   default-language:    Haskell2010
   other-modules:       Scheduler.Types
                      , Scheduler.Arrow
@@ -42,6 +46,7 @@ library
                      , Scheduler.Lib
                      , Scheduler.Server
                      , Scheduler.Execute
+                     , Scheduler.Icons
 
 source-repository head
   type:     git

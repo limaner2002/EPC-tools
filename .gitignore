@@ -2,4 +2,5 @@
 *.hi
 *.o
 .stack-work/*
+*/.stack-work/*
 UI/.stack-work/

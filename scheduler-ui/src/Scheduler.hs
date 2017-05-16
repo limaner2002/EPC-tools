@@ -6,7 +6,7 @@ module Scheduler where
 
 import Scheduler.Types
 import ClassyPrelude
-import Control.Lens
+import Control.Lens hiding (Index)
 
 incJobStatus :: JobStatus -> JobStatus
 incJobStatus Queued = Running
@@ -107,3 +107,18 @@ schedule tScheduledTime action = loop
 
 -- q3 = qJobs .~ [Job "4222" Finished Nothing, Job "4313" Queued Nothing] $ emptyQueue
 
+    -- Utility Functions
+
+splitEm :: IsSequence seq => Index seq -> seq -> (seq, (seq, (seq, seq)))
+splitEm n l = (fmap . fmap) (splitAt 1) $ fmap (splitAt 1) $ splitAt n l
+
+moveBack :: (Semigroup t, IsSequence t) => Index t -> t -> t
+moveBack n l = pfx <> b <> a <> sfx
+  where
+    (pfx, (a, (b, sfx))) = splitEm n l
+
+moveUp :: (IsSequence t, Semigroup t) => Index t -> t -> t
+moveUp n l = moveBack (n-1) l
+
+remove :: Foldable f => Int -> f a -> [a]
+remove n l = l ^.. folded . ifiltered (\i _ -> i /= n)

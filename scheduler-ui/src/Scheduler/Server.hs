@@ -8,7 +8,7 @@
 
 module Scheduler.Server where
 
-import Servant
+import Servant as S
 import Servant.HTML.Lucid
 import Lucid
 import Scheduler.Lib
@@ -24,14 +24,20 @@ import Control.Monad.Trans.Except
 import Control.Arrow
 import Control.Lens
 import Data.Time
+import Scheduler.Icons
 
 type HomePageAPI = Get '[HTML] (Html ())
 type CreateJobAPI = "new" :> Get '[HTML] (Html ())
 type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
-type RemoveJob = "remJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
+type RemoveJobAPI = "remJob" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
 type ScheduleJobsAPI = "schedule" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
 type CancelJobsAPI = "cancel" :> Get '[HTML] (Html ())
+type MoveJobUpAPI = "moveUp" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
+type MoveJobDownAPI = "moveDown" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
+type ArrUpIcon = "icon" :> "arrUp" :> Get '[SvgDiagram] SvgDiagram'
+type ArrDownIcon = "icon" :> "arrDown" :> Get '[SvgDiagram] SvgDiagram'
+type RemoveIcon = "icon" :> "remove" :> Get '[SvgDiagram] SvgDiagram'
 
 data BodyParams
 newtype BodyMap = BodyMap (Map Text Text)
@@ -55,8 +61,15 @@ type API = HomePageAPI
   :<|> RunJobsAPI
   :<|> ScheduleJobsAPI
   :<|> CancelJobsAPI
+  :<|> RemoveJobAPI
+  :<|> MoveJobUpAPI
+  :<|> MoveJobDownAPI
+  :<|> ArrUpIcon
+  :<|> ArrDownIcon
+  :<|> RemoveIcon
 
-type ServantHandler = (ExceptT ServantErr IO)
+-- type ServantHandler = (ExceptT ServantErr IO)
+type ServantHandler = (S.Handler)
 
 proxyAPI :: Proxy API
 proxyAPI = Proxy
@@ -68,6 +81,12 @@ server mkJob jobAct jobsT = homepage jobsT
   :<|> runJobs jobAct jobsT
   :<|> scheduleJobs jobAct jobsT
   :<|> cancelJobs jobsT
+  :<|> removeJob jobsT
+  :<|> moveJobUp jobsT
+  :<|> moveJobDown jobsT
+  :<|> sendArrUp
+  :<|> sendArrDown
+  :<|> sendRemove
 
 homepage :: TVar (JobQueue a) -> Server HomePageAPI
 homepage jobsT = do
@@ -97,8 +116,6 @@ addJob mkJob jobsT (BodyMap bodyParams) = do
                 readTVar jobsT
               redirect303 "/"
         where
-          -- addIt :: a -> JobQueue a -> JobQueue a
-          -- addIt jobVal jobs = jobs <> [job jobVal]
           job jobVal = Job jobName Queued jobVal
 
 application :: (Text -> ServantHandler a) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
@@ -145,7 +162,7 @@ scheduleJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> Server Sched
 scheduleJobs f jobsT (BodyMap bodyParams) = do
   tz <- liftIO getCurrentTimeZone
   case mTime of
-    Nothing -> throwE $ err500 { errBody = "Could not parse the time " }
+    Nothing -> S.Handler $ throwE $ err500 { errBody = "Could not parse the time " }
     Just time -> do
       _ <- atomically $ do
         modifyTVar jobsT (qStartTime .~ Just (localTimeToUTC tz time))
@@ -162,6 +179,30 @@ cancelJobs jobsT = do
   atomically $ modifyTVar jobsT (qStartTime .~ Nothing)
   redirect303 "/"
 
-redirect303 :: Monad m => ByteString -> ExceptT ServantErr m a
-redirect303 url = throwE $ err303 { errHeaders = [("Location", url)] }
+removeJob :: TVar (JobQueue a) -> Server RemoveJobAPI
+removeJob jobsT mIdx = do
+  mapM_ (\idx -> runKleisli (Scheduler.removeJobK idx) jobsT) mIdx
+  redirect303 "/"
+
+moveJobUp :: TVar (JobQueue a) -> Server MoveJobUpAPI
+moveJobUp jobsT mIdx = do
+  mapM_ (\idx -> runKleisli (Scheduler.moveJobUpK idx) jobsT) mIdx
+  redirect303 "/"
+
+moveJobDown :: TVar (JobQueue a) -> Server MoveJobDownAPI
+moveJobDown jobsT mIdx = do
+  mapM_ (\idx -> runKleisli (Scheduler.moveJobDownK idx) jobsT) mIdx
+  redirect303 "/"
+
+sendArrUp :: Server ArrUpIcon
+sendArrUp = return $ SvgDiagram' arrUp
+
+sendArrDown :: Server ArrUpIcon
+sendArrDown = return $ SvgDiagram' arrDown
+
+sendRemove :: Server RemoveIcon
+sendRemove = return $ SvgDiagram' removeIcon
+
+redirect303 :: ByteString -> S.Handler a
+redirect303 url = S.Handler $ throwE $ err303 { errHeaders = [("Location", url)] }
 
