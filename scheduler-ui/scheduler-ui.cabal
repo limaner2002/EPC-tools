@@ -39,6 +39,9 @@ library
                      , diagrams-svg
                      , diagrams-lib
                      , svg-builder
+                     , directory
+                     , filepath
+                     , colour
   default-language:    Haskell2010
   other-modules:       Scheduler.Types
                      , Scheduler.Arrow
