@@ -17,6 +17,8 @@ import Control.Arrow
 import ClassyPrelude
 import Scheduler.Types
 import Control.Lens
+import Scheduler.Util
+import System.Directory
 
 getNotFinished :: MonadThrow m => Kleisli m (JobQueue a) (Job a, JobQueue a)
 getNotFinished = Kleisli S.getNotFinished
@@ -67,8 +69,29 @@ runJob f = proc var -> do
 setQueueRunning :: Arrow cat => cat (JobQueue a) (JobQueue a)
 setQueueRunning = arr (qStatus .~ QRunning)
 
-runJobs :: MonadBase IO m => Kleisli m a () -> TVar (JobQueue a) -> m ()
-runJobs f var = runKleisli (runJob f) var
+runJobs :: (MonadBase IO m, MonadCatch m, MonadThrow m) => Kleisli m a () -> TVar (JobQueue a) -> m ()
+runJobs f var = do
+  dir <- liftBase $ createTodayDirectory "."
+  cwd <- liftBase $ getCurrentDirectory
+  liftBase $ setCurrentDirectory dir
+  res <- tryAny $ runKleisli (runJob f) var
+  case res of
+    Left exc -> do
+      liftBase $ setCurrentDirectory cwd
+      throw exc
+    Right r -> do
+      liftBase $ setCurrentDirectory cwd
+      return r
+    
+  -- bracket
+  --   (liftBase getCurrentDirectory)
+  --   (\cwd -> do
+  --       liftBase $ do
+  --         dir <- createTodayDirectory cwd
+  --         setCurrentDirectory dir
+  --       runKleisli (runJob f) var
+  --   )
+  --   (liftBase . setCurrentDirectory)
 
 passthroughK :: Monad m => (a -> m ()) -> Kleisli m a a
 passthroughK f = proc a -> do

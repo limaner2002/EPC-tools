@@ -47,6 +47,7 @@ library
                      , Scheduler.Server
                      , Scheduler.Execute
                      , Scheduler.Icons
+                     , Scheduler.Util
 
 source-repository head
   type:     git
