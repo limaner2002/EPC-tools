@@ -1,8 +1,8 @@
-name:                plots
+name:                stats
 version:             0.1.0.0
 -- synopsis:
 -- description:
-homepage:            https://github.com/githubuser/plots#readme
+homepage:            https://github.com/githubuser/stats#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Author name here
@@ -15,36 +15,32 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Plot.Opts
-                     , StreamParser
-  other-modules:       Plot
-                     , Plot.Metrics
-                     , ParseSystem
+  exposed-modules:     Stats
   build-depends:       base >= 4.7 && < 5
+                     , plots
                      , classy-prelude
                      , attoparsec
-                     , colour
-                     , Chart
-                     , Chart-diagrams
                      , time
-                     , streaming
+                     , lens
                      , streaming-bytestring
+                     , streaming
                      , streaming-utils
                      , resourcet
-                     , lens
-                     , time-lens
                      , optparse-applicative
+                     , parsec
+                     , boxes
+  other-modules:       Stats.ParseSample
   default-language:    Haskell2010
 
-test-suite plots-test
+test-suite stats-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Spec.hs
   build-depends:       base
-                     , plots
+                     , stats
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 
 source-repository head
   type:     git
-  location: https://github.com/githubuser/plots
+  location: https://github.com/githubuser/stats

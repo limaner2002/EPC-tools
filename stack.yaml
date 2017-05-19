@@ -28,6 +28,7 @@ packages:
 - location: sheets
 - location: scheduler-ui
 - location: plots
+- location: stats
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:

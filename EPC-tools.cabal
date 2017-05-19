@@ -54,6 +54,7 @@ library
                      , scheduler-ui
                      , optparse-applicative
                      , machinecell
+                     , stats
   default-language:    Haskell2010
 
 executable EPC-tools
