@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Stats.ParseSample where
 
@@ -15,7 +16,7 @@ data HTTPSample = HTTPSample
   { _timeStamp :: UTCTime
   , _elapsed :: Int
   , _label :: Label
-  , _responseCode :: Int
+  , _responseCode :: ResponseCode
   , _responseMessage :: Text
   , _threadName :: Text
   , _dataType :: Text
@@ -33,6 +34,12 @@ data HTTPSample = HTTPSample
 newtype Label = Label {_labelVal :: Text}
   deriving (Show, Ord, Eq)
 
+data ResponseCode
+  = HTTPResponseCode Int
+  | NonHTTPResponseCode Text
+  | NoResponseCode
+  deriving Show
+
 parseHTTPSample :: [Text] -> A.Parser a HTTPSample
 parseHTTPSample row =
   case toHTTPSample row of
@@ -48,7 +55,7 @@ toHTTPSample [ timeStamp, elapsed, label, responseCode, responseMessage
              <$> (posixSecondsToUTCTime <$> (fromIntegral <$> (div <$> readMay timeStamp <*> pure 1000)))
              <*> readMay elapsed
              <*> pure (Label label)
-             <*> readMay responseCode
+             <*> toResponseCode responseCode
              <*> pure responseMessage
              <*> pure threadName
              <*> pure dataType
@@ -63,10 +70,24 @@ toHTTPSample [ timeStamp, elapsed, label, responseCode, responseMessage
              <*> readMay connect
 toHTTPSample _ = Nothing
 
+readMay' :: (Element c ~ Char, MonoFoldable c, Read a) => c -> Maybe (Maybe a)
+readMay' val
+  | onull val = Just Nothing
+  | otherwise = case readMay val of
+                  Nothing -> Nothing
+                  Just v -> Just $ Just v
+
 toBool :: Text -> Maybe Bool
 toBool "false" = Just False
 toBool "true" = Just True
 toBool _ = Nothing
 
+toResponseCode :: Text -> Maybe ResponseCode
+toResponseCode txt
+  | onull txt = Just NoResponseCode
+  | isPrefixOf "Non HTTP response code: " txt = Just $ NonHTTPResponseCode txt
+  | otherwise = HTTPResponseCode <$> readMay txt
+
 makeLenses ''HTTPSample
 makeLenses ''Label
+makePrisms ''ResponseCode

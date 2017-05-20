@@ -43,6 +43,7 @@ import Sheets.Opts
 import Table
 import Scheduler.Opts
 import Plot.Opts
+import Stats.Opts
 
 newtype ReadMThrow a = ReadMThrow {runReadThrow :: ReadM a}
   deriving (Functor, Applicative, Monad)
@@ -156,9 +157,6 @@ readTime' fmt = do
   input <- readerAsk
   parseTimeM True defaultTimeLocale fmt input
 
--- runServer :: Path Rel Dir -> IO ()
--- runServer scriptsDir = run 8081 (app scriptsDir)
-
 parseCommands :: TimeZone -> Parser (IO ())
 parseCommands tz = subparser
   ( command "run-tests" testsInfo
@@ -168,6 +166,7 @@ parseCommands tz = subparser
   <> command "make-table" tableInfo
   <> command "scheduler-ui" (schedulerInfo (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
   <> command "plot-metrics" (plotInfo tz)
+  <> command "get-stats" statsInfo
   )
 
 commandsInfo :: TimeZone -> ParserInfo (IO ())
