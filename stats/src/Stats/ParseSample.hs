@@ -1,6 +1,5 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Stats.ParseSample where
@@ -11,34 +10,7 @@ import qualified Data.Attoparsec.Types as A
 import Data.Time hiding (readTime)
 import Control.Lens hiding (index)
 import Data.Time.Clock.POSIX
-
-data HTTPSample = HTTPSample
-  { _timeStamp :: UTCTime
-  , _elapsed :: Int
-  , _label :: Label
-  , _responseCode :: ResponseCode
-  , _responseMessage :: Text
-  , _threadName :: Text
-  , _dataType :: Text
-  , _success :: Bool
-  , _failureMessage :: Text
-  , _bytes :: Int
-  , _sentBytes :: Int
-  , _grpThreads :: Int
-  , _allThreads :: Int
-  , _latency :: Int
-  , _idleTime :: Int
-  , _connect :: Int
-  } deriving Show
-
-newtype Label = Label {_labelVal :: Text}
-  deriving (Show, Ord, Eq)
-
-data ResponseCode
-  = HTTPResponseCode Int
-  | NonHTTPResponseCode Text
-  | NoResponseCode
-  deriving Show
+import Stats.Types
 
 parseHTTPSample :: [Text] -> A.Parser a HTTPSample
 parseHTTPSample row =
@@ -88,6 +60,3 @@ toResponseCode txt
   | isPrefixOf "Non HTTP response code: " txt = Just $ NonHTTPResponseCode txt
   | otherwise = HTTPResponseCode <$> readMay txt
 
-makeLenses ''HTTPSample
-makeLenses ''Label
-makePrisms ''ResponseCode

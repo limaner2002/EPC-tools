@@ -30,8 +30,11 @@ library
                      , boxes
                      , filemanip
                      , foldl
+                     , tdigest
   other-modules:       Stats.ParseSample
                      , Stats
+                     , Stats.Types
+                     , Stats.Fold
   default-language:    Haskell2010
 
 test-suite stats-test

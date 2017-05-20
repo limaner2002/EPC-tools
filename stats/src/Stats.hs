@@ -1,6 +1,5 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Stats where
 
@@ -14,24 +13,12 @@ import Control.Lens
 import Text.PrettyPrint.Boxes hiding ((<>), char)
 import Data.List (transpose)
 import Numeric
-import qualified Control.Foldl as Fold
+import Data.TDigest (median, quantile)
 
 import Stats.ParseSample
 import StreamParser
-
-data Stat = Stat
-  { _statTime :: UTCTime
-  , _statTotal :: Int
-  , _statErrors :: Int
-  , _statElapsed :: Int
-  } deriving Show
-
-type Dict = Map Label Stat
-
-newStat :: UTCTime -> Stat
-newStat ts = Stat ts 0 0 0
-
-makeLenses ''Stat
+import Stats.Types
+import Stats.Fold
 
 collectRuns :: [FilePath] -> IO Dict
 collectRuns paths = foldM collectStats mempty paths
@@ -48,49 +35,32 @@ collectStats dict path = do
     Left (msg, _) -> fail $ show msg <> " in " <> path
     Right _ -> return $ S.fst' res
 
-streamFold :: Monad m => Fold.Fold t1 t -> S.Stream (S.Of t1) m r -> m (S.Of t r)
-streamFold (Fold.Fold accum init f) = S.fold accum init f
-
-statFold :: Dict -> Fold.Fold HTTPSample Dict
-statFold dict = Fold.Fold collectStat dict id
-
-collectStat :: Dict -> HTTPSample -> Dict
-collectStat d sample = d & at (sample ^. label) %~ update
-  where
-    update Nothing = Just $ makeStat (newStat (sample ^. timeStamp)) sample
-    update (Just stat) = Just $ makeStat stat sample
-
-makeStat :: Stat -> HTTPSample -> Stat
-makeStat stat sample = stat
-  & statTotal %~ (+1)
-  & statErrors %~ (isError (sample ^. responseCode))
-  & statElapsed %~ (\avg -> avg + sample ^. elapsed)
-  where
-    isError NoResponseCode n = n
-    isError respCode n =
-      case respCode ^? _HTTPResponseCode of
-        Just code -> 
-          if code < 400
-          then n
-          else n + 1
-        Nothing -> n + 1
-
 dispRuns :: [FilePath] -> IO ()
 dispRuns paths = do
   putStrLn "Gathering stats from:"
   mapM_ (putStrLn . pack) paths
   res <- collectRuns paths
-  printBox . hsep 2 Text.PrettyPrint.Boxes.left . fmap (vcat Text.PrettyPrint.Boxes.left . fmap text) . transpose $ fmap (uncurry statToRow) $ sortOn (^. _2 . statTime) $ mapToList res
+  printBox . hsep 2 Text.PrettyPrint.Boxes.left . fmap (vcat Text.PrettyPrint.Boxes.left . fmap text) . transpose $ addHeader $ fmap (uncurry statToRow) $ sortOn (^. _2 . statTime) $ mapToList res
+
+addHeader :: [[String]] -> [[String]]
+addHeader tbl = [["Label", "# Samples", "Average", "Median", "90% Line", "95% Line", "99% Line", "Min", "Max", "Errors", "Error%"]] <> tbl
 
 statToRow :: Label -> Stat -> [String]
 statToRow statLabel stat = [ unpack (statLabel ^. labelVal)
                            , show (stat ^. statTotal)
+                           , showFFloat (Just 0) avg mempty
+                           , showFFloat (Just 0) (fromMaybe (0/0) $ median dg) mempty
+                           , showFFloat (Just 0) (fromMaybe (0/0) $ quantile 0.9 dg) mempty
+                           , showFFloat (Just 0) (fromMaybe (0/0) $ quantile 0.95 dg) mempty
+                           , showFFloat (Just 0) (fromMaybe (0/0) $ quantile 0.99 dg) mempty
+                           , dispInfinite (stat ^. statMin)
+                           , show (stat ^. statMax)
                            , show (stat ^. statErrors)
                            , showFFloat (Just 2) pctg mempty
-                           , showFFloat (Just 0) avg mempty
                            ]
   where
     pctg :: Double
     pctg = fromIntegral (stat ^. statErrors) / fromIntegral (stat ^. statTotal) * 100
     avg :: Double
     avg = fromIntegral (stat ^. statElapsed) / fromIntegral (stat ^. statTotal)
+    dg = stat ^. statDigest
