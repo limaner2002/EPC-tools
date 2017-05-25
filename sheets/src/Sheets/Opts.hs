@@ -34,7 +34,13 @@ expressionInfo = info (helper <*> sheetsOptParser)
 
 aggregateOptParser :: Parser (IO ())
 aggregateOptParser = Agg.createSheet
-  <$> strOption
+  <$> option auto
+  (  long "max-row"
+  <> short 'm'
+  <> metavar "MAX_ROW"
+  <> help "The number of the last row to include in the error formatting of the resulting sheet."
+  )
+  <*> strOption
   (  long "outFile"
   <> short 'o'
   <> metavar "OUT_FILE"

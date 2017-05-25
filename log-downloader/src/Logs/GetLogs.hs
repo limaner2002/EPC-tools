@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE Arrows #-}
 
-module GetLogs where
+module Logs.GetLogs where
 
 import ClassyPrelude
 import Data.ByteString.Streaming.HTTP
@@ -14,7 +14,7 @@ import Data.CaseInsensitive
 import qualified Data.ByteString.Streaming as BSS
 import qualified Streaming.Prelude as S
 import Control.Arrow
-import Core
+import Logs.Core
 import System.FilePath
 
 data LogSettings = LogSettings
@@ -95,20 +95,21 @@ printResponse = S.map responseBody >>> S.mapM_ BSS.stdout
 loginReq :: MonadThrow m => ByteString -> ByteString -> String -> m Request
 loginReq un pw url = setQueryString (authParams un pw) <$> addRequestHeaders baseHeaders <$> parseRequest url
 
-downloadLogs :: [Text] -> FilePath -> FilePath -> FilePath -> Text -> Text -> IO ()
-downloadLogs nodes logs baseUrl dir un pw = do
+downloadLogs :: Text -> Text -> [Text] -> [FilePath] -> FilePath -> String -> IO ()
+downloadLogs un pw nodes logs dir baseUrl = do
   mgr <- newManager tlsManagerSettings
   runResourceT $ traverse_
-    (\(nodeName, logName) -> do
+    (\(nodeName, logNames) -> do
         loginResp <- login mgr (Just $ encodeUtf8 nodeName) (encodeUtf8 un) (encodeUtf8 pw) baseUrl
         let f = S.each >>> mkManager >>> S.map flatten3 >>> reqMgr (loginResp, responseCookieJar loginResp, printNode)
-            downloadUrl = baseUrl </> "suite/logs" </> logName
-            fileSink = S.map responseBody >>> S.mapM_ (BSS.writeFile (dir </> takeFileName logName <> "." <> unpack nodeName))
-        req <- parseRequest $ downloadUrl
+            downloadUrls = fmap ((baseUrl </> "suite/logs") </>) logNames
+            fileSink logName = S.map responseBody >>> S.mapM_ (BSS.writeFile (dir </> takeFileName logName <> "." <> unpack nodeName))
+        reqs <- mapM parseRequest downloadUrls
         logoutReq <- parseRequest $ baseUrl </> "suite/logout"
-        f [ (req, fileSink)
-          , (logoutReq, printStatus)
-          ]
+        f $ zip reqs (fmap fileSink logNames) `snoc` (logoutReq, printStatus)
+        -- f [ (req, fileSink)
+        --   , (logoutReq, printStatus)
+        --   ]
     ) $ zip nodes (repeat logs)
     where
       printStatus = S.map responseStatus >>> S.print

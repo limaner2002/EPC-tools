@@ -15,8 +15,13 @@ import Data.List (transpose)
 import Numeric
 import Data.TDigest (median, quantile)
 
-import Stats.ParseSample
-import StreamParser
+-- import Stats.ParseSample
+-- import StreamParser
+import Stats.CsvStream
+import Data.Csv
+import Data.Csv.Builder
+
+import Data.Default
 import Stats.Types
 import Stats.Fold
 
@@ -25,25 +30,34 @@ collectRuns paths = foldM collectStats mempty paths
 
 collectStats :: Dict -> FilePath -> IO Dict
 collectStats dict path = do
-  res <- BSS.readFile
-    >>> BSS.dropWhile (/= toEnum (fromEnum '\n'))
-    >>> BSS.drop 1
-    >>> parsed (parseRow >=> mapM (pure . decodeUtf8) >=> parseHTTPSample $ defaultCSVSettings)
+  res <- csvStreamByName HasHeader
     >>> streamFold (statFold dict)
     >>> runResourceT $ path
-  case S.snd' res of
-    Left (msg, _) -> fail $ show msg <> " in " <> path
-    Right _ -> return $ S.fst' res
+  return $ S.fst' res
 
-dispRuns :: [FilePath] -> IO ()
-dispRuns paths = do
-  putStrLn "Gathering stats from:"
-  mapM_ (putStrLn . pack) paths
+dispRuns :: OutputMode -> [FilePath] -> Verbosity -> IO ()
+dispRuns mode paths verbosity = do
+  case verbosity of
+    Verbose -> do
+      putStrLn "Gathering stats from:"
+      mapM_ (putStrLn . pack) paths
+    Quiet -> return ()
   res <- collectRuns paths
-  printBox . hsep 2 Text.PrettyPrint.Boxes.left . fmap (vcat Text.PrettyPrint.Boxes.left . fmap text) . transpose $ addHeader $ fmap (uncurry statToRow) $ sortOn (^. _2 . statTime) $ mapToList res
+  let rows = fmap (uncurry statToAggregateRow) $ sortOn (^. _2 . statTime) $ mapToList res
+      showBox = printBox . hsep 2 Text.PrettyPrint.Boxes.left . fmap (vcat Text.PrettyPrint.Boxes.left . fmap text) . transpose . (fmap . fmap) (unpack . decodeUtf8) . fmap (toList . toRecord)
+      showCSV = putStrLn . toStrict . decodeUtf8 . concat . fmap (builderToLazy . encodeRecord)
+
+  case mode of
+    Table -> showBox rows
+    CSV -> do
+      putStr . toStrict . decodeUtf8 . builderToLazy . encodeHeader . fromList $ headers
+      showCSV rows
 
 addHeader :: [[String]] -> [[String]]
-addHeader tbl = [["Label", "# Samples", "Average", "Median", "90% Line", "95% Line", "99% Line", "Min", "Max", "Errors", "Error%"]] <> tbl
+addHeader tbl = [headers] <> tbl
+
+headers :: IsString s => [s]
+headers = ["Label", "# Samples", "Average", "Median", "90% Line", "95% Line", "99% Line", "Min", "Max", "Errors", "Error%"]
 
 statToRow :: Label -> Stat -> [String]
 statToRow statLabel stat = [ unpack (statLabel ^. labelVal)

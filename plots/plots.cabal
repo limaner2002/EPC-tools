@@ -34,6 +34,7 @@ library
                      , lens
                      , time-lens
                      , optparse-applicative
+                     , bytestring
   default-language:    Haskell2010
 
 test-suite plots-test

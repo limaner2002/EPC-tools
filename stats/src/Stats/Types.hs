@@ -6,8 +6,10 @@
 module Stats.Types where
 
 import ClassyPrelude
-import Control.Lens
+import Control.Lens hiding (index, (.=))
 import Data.TDigest
+import Data.Csv hiding (Only, index, (.!))
+import Data.Time.Clock.POSIX
 
 data Stat = Stat
   { _statTime :: UTCTime
@@ -37,6 +39,14 @@ dispInfinite :: Show a => Infinite a -> String
 dispInfinite Infinity = "Infinity"
 dispInfinite (Only n) = show n
 
+instance FromField a => FromField (Infinite a) where
+  parseField "Infinity" = pure Infinity
+  parseField f = Only <$> parseField f
+
+instance ToField a => ToField (Infinite a) where
+  toField Infinity = "Infinity"
+  toField (Only n) = toField n
+
 type Dict = Map Label Stat
 
 newStat :: UTCTime -> Stat
@@ -47,18 +57,18 @@ data HTTPSample = HTTPSample
   , _elapsed :: Int
   , _label :: Label
   , _responseCode :: ResponseCode
-  , _responseMessage :: Text
-  , _threadName :: Text
-  , _dataType :: Text
-  , _success :: Bool
-  , _failureMessage :: Text
-  , _bytes :: Int
-  , _sentBytes :: Int
-  , _grpThreads :: Int
-  , _allThreads :: Int
-  , _latency :: Int
-  , _idleTime :: Int
-  , _connect :: Int
+--   , _responseMessage :: Text
+--   , _threadName :: Text
+--   , _dataType :: Text
+--   , _success :: Bool
+--   , _failureMessage :: Text
+--   , _bytes :: Int
+  -- , _sentBytes :: Int
+  -- , _grpThreads :: Int
+  -- , _allThreads :: Int
+  -- , _latency :: Int
+  -- , _idleTime :: Int
+  -- , _connect :: Int
   } deriving Show
 
 newtype Label = Label {_labelVal :: Text}
@@ -75,3 +85,169 @@ makeLenses ''Label
 makePrisms ''ResponseCode
 makeLenses ''Stat
 
+data OutputMode
+  = Table
+  | CSV
+
+data Verbosity
+  = Quiet
+  | Verbose
+  deriving Show
+
+-- instance ToRecord HTTPSample where
+--   toRecord s = record
+--     [ toField $ s ^. timeStamp
+--     , toField $ s ^. elapsed
+--     , toField $ s ^. label . labelVal
+--     , toField $ s ^. responseCode
+--     , toField $ s ^. responseMessage
+--     , toField $ s ^. threadName
+--     , toField $ s ^. dataType
+--     , toField $ s ^. success
+--     , toField $ s ^. failureMessage
+--     , toField $ s ^. bytes
+--     , toField $ s ^. sentBytes
+--     , toField $ s ^. grpThreads
+--     , toField $ s ^. allThreads
+--     , toField $ s ^. latency
+--     , toField $ s ^. idleTime
+--     , toField $ s ^. connect
+--     ]
+
+instance FromNamedRecord HTTPSample where
+  parseNamedRecord r = HTTPSample
+    <$> (posixSecondsToUTCTime <$> fromInteger <$> (div <$> r .: "timeStamp" <*> pure 1000))
+    <*> r .: "elapsed"
+    <*> (Label <$> r .: "label")
+    <*> (toResponseCode =<< r .: "responseCode")
+
+instance FromRecord HTTPSample where
+  parseRecord r = HTTPSample
+    <$> (posixSecondsToUTCTime <$> fromInteger <$> (div <$> r .! 0 <*> pure 1000))
+    <*> r .! 1
+    <*> (Label <$> r .! 2)
+    <*> (toResponseCode =<< r .! 3)
+    -- <*> r .! 4
+    -- <*> r .! 5
+    -- <*> r .! 6
+    -- <*> (toBool =<< r .! 7)
+    -- <*> r .! 8
+    -- <*> r .! 9
+    -- <*> r .! 10
+    -- <*> r .! 11
+    -- <*> r .! 12
+    -- <*> r .! 13
+    -- <*> r .! 14
+    -- <*> r .! 15
+
+toResponseCode :: Text -> Parser ResponseCode
+toResponseCode txt
+  | onull txt = return NoResponseCode
+  | isPrefixOf "Non HTTP response code: " txt = return $ NonHTTPResponseCode txt
+  | otherwise = case HTTPResponseCode <$> readMay txt of
+      Nothing -> fail "Not a valid HTTP Response Code"
+      Just rc -> return rc
+
+toBool :: Text -> Parser Bool
+toBool "false" = return False
+toBool "true" = return True
+toBool x = fail $ show x <> " is not a valid Boolean value."
+
+(.!) :: FromField a => Record -> Int -> Parser a
+r .! n = case index r n of
+  Nothing -> fail $ "Index out of bounds for record: " <> show r
+  Just f -> parseField f
+
+data AggregateRow = AggregateRow
+  { _aggLabel :: Text
+  , _aggNSamples :: Int
+  , _aggAverage :: Double
+  , _aggMedian :: Double
+  , _aggNinetyPercentLine :: Double
+  , _aggNinetyFifthPercentLine :: Double
+  , _aggNinetyNinthPercentLine :: Double
+  , _aggMinVal :: Infinite Int
+  , _aggMaxVal :: Int
+  , _aggErrors :: Int
+  , _aggErrorPct :: Double
+  } deriving (Show, Eq)
+
+makeLenses ''AggregateRow
+
+instance ToRecord AggregateRow where
+  toRecord agg = record
+    [ toField $ agg ^. aggLabel
+    , toField $ agg ^. aggNSamples
+    , toField $ agg ^. aggAverage
+    , toField $ agg ^. aggMedian
+    , toField $ agg ^. aggNinetyPercentLine
+    , toField $ agg ^. aggNinetyFifthPercentLine
+    , toField $ agg ^. aggNinetyNinthPercentLine
+    , toField $ agg ^. aggMinVal
+    , toField $ agg ^. aggMaxVal
+    , toField $ agg ^. aggErrors
+    , toField $ agg ^. aggErrorPct
+    ]
+
+instance FromRecord AggregateRow where
+  parseRecord r = AggregateRow
+    <$> r .! 0
+    <*> r .! 1
+    <*> r .! 2
+    <*> r .! 3
+    <*> r .! 4
+    <*> r .! 5
+    <*> r .! 6
+    <*> r .! 7
+    <*> r .! 8
+    <*> r .! 9
+    <*> r .! 10
+
+instance ToNamedRecord AggregateRow where
+  toNamedRecord agg = namedRecord
+    [ "Label" .= toField (agg ^. aggLabel)
+    , "# Samples" .= toField (agg ^. aggNSamples)
+    , "Average" .= toField (agg ^. aggAverage)
+    , "Median" .= toField (agg ^. aggMedian)
+    , "90% Line" .= toField (agg ^. aggNinetyPercentLine)
+    , "95% Line" .= toField (agg ^. aggNinetyFifthPercentLine)
+    , "99% Line" .= toField (agg ^. aggNinetyNinthPercentLine)
+    , "Min" .= toField (agg ^. aggMinVal)
+    , "Max" .= toField (agg ^. aggMaxVal)
+    , "Errors" .= toField (agg ^. aggErrors)
+    , "Error%" .= toField (agg ^. aggErrorPct)
+    ]
+
+instance FromNamedRecord AggregateRow where
+  parseNamedRecord r = AggregateRow
+    <$> r .: "Label"
+    <*> r .: "# Samples"
+    <*> r .: "Average"
+    <*> r .: "Median"
+    <*> r .: "90% Line"
+    <*> r .: "95% Line"
+    <*> r .: "99% Line"
+    <*> r .: "Min"
+    <*> r .: "Max"
+    <*> r .: "Errors"
+    <*> r .: "Error%"
+
+statToAggregateRow :: Label -> Stat -> AggregateRow
+statToAggregateRow statLabel stat = AggregateRow
+    (statLabel ^. labelVal)
+    (stat ^. statTotal)
+    avg
+    (fromMaybe (0/0) $ median dg)
+    (fromMaybe (0/0) $ quantile 0.9 dg)
+    (fromMaybe (0/0) $ quantile 0.95 dg)
+    (fromMaybe (0/0) $ quantile 0.99 dg)
+    (stat ^. statMin)
+    (stat ^. statMax)
+    (stat ^. statErrors)
+    pctg
+  where
+    pctg :: Double
+    pctg = fromIntegral (stat ^. statErrors) / fromIntegral (stat ^. statTotal) * 100
+    avg :: Double
+    avg = fromIntegral (stat ^. statElapsed) / fromIntegral (stat ^. statTotal)
+    dg = stat ^. statDigest

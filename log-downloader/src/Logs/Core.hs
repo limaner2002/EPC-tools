@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts  #-}
 
-module Core where
+module Logs.Core where
 
 import ClassyPrelude
 import Data.ByteString.Streaming.HTTP
@@ -24,11 +24,12 @@ f :: MonadIO m => CookieJar -> (Request, Response body) -> m CookieJar
 f cj (req, resp) = do
   ct <- liftIO getCurrentTime
   let cj' = responseCookieJar resp
-  return $ fst $ updateCookieJar resp req ct cj'
+  return $ mappend cj $ fst $ updateCookieJar resp req ct cj'
 
 type Resp m = Response (BSS.ByteString m ())
 type RespConsumer m = S.Stream (S.Of (Resp m)) m () -> m ()
 
+-- Does not appear to work correctly.
 reqMgr :: (MonadIO m, MonadResource m) => (Resp m, CookieJar, RespConsumer m) -> S.Stream (S.Of (Manager, Request, RespConsumer m)) m () -> m ()
 reqMgr init = S.scanM updateCookies' (pure init) pure >>> S.mapM_ consumeIt
   where

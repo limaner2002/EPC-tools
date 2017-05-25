@@ -10,7 +10,7 @@ import qualified Data.Attoparsec.Types as A
 import Data.Time hiding (readTime)
 import Control.Lens hiding (index)
 import Data.Time.Clock.POSIX
-import Stats.Types
+import Stats.Types hiding (toBool, toResponseCode)
 
 parseHTTPSample :: [Text] -> A.Parser a HTTPSample
 parseHTTPSample row =

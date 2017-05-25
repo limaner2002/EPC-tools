@@ -22,6 +22,7 @@ library
                      , attoparsec
                      , time
                      , lens
+                     , bytestring
                      , streaming-bytestring
                      , streaming
                      , streaming-utils
@@ -31,10 +32,12 @@ library
                      , filemanip
                      , foldl
                      , tdigest
-  other-modules:       Stats.ParseSample
-                     , Stats
+                     , cassava
+                     , data-default
+  other-modules:       Stats
                      , Stats.Types
                      , Stats.Fold
+                     , Stats.CsvStream
   default-language:    Haskell2010
 
 test-suite stats-test

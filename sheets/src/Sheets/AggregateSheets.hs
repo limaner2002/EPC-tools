@@ -27,9 +27,10 @@ data AggregateRow = AggregateRow
   , aggNinetyNinthPercentLine :: Double
   , aggMinVal :: Double
   , aggMaxVal :: Double
+  , aggErrors :: Double
   , aggErrorPct :: Double
-  , aggThroughput :: Double
-  , aggKbps :: Double
+  -- , aggThroughput :: Double
+  -- , aggKbps :: Double
   } | Header
   { headLabel :: Text
   , headNSamples :: Text
@@ -40,9 +41,10 @@ data AggregateRow = AggregateRow
   , headNinetyNinthPercentLine :: Text
   , headMinVal :: Text
   , headMaxVal :: Text
+  , headErrors :: Text
   , headErrorPct :: Text
-  , headThroughput :: Text
-  , headKbps :: Text
+  -- , headThroughput :: Text
+  -- , headKbps :: Text
   }
   deriving (Show, Eq)
 
@@ -52,7 +54,8 @@ data InvalidAggregateRow = InvalidAggregateRow Text
 instance Exception InvalidAggregateRow
 
 instance ToSheetRow AggregateRow where
-  toSheetRow rowNum (Header label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
+  -- toSheetRow rowNum (Header label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
+  toSheetRow rowNum (Header label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errors errorPct) ws =  
    ws & cellValueAt (n,1) ?~ (CellText label)
       & cellValueAt (n,2) ?~ (CellText nSamples)
       & cellValueAt (n,3) ?~ (CellText average)
@@ -62,12 +65,12 @@ instance ToSheetRow AggregateRow where
       & cellValueAt (n,7) ?~ (CellText ninetyNinthPercentLine)
       & cellValueAt (n,8) ?~ (CellText minVal)
       & cellValueAt (n,9) ?~ (CellText maxVal)
-      & cellValueAt (n,10) ?~ (CellText errorPct)
-      & cellValueAt (n,11) ?~ (CellText throughput)
-      & cellValueAt (n,12) ?~ (CellText kbps)
+      & cellValueAt (n,10) ?~ (CellText errors)
+      & cellValueAt (n,11) ?~ (CellText errorPct)
    where
      n = fromRowNum rowNum
-  toSheetRow rowNum (AggregateRow label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
+  toSheetRow rowNum (AggregateRow label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errors errorPct) ws =
+  -- toSheetRow rowNum (AggregateRow label nSamples average median ninetiethPercentLine ninetyFifthPercentLine ninetyNinthPercentLine minVal maxVal errorPct throughput kbps) ws =
    ws & cellValueAt (n,1) ?~ (CellText label)
       & cellValueAt (n,2) ?~ (CellDouble $ fromIntegral nSamples)
       & cellValueAt (n,3) ?~ (CellDouble $ average)
@@ -77,13 +80,15 @@ instance ToSheetRow AggregateRow where
       & cellValueAt (n,7) ?~ (CellDouble $ ninetyNinthPercentLine)
       & cellValueAt (n,8) ?~ (CellDouble $ minVal)
       & cellValueAt (n,9) ?~ (CellDouble $ maxVal)
-      & cellValueAt (n,10) ?~ (CellDouble $ errorPct)
-      & cellValueAt (n,11) ?~ (CellDouble $ throughput)
-      & cellValueAt (n,12) ?~ (CellDouble $ kbps)
+      & cellValueAt (n,10) ?~ (CellDouble $ errors)
+      & cellValueAt (n,11) ?~ (CellDouble $ errorPct)
+      -- & cellValueAt (n,11) ?~ (CellDouble $ throughput)
+      -- & cellValueAt (n,12) ?~ (CellDouble $ kbps)
    where
      n = fromRowNum rowNum
     -- Reads and returns an aggregate row
-  makeRow [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,error,through,kbps] =
+  -- makeRow [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,error,through,kbps] =
+  makeRow [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,errors,errorPct] =
     AggregateRow <$> pure l
                  <*> readVal ns
                  <*> readVal avg
@@ -93,9 +98,10 @@ instance ToSheetRow AggregateRow where
                  <*> readVal nnthpct
                  <*> readVal min
                  <*> readVal max
-                 <*> readError error
-                 <*> readDouble through
-                 <*> readDouble kbps
+                 <*> readVal errors
+                 <*> readError errorPct
+                 -- <*> readDouble through
+                 -- <*> readDouble kbps
     where
       readError = readVal . reverse . drop 1 . reverse
       readDouble v = case isPrefixOf "." v of
@@ -103,8 +109,9 @@ instance ToSheetRow AggregateRow where
         False -> readVal v
   makeRow row = throwM $ InvalidAggregateRow $ tshow row <> " is not a valid JMeter aggregate report row."
 
-  makeHead [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,error,through,kbps] =
-    return $ Header l ns avg mdn ntypct nfthpct nnthpct min max error through kbps
+  -- makeHead [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,error,through,kbps] =
+  makeHead [l,ns,avg,mdn,ntypct,nfthpct,nnthpct,min,max,errors,errorPct] =
+    return $ Header l ns avg mdn ntypct nfthpct nnthpct min max errors errorPct
   makeHead row = throwM $ InvalidAggregateRow $ tshow row <> " is not a valid JMeter aggregate report header."
 
 filterFcn :: Either SomeException [Text] -> Bool
@@ -115,25 +122,26 @@ filterFcn (Right (x:_)) = checkIt $ headMay x
     checkIt (Just c) = not $ isDigit c
 
 doIt :: MonadResource m =>
+  Int ->
   POSIXTime ->
   FilePath ->
   ProcessA (Kleisli m) (Event (Text, FilePath)) (Event ())
-doIt t outPath = makeWorkbook t myArr >>> addStyleSheet >>> serializeSheet t >>> writeSheet outPath
+doIt maxRow t outPath = makeWorkbook t myArr >>> addStyleSheet >>> serializeSheet t >>> writeSheet outPath
   where
-    myArr = sourceFile >>> readRows def >>> makeRow_ >>> evMap (id *** fmap asAggRow) >>> makeSheet >>> conditionalFormatting >>> addViewSheet
+    myArr = sourceFile >>> readRows def >>> makeRow_ >>> evMap (id *** fmap asAggRow) >>> makeSheet >>> conditionalFormatting maxRow >>> addViewSheet
     asAggRow :: AggregateRow -> AggregateRow
     asAggRow = id
 
 
-errorFormatting :: Map SqRef ConditionalFormatting
-errorFormatting = def & at (SqRef [cell]) ?~ [CfRule (CellIs (OpGreaterThan (Formula "0"))) (Just 0) 1 Nothing]
+errorFormatting :: Int -> Map SqRef ConditionalFormatting
+errorFormatting maxRow = def & at (SqRef [cell]) ?~ [CfRule (CellIs (OpGreaterThan (Formula "0"))) (Just 0) 1 Nothing]
   where
     cell :: CellRef
-    cell = CellRef "J1:J9"
+    cell = CellRef $ "K1:K" <> tshow maxRow
 
-conditionalFormatting :: (ArrowApply a, Functor f) =>
+conditionalFormatting :: (ArrowApply a, Functor f) => Int ->
      ProcessA a (Event (f Worksheet)) (Event (f Worksheet))
-conditionalFormatting = anytime (arr (fmap (wsConditionalFormattings .~ errorFormatting)))
+conditionalFormatting maxRow = anytime (arr (fmap (wsConditionalFormattings .~ errorFormatting maxRow)))
 
 errorFill :: Fill
 errorFill = Fill (Just $ FillPattern (Just errorColor) (Just errorColor) (Just PatternTypeSolid))
@@ -151,7 +159,7 @@ addStyleSheet :: (ArrowApply a, Functor f) =>
      ProcessA a (Event (f Xlsx)) (Event (f Xlsx))
 addStyleSheet = evMap (fmap $ xlStyles .~ renderStyleSheet styleSheet)
 
-createSheet :: FilePath -> IO ()
-createSheet outPath = do
+createSheet :: Int -> FilePath -> IO ()
+createSheet maxRow outPath = do
   ct <- getPOSIXTime
-  runRMachine_ (doIt ct outPath) [("5 Users", "/tmp/aggregate_5.csv"), ("25 Users", "/tmp/aggregate_25.csv"), ("50 Users", "/tmp/aggregate_50.csv"), ("100 Users", "/tmp/aggregate_100.csv")]
+  runRMachine_ (doIt maxRow ct outPath) [("5 Users", "/tmp/aggregate_5.csv"), ("25 Users", "/tmp/aggregate_25.csv"), ("50 Users", "/tmp/aggregate_50.csv"), ("100 Users", "/tmp/aggregate_100.csv")]
