@@ -14,44 +14,46 @@ import Text.PrettyPrint.Boxes hiding ((<>), char)
 import Data.List (transpose)
 import Numeric
 import Data.TDigest (median, quantile)
+import Control.Monad.Logger
 
 -- import Stats.ParseSample
 -- import StreamParser
 import Stats.CsvStream
 import Data.Csv
 import Data.Csv.Builder
+import Data.Time.Clock.POSIX
 
 import Data.Default
 import Stats.Types
 import Stats.Fold
+import Sheets.Generic
 
-collectRuns :: [FilePath] -> IO Dict
+collectRuns :: (MonadResource m, MonadLogger m) => [FilePath] -> m Dict
 collectRuns paths = foldM collectStats mempty paths
 
-collectStats :: Dict -> FilePath -> IO Dict
+collectStats :: (MonadLogger m, MonadResource m) => Dict -> FilePath -> m Dict
 collectStats dict path = do
-  res <- csvStreamByName HasHeader
-    >>> streamFold (statFold dict)
-    >>> runResourceT $ path
+  logDebugN $ "Reading raw data from file " <> pack path
+  res <- csvStreamByName >>> streamFold (statFold dict) $ path
   return $ S.fst' res
 
-dispRuns :: OutputMode -> [FilePath] -> Verbosity -> IO ()
+dispRuns :: (MonadResource m, MonadLogger m) => OutputMode -> [FilePath] -> Verbosity -> m ()
 dispRuns mode paths verbosity = do
-  case verbosity of
-    Verbose -> do
-      putStrLn "Gathering stats from:"
-      mapM_ (putStrLn . pack) paths
-    Quiet -> return ()
+  logInfoN $ "Reading raw data from .csv files"
+  let msg = "Gathering stats from:\n" <> (intercalate "\n" $ fmap pack paths)
+  logDebugN msg
   res <- collectRuns paths
   let rows = fmap (uncurry statToAggregateRow) $ sortOn (^. _2 . statTime) $ mapToList res
-      showBox = printBox . hsep 2 Text.PrettyPrint.Boxes.left . fmap (vcat Text.PrettyPrint.Boxes.left . fmap text) . transpose . (fmap . fmap) (unpack . decodeUtf8) . fmap (toList . toRecord)
-      showCSV = putStrLn . toStrict . decodeUtf8 . concat . fmap (builderToLazy . encodeRecord)
+      showBox = liftBase . printBox . hsep 2 Text.PrettyPrint.Boxes.left . fmap (vcat Text.PrettyPrint.Boxes.left . fmap text) . transpose . (fmap . fmap) (unpack . decodeUtf8) . fmap (toList . toRecord)
+      showCSV = liftBase . putStrLn . toStrict . decodeUtf8 . concat . fmap (builderToLazy . encodeRecord)
 
+  logInfoN "Displaying aggregate results"
   case mode of
-    Table -> showBox rows
-    CSV -> do
-      putStr . toStrict . decodeUtf8 . builderToLazy . encodeHeader . fromList $ headers
+    FormatTable -> showBox rows
+    FormatCSV -> do
+      liftBase . putStr . toStrict . decodeUtf8 . builderToLazy . encodeHeader . fromList $ headers
       showCSV rows
+    FormatXlsx -> error "FormatXlsx not implemented yet"
 
 addHeader :: [[String]] -> [[String]]
 addHeader tbl = [headers] <> tbl
@@ -78,3 +80,23 @@ statToRow statLabel stat = [ unpack (statLabel ^. labelVal)
     avg :: Double
     avg = fromIntegral (stat ^. statElapsed) / fromIntegral (stat ^. statTotal)
     dg = stat ^. statDigest
+
+mkAggSheet :: (MonadResource m, MonadLogger m) => Text -> FilePath -> m (Text, Worksheet)
+mkAggSheet name fp = do
+  logDebugN $ "Reading sheet " <> name <> " from file " <> pack fp
+  ws <- csvStreamByName >>> S.map aggRow >>> streamFold wsRowFold $ fp
+  return (name, S.fst' ws)
+  where
+    aggRow :: AggregateRow -> AggregateRow
+    aggRow = id
+
+mkXlsx :: (MonadResource m, MonadLogger m) => S.Stream (S.Of (Text, FilePath)) m r -> m Xlsx
+mkXlsx = S.mapM (uncurry mkAggSheet) >>> streamFold (xlsxSheetFold def) >=> S.fst' >>> return
+
+mkAggXlsx :: (MonadResource m, MonadLogger m) => [(Text, FilePath)] -> FilePath -> m ()
+mkAggXlsx sheets outputPath = do
+  ct <- liftBase getPOSIXTime
+  logInfoN $ "Reading aggregate reports from .csv files"
+  x <- S.each >>> mkXlsx $ sheets
+  logInfoN $ "Writing output to " <> pack outputPath
+  writeFile outputPath . toStrict . fromXlsx ct $ x

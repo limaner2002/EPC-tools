@@ -34,6 +34,9 @@ library
                      , tdigest
                      , cassava
                      , data-default
+                     , xlsx
+                     , sheets
+                     , monad-logger
   other-modules:       Stats
                      , Stats.Types
                      , Stats.Fold

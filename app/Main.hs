@@ -38,7 +38,6 @@ import Validate ( validateBatchOpts,
                   ValidationResult (..)
                 )
 
-import Sheets.Opts
 import Table
 import Scheduler.Opts
 import Plot.Opts
@@ -68,7 +67,7 @@ parseCommands :: TimeZone -> Parser (IO ())
 parseCommands tz = subparser
   (  command "analyse" resultsInfo
   <> command "download-log" logsInfo
-  <> command "create-sheet" sheetsInfo
+--   <> command "create-sheet" sheetsInfo
   <> command "make-table" tableInfo
   <> command "scheduler-ui" (schedulerInfo (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
   <> command "plot-metrics" (plotInfo tz)

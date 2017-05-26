@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Stats.Types where
 
@@ -10,6 +11,9 @@ import Control.Lens hiding (index, (.=))
 import Data.TDigest
 import Data.Csv hiding (Only, index, (.!))
 import Data.Time.Clock.POSIX
+import Sheets
+import Sheets.Generic
+import Codec.Xlsx (CellValue (..))
 
 data Stat = Stat
   { _statTime :: UTCTime
@@ -47,6 +51,10 @@ instance ToField a => ToField (Infinite a) where
   toField Infinity = "Infinity"
   toField (Only n) = toField n
 
+instance ToCellValue a => ToCellValue (Infinite a) where
+  toCellValue Infinity = CellDouble (0/0)
+  toCellValue (Only n) = toCellValue n
+
 type Dict = Map Label Stat
 
 newStat :: UTCTime -> Stat
@@ -57,18 +65,6 @@ data HTTPSample = HTTPSample
   , _elapsed :: Int
   , _label :: Label
   , _responseCode :: ResponseCode
---   , _responseMessage :: Text
---   , _threadName :: Text
---   , _dataType :: Text
---   , _success :: Bool
---   , _failureMessage :: Text
---   , _bytes :: Int
-  -- , _sentBytes :: Int
-  -- , _grpThreads :: Int
-  -- , _allThreads :: Int
-  -- , _latency :: Int
-  -- , _idleTime :: Int
-  -- , _connect :: Int
   } deriving Show
 
 newtype Label = Label {_labelVal :: Text}
@@ -86,8 +82,9 @@ makePrisms ''ResponseCode
 makeLenses ''Stat
 
 data OutputMode
-  = Table
-  | CSV
+  = FormatTable
+  | FormatCSV
+  | FormatXlsx
 
 data Verbosity
   = Quiet
@@ -170,7 +167,7 @@ data AggregateRow = AggregateRow
   , _aggMaxVal :: Int
   , _aggErrors :: Int
   , _aggErrorPct :: Double
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Generic)
 
 makeLenses ''AggregateRow
 
@@ -231,6 +228,8 @@ instance FromNamedRecord AggregateRow where
     <*> r .: "Max"
     <*> r .: "Errors"
     <*> r .: "Error%"
+
+instance ToSheetRow AggregateRow
 
 statToAggregateRow :: Label -> Stat -> AggregateRow
 statToAggregateRow statLabel stat = AggregateRow
