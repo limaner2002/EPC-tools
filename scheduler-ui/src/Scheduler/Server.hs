@@ -68,13 +68,13 @@ type API = HomePageAPI
   :<|> ArrDownIcon
   :<|> RemoveIcon
 
--- type ServantHandler = (ExceptT ServantErr IO)
-type ServantHandler = (S.Handler)
+type ServantHandler = S.Handler
+type HandlerT a = ServerT a ServantHandler
 
 proxyAPI :: Proxy API
 proxyAPI = Proxy
 
-server :: (Text -> ServantHandler a) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Server API
+server :: (Text -> ServantHandler a) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT API
 server mkJob jobAct jobsT = homepage jobsT
   :<|> newJob
   :<|> addJob mkJob jobsT
@@ -88,18 +88,18 @@ server mkJob jobAct jobsT = homepage jobsT
   :<|> sendArrDown
   :<|> sendRemove
 
-homepage :: TVar (JobQueue a) -> Server HomePageAPI
+homepage :: TVar (JobQueue a) -> HandlerT HomePageAPI
 homepage jobsT = do
   jobs <- atomically $ readTVar jobsT
   tz <- liftIO getCurrentTimeZone
   return $ renderHomepage tz jobs
 
-newJob :: Server CreateJobAPI
+newJob :: HandlerT CreateJobAPI
 newJob = return $ do
   header
   createJob
 
-addJob :: (Text -> ServantHandler a) -> TVar (JobQueue a) -> Server AddJobAPI
+addJob :: (Text -> ServantHandler a) -> TVar (JobQueue a) -> HandlerT AddJobAPI
 addJob mkJob jobsT (BodyMap bodyParams) = do
   case lookup "job-name" bodyParams of
     Nothing -> pure $ p_ "No job-name supplied!"
@@ -119,7 +119,7 @@ addJob mkJob jobsT (BodyMap bodyParams) = do
           job jobVal = Job jobName Queued jobVal
 
 application :: (Text -> ServantHandler a) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
-application mkJob jobAct jobsT = serve proxyAPI (server mkJob jobAct jobsT)
+application mkJob jobAct jobsT = serve proxyAPI $ server mkJob jobAct jobsT
 
 renderHomepage :: TimeZone -> JobQueue a -> Html ()
 renderHomepage tz jobs = 
@@ -153,12 +153,12 @@ renderHomepage tz jobs =
             pureButton "/cancel" "Cancel Jobs"
 
 
-runJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> Server RunJobsAPI
+runJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT RunJobsAPI
 runJobs f jobsT = do
   _ <- fork $ (Scheduler.runJobs f) jobsT
   redirect303 "/"
 
-scheduleJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> Server ScheduleJobsAPI
+scheduleJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT ScheduleJobsAPI
 scheduleJobs f jobsT (BodyMap bodyParams) = do
   tz <- liftIO getCurrentTimeZone
   case mTime of
@@ -174,35 +174,35 @@ scheduleJobs f jobsT (BodyMap bodyParams) = do
     mTime :: Maybe LocalTime
     mTime = join $ mapM (parseTimeM True defaultTimeLocale "%F %R %Z") $ fmap (unpack . timeStr) timeTup
 
-cancelJobs :: TVar (JobQueue a) -> Server CancelJobsAPI
+cancelJobs :: TVar (JobQueue a) -> HandlerT CancelJobsAPI
 cancelJobs jobsT = do
   atomically $ modifyTVar jobsT (qStartTime .~ Nothing)
   redirect303 "/"
 
-removeJob :: TVar (JobQueue a) -> Server RemoveJobAPI
+removeJob :: TVar (JobQueue a) -> HandlerT RemoveJobAPI
 removeJob jobsT mIdx = do
   mapM_ (\idx -> runKleisli (Scheduler.removeJobK idx) jobsT) mIdx
   redirect303 "/"
 
-moveJobUp :: TVar (JobQueue a) -> Server MoveJobUpAPI
+moveJobUp :: TVar (JobQueue a) -> HandlerT MoveJobUpAPI
 moveJobUp jobsT mIdx = do
   mapM_ (\idx -> runKleisli (Scheduler.moveJobUpK idx) jobsT) mIdx
   redirect303 "/"
 
-moveJobDown :: TVar (JobQueue a) -> Server MoveJobDownAPI
+moveJobDown :: TVar (JobQueue a) -> HandlerT MoveJobDownAPI
 moveJobDown jobsT mIdx = do
   mapM_ (\idx -> runKleisli (Scheduler.moveJobDownK idx) jobsT) mIdx
   redirect303 "/"
 
-sendArrUp :: Server ArrUpIcon
+sendArrUp :: HandlerT ArrUpIcon
 sendArrUp = return $ SvgDiagram' arrUp
 
-sendArrDown :: Server ArrUpIcon
+sendArrDown :: HandlerT ArrUpIcon
 sendArrDown = return $ SvgDiagram' arrDown
 
-sendRemove :: Server RemoveIcon
+sendRemove :: HandlerT RemoveIcon
 sendRemove = return $ SvgDiagram' removeIcon
 
-redirect303 :: ByteString -> S.Handler a
+redirect303 :: ByteString -> ServantHandler a
 redirect303 url = S.Handler $ throwE $ err303 { errHeaders = [("Location", url)] }
 

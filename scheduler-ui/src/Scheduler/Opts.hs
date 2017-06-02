@@ -13,20 +13,21 @@ import Control.Monad.Trans.Except
 import Scheduler.Server
 import Scheduler.Types (emptyQueue)
 import Servant as S
+import Control.Monad.Logger
 
-runServer :: (Text -> ExceptT ServantErr IO a) -> Kleisli (ExceptT ServantErr IO) a () -> Port -> IO ()
+runServer :: (MonadLogger m, MonadIO m) => (Text -> ExceptT ServantErr IO a) -> Kleisli (ExceptT ServantErr IO) a () -> Port -> m ()
 runServer mkJob jobAct port = do
-  v <- newTVarIO emptyQueue
-  run port $ application (S.Handler . mkJob) (toHandler jobAct) v
+  v <- liftIO $ newTVarIO emptyQueue
+  liftIO $ run port $ application (S.Handler . mkJob) (toHandler jobAct) v
 
-schedulerInfo :: (Text -> ExceptT ServantErr IO a) -> Kleisli (ExceptT ServantErr IO) a () -> ParserInfo (IO ())
+schedulerInfo :: (MonadLogger m, MonadIO m) => (Text -> ExceptT ServantErr IO a) -> Kleisli (ExceptT ServantErr IO) a () -> ParserInfo (m ())
 schedulerInfo mkJob jobAct = info (helper <*> schedulerParser mkJob jobAct)
   (  fullDesc
   <> header "Test scheduler UI."
   <> progDesc "Runs a simple server which allows for scheduling of tests."
   )
 
-schedulerParser :: (Text -> ExceptT ServantErr IO a) -> Kleisli (ExceptT ServantErr IO) a () -> Parser (IO ())
+schedulerParser :: (MonadLogger m, MonadIO m) => (Text -> ExceptT ServantErr IO a) -> Kleisli (ExceptT ServantErr IO) a () -> Parser (m ())
 schedulerParser mkJob jobAct = runServer <$>
   pure mkJob
   <*>

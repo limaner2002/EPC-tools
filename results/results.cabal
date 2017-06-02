@@ -28,6 +28,7 @@ library
                      , formatting
                      , text
                      , machinecell-contrib
+                     , monad-logger
   other-modules:       Common
                      , JBossLog
   default-language:    Haskell2010

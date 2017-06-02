@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Stats.Opts where
 
@@ -12,21 +13,18 @@ import Stats.Types (OutputMode (..), Verbosity (..))
 import Control.Monad.Logger
 import Control.Monad.Trans.Resource
 
-statsInfo :: ParserInfo (IO ())
+statsInfo :: (MonadBaseControl IO m, MonadLogger m, MonadThrow m, MonadIO m) => ParserInfo (m ())
 statsInfo = info (helper <*> statsParser)
   (  fullDesc
   <> progDesc "This is a tool to collect and read stats from JMeter tests."
   )
 
-statsParser :: Parser (IO ())
-statsParser = fmap (runResourceT . runStderrLoggingT) $ setLoggingLevel <$> loggingLevelParser <*>
+statsParser :: (MonadBaseControl IO m, MonadLogger m, MonadThrow m, MonadIO m) => Parser (m ())
+statsParser = runResourceT <$>
   subparser
   (  command "raw" rawInfo
   <> command "agg" aggInfo
   )
-
-loggingLevelParser :: Parser LogLevel
-loggingLevelParser = option readLevel (short 'd') <|> pure LevelInfo
 
 parsePathGlob :: Parser FilePath
 parsePathGlob = strOption
@@ -100,6 +98,3 @@ readLevel = do
     "error" -> return LevelError
     "other" -> return $ LevelOther "other"
     _ -> fail "Invalid log level."
-
-setLoggingLevel :: LogLevel -> LoggingT m a -> LoggingT m a
-setLoggingLevel lv = filterLogger (\_ lv' -> lv <= lv')

@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Main where
 
@@ -42,6 +43,7 @@ import Table
 import Scheduler.Opts
 import Plot.Opts
 import Stats.Opts
+import Control.Monad.Logger
 
 parseMany :: ReadM [String]
 parseMany = readerAsk >>= pure . words
@@ -63,28 +65,33 @@ readTime' fmt = do
   input <- readerAsk
   parseTimeM True defaultTimeLocale fmt input
 
-parseCommands :: TimeZone -> Parser (IO ())
+parseCommands :: (MonadLogger m, MonadIO m, MonadBase IO m, MonadBaseControl IO m, MonadMask m) => TimeZone -> Parser (m ())
 parseCommands tz = subparser
   (  command "analyse" resultsInfo
   <> command "download-log" logsInfo
---   <> command "create-sheet" sheetsInfo
   <> command "make-table" tableInfo
   <> command "scheduler-ui" (schedulerInfo (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
   <> command "plot-metrics" (plotInfo tz)
   <> command "get-stats" statsInfo
   )
 
-commandsInfo :: TimeZone -> ParserInfo (IO ())
+commandsInfo :: (MonadLogger m, MonadIO m, MonadBase IO m, MonadBaseControl IO m, MonadMask m) => TimeZone -> ParserInfo (m ())
 commandsInfo tz = info (helper <*> parseCommands tz)
   (  fullDesc
   <> progDesc "This is a collection of various tools to help aid in EPC Post Commit performance testing."
   )
 
+loggingLevelParser :: Parser LogLevel
+loggingLevelParser = option readLevel (short 'd') <|> pure LevelInfo
+
 main :: IO ()
 main = do
   tz <- getCurrentTimeZone
   SIO.hSetBuffering stdout SIO.NoBuffering
-  join $ execParser (commandsInfo tz)
+  runStderrLoggingT . (setLoggingLevel LevelInfo) =<< execParser (commandsInfo tz)
+
+setLoggingLevel :: LogLevel -> LoggingT m a -> LoggingT m a
+setLoggingLevel lv = filterLogger (\_ lv' -> lv <= lv')
 
 data ExecutionStatus
   = NotStarted

@@ -13,6 +13,7 @@ import ParseCSV
 import Data.Time
 import Common
 import Control.Monad.State
+import Control.Monad.Logger
 import Data.Default
 
 import Options.Applicative
@@ -44,9 +45,9 @@ showJBossTS (JBossTS _ l) = showJBossLog l
 readTS :: Monad m => Text -> m TimeOfDay
 readTS = parseTimeM True defaultTimeLocale "%X" . unpack
 
-processLog :: (MonadIO m, MonadThrow m, MonadBaseControl IO m) => FilePath -> JMeterTimeStamp -> JMeterTimeStamp -> Day -> FilePath -> m ()
+processLog :: (MonadIO m, MonadThrow m, MonadBaseControl IO m, MonadLogger m) => FilePath -> JMeterTimeStamp -> JMeterTimeStamp -> Day -> FilePath -> m ()
 processLog sourceFp start end day destFp = do
-  liftIO $ putStrLn $ "reading " <> pack sourceFp <> " between " <> tshow start <> " and " <> tshow end <> " on " <> tshow day <> " and saving to " <> pack destFp
+  logDebugN $ "reading " <> pack sourceFp <> " between " <> tshow start <> " and " <> tshow end <> " on " <> tshow day <> " and saving to " <> pack destFp
   runStateT
     ( runRMachine_
       ( sourceFile
@@ -62,7 +63,7 @@ processLog sourceFp start end day destFp = do
  where
    toJBossTS jl = JBossTS day jl
 
-jbossParser :: Parser (IO ())
+jbossParser :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m) => Parser (m ())
 jbossParser = processLog
   <$> strOption
     (  long "source"
@@ -92,7 +93,7 @@ jbossParser = processLog
     <> help "The file path to put the filtered results."
     )
 
-jbossInfo :: ParserInfo (IO ())
+jbossInfo :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m) => ParserInfo (m ())
 jbossInfo = info (helper <*> jbossParser)
   (  fullDesc
   <> header "JBoss Log Parser"

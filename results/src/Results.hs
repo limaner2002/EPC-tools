@@ -26,6 +26,7 @@ import Data.Char (isDigit)
 import Options.Applicative
 import Options.Applicative.Types
 import Control.Monad.State hiding (mapM_)
+import Control.Monad.Logger
 
 import JBossLog
 import Common
@@ -240,14 +241,14 @@ readLowerBool entry = throwM $ InvalidCSVEntry $ "Could not read value " <> entr
 
 -- optionsParser :: Parser Options
 -- optionsParser = logsParser <|> reportParser <|> memoryParser
-commandsParser :: Parser (IO ())
+commandsParser :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m, MonadMask m) =>Parser (m ())
 commandsParser = subparser
   ( command "parselogs" logsInfo
   <> command "createreport" reportInfo
   <> command "jbosslogs" jbossInfo
   )
 
-logsParser :: Parser (IO ())
+logsParser :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m) => Parser (m ())
 logsParser = processLogs
   <$> strOption
     (  long "logPathGlob"
@@ -270,14 +271,14 @@ logsParser = processLogs
     <> help "The time at which the test finished."
     )
 
-logsInfo :: ParserInfo (IO ())
+logsInfo :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m) => ParserInfo (m ())
 logsInfo = info (helper <*> logsParser)
   (  fullDesc
   <> header "Log Parser"
   <> progDesc "This is used to extract the relevant sections of the expression rules details logfiles from Appian."
   )
 
-reportParser :: Parser (IO ())
+reportParser :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m, MonadMask m) => Parser (m ())
 reportParser = createReport
   <$> strOption
     (  long "testPath"
@@ -285,23 +286,23 @@ reportParser = createReport
     <> help "The directory holding all of the runs for a given test."
     )
 
-reportInfo :: ParserInfo (IO ())
+reportInfo :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m, MonadMask m) => ParserInfo (m ())
 reportInfo = info (helper <*> reportParser)
   (  fullDesc
   <> header "Report Creator"
   <> progDesc "Use this to create a simple report that contains the maximum/minimum request time and the percentage of requests that were above 3seconds."
   )
 
-resultsInfo :: ParserInfo (IO ())
+resultsInfo :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m, MonadMask m) => ParserInfo (m ())
 resultsInfo = info (helper <*> commandsParser)
   (  fullDesc
   <> progDesc "This contains some tools to help analyse the results of running performance tests."
   <> header "Performance Result Analysis Tools"
   )
 
-processLogs :: FilePath -> FilePath -> JMeterTimeStamp -> JMeterTimeStamp -> IO ()
+processLogs :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m) => FilePath -> FilePath -> JMeterTimeStamp -> JMeterTimeStamp -> m ()
 processLogs logPathGlob outputDir startTime endTime = do
-  inFiles <- namesMatching $ logPathGlob
+  inFiles <- liftBase $ namesMatching $ logPathGlob
   let outFiles = fmap (\x -> outputDir </> takeFileName x) inFiles
   evalStateT (
     runRMachine_ (readLogs startTime endTime) (zip inFiles outFiles)
@@ -310,14 +311,14 @@ processLogs logPathGlob outputDir startTime endTime = do
 -- dispatch :: Options -> IO ()
 -- dispatch (LogFiles p o s e) = processLogs p o s e
 
-createReport :: FilePath -> IO ()
+createReport :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBaseControl IO m, MonadMask m) => FilePath -> m ()
 createReport path = runRMachine_ aggregateReport [path]
   where
     aggregateReport = getReadMap
       >>> evMap ((fmap . fmap) mkAggregateTransaction)
       >>> evMap (fmap mkAggregateReport)
       >>> evMap (fmap showAggregateReport)
-      >>> machine (mapM_ (putStrLn . toStrict))
+      >>> machine (mapM_ (liftBase . putStrLn . toStrict))
 
 readLogs :: (MonadResource m, MonadState FilterState m) => JMeterTimeStamp -> JMeterTimeStamp -> ProcessA (Kleisli m) (Event (FilePath, FilePath)) (Event ())
 readLogs startTime endTime = proc input -> do

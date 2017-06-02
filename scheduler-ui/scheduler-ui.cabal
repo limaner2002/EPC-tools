@@ -42,6 +42,7 @@ library
                      , directory
                      , filepath
                      , colour
+                     , monad-logger
   default-language:    Haskell2010
   other-modules:       Scheduler.Types
                      , Scheduler.Arrow

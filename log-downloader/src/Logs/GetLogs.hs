@@ -16,6 +16,7 @@ import qualified Streaming.Prelude as S
 import Control.Arrow
 import Logs.Core
 import System.FilePath
+import Control.Monad.Logger
 
 data LogSettings = LogSettings
   { username :: Text
@@ -61,7 +62,7 @@ authParams un pw = [ ("un", Just un)
            , ("spring_security_remember_me", Just "on")
            ]
 
-login :: MonadResource m => Manager -> Maybe ByteString -> ByteString -> ByteString -> String -> m (Response (BSS.ByteString m ()))
+login :: (MonadResource m, MonadLogger m) => Manager -> Maybe ByteString -> ByteString -> ByteString -> String -> m (Response (BSS.ByteString m ()))
 login mgr nodeName un pw baseUrl = do
   resp <- getResp mgr baseUrl
   req <- setRequestMethod POST <$> addRequestHeader "Content-Type" "application/x-www-form-urlencoded" <$> parseRequest (baseUrl </> "suite/auth?appian_environment=tempo")
@@ -70,7 +71,7 @@ login mgr nodeName un pw baseUrl = do
 
   (req', _) <- case mCJ of
     Nothing -> do
-      liftBase $ putStrLn "Either this is not a multi-node environment or the cookie format has changed."
+      logErrorN "Either this is not a multi-node environment or the cookie format has changed."
       insertCookiesIntoRequest req (responseCookieJar resp) <$> liftBase getCurrentTime
     Just cj -> insertCookiesIntoRequest req cj <$> liftBase getCurrentTime
 
@@ -95,9 +96,9 @@ printResponse = S.map responseBody >>> S.mapM_ BSS.stdout
 loginReq :: MonadThrow m => ByteString -> ByteString -> String -> m Request
 loginReq un pw url = setQueryString (authParams un pw) <$> addRequestHeaders baseHeaders <$> parseRequest url
 
-downloadLogs :: Text -> Text -> [Text] -> [FilePath] -> FilePath -> String -> IO ()
+downloadLogs :: (MonadIO m, MonadLogger m, MonadBaseControl IO m, MonadThrow m) => Text -> Text -> [Text] -> [FilePath] -> FilePath -> String -> m ()
 downloadLogs un pw nodes logs dir baseUrl = do
-  mgr <- newManager tlsManagerSettings
+  mgr <- liftIO $ newManager tlsManagerSettings
   runResourceT $ traverse_
     (\(nodeName, logNames) -> do
         loginResp <- login mgr (Just $ encodeUtf8 nodeName) (encodeUtf8 un) (encodeUtf8 pw) baseUrl
@@ -107,20 +108,10 @@ downloadLogs un pw nodes logs dir baseUrl = do
         reqs <- mapM parseRequest downloadUrls
         logoutReq <- parseRequest $ baseUrl </> "suite/logout"
         f $ zip reqs (fmap fileSink logNames) `snoc` (logoutReq, printStatus)
-        -- f [ (req, fileSink)
-        --   , (logoutReq, printStatus)
-        --   ]
     ) $ zip nodes (repeat logs)
     where
-      printStatus = S.map responseStatus >>> S.print
-      printNode = S.map getNode >>> S.concat >>> S.map (\node -> "Logged into " <> unpack (decodeUtf8 node)) >>> S.stdoutLn
+      printStatus = S.map responseStatus >>> S.mapM_ (logInfoN . tshow)
+      printNode = S.map getNode >>> S.concat >>> S.map (\node -> "Logged into " <> decodeUtf8 node) >>> S.mapM_ logInfoN
 
 flatten3 :: (a, (b, c)) -> (a, b, c)
 flatten3 (a, (b, c)) = (a, b, c)
-
-g :: (MonadIO m, Monad m) => [(Int, S.Stream (S.Of Int) m () -> m ())] -> m ()
-g = S.each >>> S.scan h (0, 0, S.print) i >>> S.mapM_ f
-    where
-      f (x, g) = S.yield >>> g $ x
-      h (total, _, _) (x, g) = (total + x, x, g)
-      i (total, x, g) = trace ("total: " <> show total) (x, g)

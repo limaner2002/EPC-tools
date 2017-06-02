@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Plot.Metrics where
 
@@ -16,16 +17,17 @@ import ParseSystem
 import Control.Monad.Trans.Resource
 import Graphics.Rendering.Chart.Backend.Diagrams
 import Graphics.Rendering.Chart.Easy
+import Control.Monad.Logger
 
-plotSystem :: LocalTime -> LocalTime -> FilePath -> [(String, String)] -> Int -> String -> IO ()
+plotSystem :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBase IO m, MonadBaseControl IO m) => LocalTime -> LocalTime -> FilePath -> [(String, String)] -> Int -> String -> m ()
 plotSystem start end filePrefix nodePairs column yAxisTitle = do
-  tz <- getCurrentTimeZone
+  tz <- liftIO getCurrentTimeZone
   l <- mapM
     ( \(filePath, nodeName) -> do
         dataPoints <- BSS.readFile >>> BSS.dropWhile (/= toEnum (fromEnum '\n')) >>> BSS.drop 1 >>> parsed (parseLoadAverage column tz defaultCSVSettings) >>> S.dropWhile before >>> S.break after >>> S.toList >>> runResourceT $ filePath
         return (dataPoints, nodeName)
     ) $ fmap toFilePaths nodePairs
-  _ <- renderableToFile def "/tmp/cpu.svg" $ toRenderable $ setTitle . setXScale $ plotIt $ fmap sysTuple $ fmap (S.fst' *** id) l
+  _ <- liftIO $ renderableToFile def "/tmp/cpu.svg" $ toRenderable $ setTitle . setXScale $ plotIt $ fmap sysTuple $ fmap (S.fst' *** id) l
   return ()
   where
     toTuple (LoadAverage ts val) = (ts, val)

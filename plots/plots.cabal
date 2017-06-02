@@ -35,6 +35,7 @@ library
                      , time-lens
                      , optparse-applicative
                      , bytestring
+                     , monad-logger
   default-language:    Haskell2010
 
 test-suite plots-test

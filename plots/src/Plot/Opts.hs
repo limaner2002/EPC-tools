@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Plot.Opts
   ( plotInfo
@@ -11,15 +12,16 @@ import Options.Applicative.Types
 import Plot.Metrics
 import Data.Time hiding (readTime, parseTime)
 import Data.Time.Clock.POSIX
+import Control.Monad.Logger
 
-plotInfo :: TimeZone -> ParserInfo (IO ())
+plotInfo :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBase IO m, MonadBaseControl IO m) => TimeZone -> ParserInfo (m ())
 plotInfo tz = info (helper <*> plotParser tz)
   (  fullDesc
   <> header "System Metrics Plotter"
   <> progDesc "Currently only supports line plots with a single metric. Supports one or more nodes."
   )
 
-plotParser :: TimeZone -> Parser (IO ())
+plotParser :: (MonadLogger m, MonadIO m, MonadThrow m, MonadBase IO m, MonadBaseControl IO m) => TimeZone -> Parser (m ())
 plotParser tz = plotSystem'
   <$> pt "start"
   <*> pt "end"

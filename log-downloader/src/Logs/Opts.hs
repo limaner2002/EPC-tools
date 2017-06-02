@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Logs.Opts where
 
@@ -9,8 +10,9 @@ import Options.Applicative
 import Options.Applicative.Types
 import Logs.GetLogs
 import Control.Monad.Catch
+import Control.Monad.Logger
 
-logsParser :: Parser (IO ())
+logsParser :: (MonadLogger m, MonadIO m, MonadBaseControl IO m, MonadThrow m) => Parser (m ())
 logsParser = downloadLogs
   <$> txtOption
   (  long "username"
@@ -49,7 +51,7 @@ logsParser = downloadLogs
   <> metavar "APPIAN_ENVIRONMENT_ADDRESS"
   )
 
-logsInfo :: ParserInfo (IO ())
+logsInfo :: (MonadLogger m, MonadIO m, MonadBaseControl IO m, MonadThrow m) => ParserInfo (m ())
 logsInfo = info (helper <*> logsParser)
   (  fullDesc
   <> header "Log Downloader Command-Line"

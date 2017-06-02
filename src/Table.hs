@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Table
   ( tableInfo
@@ -13,6 +14,7 @@ import ParseCSV
 import qualified Control.Arrow.Machine.Misc.Discrete as D
 import Options.Applicative as OA hiding (header)
 import Options.Applicative.Types
+import Control.Monad.Logger
 
 header :: Html ()
 header = head_ $ link_ [rel_ "stylesheet", href_ "http://yui.yahooapis.com/pure/0.6.0/pure-min.css"]
@@ -76,13 +78,13 @@ mergeEvents' = proc (evtA, evtB) -> do
   where
     f mA mB = (,) <$> mA <*> mB
 
-readTable :: FilePath -> CSVSettings -> IO ()
+readTable :: (MonadLogger m, MonadThrow m, MonadBaseControl IO m, MonadIO m) => FilePath -> CSVSettings -> m ()
 readTable fp settings = runRMachine_ (sourceFile >>> machineParser' (parseRow settings) >>> renderPage >>> evMap renderText >>> machine (putStr . toStrict) >>> onEnd >>> machine (const $ putStrLn "")) [fp]
 
-tableInfo :: ParserInfo (IO ())
+tableInfo :: (MonadLogger m, MonadThrow m, MonadBaseControl IO m, MonadIO m) => ParserInfo (m ())
 tableInfo = info (helper <*> tableParser) fullDesc
 
-tableParser :: Parser (IO ())
+tableParser :: (MonadLogger m, MonadThrow m, MonadBaseControl IO m, MonadIO m) => Parser (m ())
 tableParser = readTable <$>
   strOption
   (  long "filepath"
