@@ -1,8 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE Arrows #-}
 
 module Logs.GetLogs where
 
@@ -40,7 +38,7 @@ getCSRFToken = getResponseCookie "__appianCsrfToken" >>> fmap cookie_value >>> m
     mkHeader Nothing = throwM $ NoTokenException "There is no CSRF token present!"
     mkHeader (Just v) = return ("X-APPIAN-CSRF-TOKEN", v)
 
-data NoTokenException = NoTokenException Text
+newtype NoTokenException = NoTokenException Text
 
 instance Show NoTokenException where
   show (NoTokenException msg) = "NoTokenException: " <> show msg
@@ -65,9 +63,9 @@ authParams un pw = [ ("un", Just un)
 login :: (MonadResource m, MonadLogger m) => Manager -> Maybe ByteString -> ByteString -> ByteString -> String -> m (Response (BSS.ByteString m ()))
 login mgr nodeName un pw baseUrl = do
   resp <- getResp mgr baseUrl
-  req <- setRequestMethod POST <$> addRequestHeader "Content-Type" "application/x-www-form-urlencoded" <$> parseRequest (baseUrl </> "suite/auth?appian_environment=tempo")
+  req <- setRequestMethod POST . addRequestHeader "Content-Type" "application/x-www-form-urlencoded" <$> parseRequest (baseUrl </> "suite/auth?appian_environment=tempo")
 
-  let mCJ = join $ fmap (\nn -> setNode nn resp) nodeName
+  let mCJ = join $ fmap (`setNode` resp) nodeName
 
   (req', _) <- case mCJ of
     Nothing -> do
@@ -94,7 +92,7 @@ printResponse :: MonadIO m => S.Stream (S.Of (Response (BSS.ByteString m b))) m 
 printResponse = S.map responseBody >>> S.mapM_ BSS.stdout
 
 loginReq :: MonadThrow m => ByteString -> ByteString -> String -> m Request
-loginReq un pw url = setQueryString (authParams un pw) <$> addRequestHeaders baseHeaders <$> parseRequest url
+loginReq un pw url = setQueryString (authParams un pw) . addRequestHeaders baseHeaders <$> parseRequest url
 
 downloadLogs :: (MonadIO m, MonadLogger m, MonadBaseControl IO m, MonadThrow m) => Text -> Text -> [Text] -> [FilePath] -> FilePath -> String -> m ()
 downloadLogs un pw nodes logs dir baseUrl = do

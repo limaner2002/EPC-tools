@@ -15,7 +15,7 @@ import Servant
 import Network.HTTP.Media ((//), (/:))
 
 arrUp :: Diagram B
-arrUp = (((triangle 0.6 # translateY 0.5 # scaleY 1.1) === (rect 0.25 0.5)) # fc black # lw none) <> square 1 # lw none
+arrUp = (((triangle 0.6 # translateY 0.5 # scaleY 1.1) === rect 0.25 0.5) # fc black # lw none) <> square 1 # lw none
 
 arrDown :: Diagram B
 arrDown = arrUp # rotate (180 @@ deg)

@@ -30,7 +30,7 @@ createCommand jmeterPath jmxPath =
 newCP :: CmdSpec -> CreateProcess
 newCP cs = (shell mempty) {cmdspec = cs}
 
-streamConsumer :: (MonadIO m, MonadBase IO m) => TimeZone -> TVar (UTCTime) -> Handle -> m ()
+streamConsumer :: (MonadIO m, MonadBase IO m) => TimeZone -> TVar UTCTime -> Handle -> m ()
 streamConsumer tz var = SC8.fromHandle >>> SC8.lines >>> mapped SC8.toStrict >>> S.mapM (addTime tz) >>> S.mapM (updateLastSeen var) >>> S.mapM_ (liftBase . C8.putStrLn)
 
 addTime :: MonadBase IO m => TimeZone -> ByteString -> m ByteString
@@ -57,8 +57,7 @@ checkLastSeen input sHandle var delay = loop
       let tDelta = diffUTCTime ct t
 
       case tDelta > fromIntegral delay of
-        True -> do
-          trace "Terminating process and exiting" $ liftBase $ interruptProcessGroupOf $ streamingProcessHandleRaw sHandle
+        True -> liftBase $ interruptProcessGroupOf $ streamingProcessHandleRaw sHandle
         False -> loop
 
 runCommand

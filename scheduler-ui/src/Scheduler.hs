@@ -14,12 +14,12 @@ incJobStatus Running = Finished
 incJobStatus Finished = Finished
 
 getNotFinished :: MonadThrow m => JobQueue a -> m (Job a, JobQueue a)
-getNotFinished q = (,) <$> job <*> ((fmap (qJobs .~) newList) <*> pure q)
+getNotFinished q = (,) <$> job <*> (fmap (qJobs .~) newList <*> pure q)
   where
-    (done, rest) = (takeWhile isFinished jobList, dropWhile isFinished jobList)
+    (done, rest) = span isFinished jobList
     (job, rest') = (headThrow rest, drop 1 rest)
     rest'' = (:) <$> job' <*> pure rest'
-    job' = fmap (jobStatus .~ Running) $ job
+    job' = (jobStatus .~ Running) <$> job
     jobList = q ^. qJobs
     newList = mappend <$> pure done <*> rest''
 
@@ -43,7 +43,7 @@ isFinished j = j ^. jobStatus == Finished
 isRunning :: Job a -> Bool
 isRunning j = j ^. jobStatus == Running
 
-data EmptyHeadException = EmptyHeadException Text
+newtype EmptyHeadException = EmptyHeadException Text
   deriving (Show, Eq)
 
 instance Exception EmptyHeadException
@@ -73,7 +73,7 @@ setJob job q = qJobs .~ (first <> [job] <> drop 1 rest) $ q
     (first, rest) = splitWhenFirst (\j -> j ^. jobName == job ^. jobName) (q ^. qJobs)
 
 splitWhenFirst :: IsSequence seq => (Element seq -> Bool) -> seq -> (seq, seq)
-splitWhenFirst f s = (takeWhile (not . f) s, dropWhile (not . f) s)
+splitWhenFirst f s = span (not . f) s
 
 getFirst :: (MonadThrow m, IsSequence seq) => (Element seq -> Bool) -> seq -> m (Element seq, seq, seq)
 getFirst f s = (,,) <$> a <*> pure first <*> pure rest'

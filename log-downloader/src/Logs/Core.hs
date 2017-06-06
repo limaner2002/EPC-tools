@@ -10,7 +10,7 @@ import qualified Data.ByteString.Streaming as BSS
 import qualified Streaming.Prelude as S
 import Control.Arrow
 
-updateCookies :: MonadIO m => Request -> Maybe (CookieJar) -> m Request
+updateCookies :: MonadIO m => Request -> Maybe CookieJar -> m Request
 updateCookies req Nothing = pure req
 updateCookies req (Just cj) = do
   ct <- liftIO getCurrentTime
@@ -96,4 +96,3 @@ setNode nodeName resp = do
       setNode' _ = Nothing
       cj = responseCookieJar resp
       setCookieValue c v = c {cookie_value = v}
-

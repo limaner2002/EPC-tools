@@ -27,7 +27,7 @@ checkRunning :: MonadThrow m => Kleisli m (Job a) (Job a)
 checkRunning = Kleisli S.checkRunning
 
 checkQueueRunning :: Kleisli STM (TVar (JobQueue a)) (JobQueue a)
-checkQueueRunning = Kleisli (\v -> readTVar v >>= S.checkQueueRunning)
+checkQueueRunning = Kleisli (readTVar >=> S.checkQueueRunning)
 
 -- checkQueueRunning :: Kleisli STM (TVar (JobQueue a)) (Either QueueException (JobQueue a))
 -- checkQueueRunning = Kleisli (\v -> catchQueueException (readTVar v >>= S.checkQueueRunning))
@@ -72,7 +72,7 @@ setQueueRunning = arr (qStatus .~ QRunning)
 runJobs :: (MonadBase IO m, MonadCatch m, MonadThrow m) => Kleisli m a () -> TVar (JobQueue a) -> m ()
 runJobs f var = do
   dir <- liftBase $ createTodayDirectory "."
-  cwd <- liftBase $ getCurrentDirectory
+  cwd <- liftBase getCurrentDirectory
   liftBase $ setCurrentDirectory dir
   res <- tryAny $ runKleisli (runJob f) var
   case res of

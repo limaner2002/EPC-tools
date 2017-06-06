@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
@@ -44,6 +45,7 @@ import Scheduler.Opts
 import Plot.Opts
 import Stats.Opts
 import Control.Monad.Logger
+import Development.GitRev
 
 parseMany :: ReadM [String]
 parseMany = readerAsk >>= pure . words
@@ -78,8 +80,12 @@ parseCommands tz = subparser
 commandsInfo :: (MonadLogger m, MonadIO m, MonadBase IO m, MonadBaseControl IO m, MonadMask m) => TimeZone -> ParserInfo (m ())
 commandsInfo tz = info (helper <*> parseCommands tz)
   (  fullDesc
-  <> progDesc "This is a collection of various tools to help aid in EPC Post Commit performance testing."
+  <> progDesc progInfo
   )
+
+progInfo = "This is a collection of various tools to help aid in EPC Post Commit performance testing.\n"
+  <> $(gitHash) <> "\n("
+  <> $(gitCommitDate) <> ")\n"
 
 loggingLevelParser :: Parser LogLevel
 loggingLevelParser = option readLevel (short 'd') <|> pure LevelInfo
