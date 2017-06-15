@@ -14,6 +14,7 @@ import Data.Time.Clock.POSIX
 import Sheets
 import Sheets.Generic
 import Codec.Xlsx (CellValue (..))
+import Data.Aeson (ToJSON)
 
 data Stat = Stat
   { _statTime :: UTCTime
@@ -26,7 +27,7 @@ data Stat = Stat
   } deriving Show
 
 data Infinite a = Infinity | Only a
-  deriving Show
+  deriving (Show, Generic)
 
 instance Ord a => Ord (Infinite a) where
   Only _ <= Infinity = True
@@ -54,6 +55,8 @@ instance ToField a => ToField (Infinite a) where
 instance ToCellValue a => ToCellValue (Infinite a) where
   toCellValue Infinity = CellDouble (0/0)
   toCellValue (Only n) = toCellValue n
+
+instance ToJSON a => ToJSON (Infinite a)
 
 type Dict = Map Label Stat
 
@@ -85,11 +88,6 @@ data OutputMode
   = FormatTable
   | FormatCSV
   | FormatXlsx
-
-data Verbosity
-  = Quiet
-  | Verbose
-  deriving Show
 
 -- instance ToRecord HTTPSample where
 --   toRecord s = record
@@ -230,6 +228,7 @@ instance FromNamedRecord AggregateRow where
     <*> r .: "Error%"
 
 instance ToSheetRow AggregateRow
+instance ToJSON AggregateRow
 
 statToAggregateRow :: Label -> Stat -> AggregateRow
 statToAggregateRow statLabel stat = AggregateRow

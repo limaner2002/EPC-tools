@@ -14,8 +14,6 @@ import Numeric
 import Data.TDigest (median, quantile)
 import Control.Monad.Logger
 
--- import Stats.ParseSample
--- import StreamParser
 import Stats.CsvStream
 import Data.Csv
 import Data.Csv.Builder
@@ -35,8 +33,8 @@ collectStats dict path = do
   res <- csvStreamByName >>> streamFold (statFold dict) $ path
   return $ S.fst' res
 
-dispRuns :: (MonadResource m, MonadLogger m) => OutputMode -> [FilePath] -> Verbosity -> m ()
-dispRuns mode paths verbosity = do
+dispRuns :: (MonadResource m, MonadLogger m) => OutputMode -> [FilePath] -> m ()
+dispRuns mode paths = do
   logInfoN "Reading raw data from .csv files"
   let msg = "Gathering stats from:\n" <> intercalate "\n" (fmap pack paths)
   logDebugN msg
@@ -51,7 +49,16 @@ dispRuns mode paths verbosity = do
     FormatCSV -> do
       liftBase . putStr . toStrict . decodeUtf8 . builderToLazy . encodeHeader . fromList $ headers
       showCSV rows
-    FormatXlsx -> error "FormatXlsx not implemented yet"
+    FormatXlsx -> do
+      ws <- S.each >>> streamFold wsRowFold $ rows
+      liftBase . print $ ws
+      logErrorN "XLSX output is still under development."
+
+toAggRows :: Dict -> [AggregateRow]
+toAggRows = fmap (uncurry statToAggregateRow) . sortOn (^. _2 . statTime) . mapToList
+
+showBox :: [AggregateRow] -> String
+showBox = render . hsep 2 Text.PrettyPrint.Boxes.left . fmap (vcat Text.PrettyPrint.Boxes.left . fmap text) . transpose . ClassyPrelude.cons headers . fmap (toList . aggToRow)
 
 addHeader :: [[String]] -> [[String]]
 addHeader tbl = [headers] <> tbl
@@ -59,25 +66,19 @@ addHeader tbl = [headers] <> tbl
 headers :: IsString s => [s]
 headers = ["Label", "# Samples", "Average", "Median", "90% Line", "95% Line", "99% Line", "Min", "Max", "Errors", "Error%"]
 
-statToRow :: Label -> Stat -> [String]
-statToRow statLabel stat = [ unpack (statLabel ^. labelVal)
-                           , show (stat ^. statTotal)
-                           , showFFloat (Just 0) avg mempty
-                           , showFFloat (Just 0) (fromMaybe (0/0) $ median dg) mempty
-                           , showFFloat (Just 0) (fromMaybe (0/0) $ quantile 0.9 dg) mempty
-                           , showFFloat (Just 0) (fromMaybe (0/0) $ quantile 0.95 dg) mempty
-                           , showFFloat (Just 0) (fromMaybe (0/0) $ quantile 0.99 dg) mempty
-                           , dispInfinite (stat ^. statMin)
-                           , show (stat ^. statMax)
-                           , show (stat ^. statErrors)
-                           , showFFloat (Just 2) pctg mempty
-                           ]
-  where
-    pctg :: Double
-    pctg = fromIntegral (stat ^. statErrors) / fromIntegral (stat ^. statTotal) * 100
-    avg :: Double
-    avg = fromIntegral (stat ^. statElapsed) / fromIntegral (stat ^. statTotal)
-    dg = stat ^. statDigest
+aggToRow :: AggregateRow -> [String]
+aggToRow agg = [ unpack (agg ^. aggLabel)
+               , show (agg ^. aggNSamples)
+               , showFFloat (Just 0) (agg ^. aggAverage) mempty
+               , showFFloat (Just 0) (agg ^. aggMedian) mempty
+               , showFFloat (Just 0) (agg ^. aggNinetyPercentLine) mempty
+               , showFFloat (Just 0) (agg ^. aggNinetyFifthPercentLine) mempty
+               , showFFloat (Just 0) (agg ^. aggNinetyNinthPercentLine) mempty
+               , dispInfinite (agg ^. aggMinVal)
+               , show (agg ^. aggMaxVal)
+               , show (agg ^. aggErrors)
+               , show (agg ^. aggErrorPct)
+               ]
 
 mkAggSheet :: (MonadResource m, MonadLogger m) => Text -> FilePath -> m (Text, Worksheet)
 mkAggSheet name fp = do

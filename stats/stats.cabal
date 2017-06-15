@@ -37,6 +37,7 @@ library
                      , xlsx
                      , sheets
                      , monad-logger
+                     , aeson
   other-modules:       Stats
                      , Stats.Types
                      , Stats.Fold

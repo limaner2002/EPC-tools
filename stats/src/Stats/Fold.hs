@@ -14,6 +14,9 @@ import Control.Lens
 streamFold :: Monad m => Fold.Fold t1 t -> S.Stream (S.Of t1) m r -> m (S.Of t r)
 streamFold (Fold.Fold accum init f) = S.fold accum init f
 
+streamScan :: Monad m => Fold.Fold t1 t -> S.Stream (S.Of t1) m r -> S.Stream (S.Of t) m r
+streamScan (Fold.Fold accum init f) = S.scan accum init f
+
 statFold :: Dict -> Fold.Fold HTTPSample Dict
 statFold dict = Fold.Fold collectStat dict id
 

@@ -9,7 +9,7 @@ import Options.Applicative
 import Options.Applicative.Types
 import System.FilePath.Glob
 import Stats
-import Stats.Types (OutputMode (..), Verbosity (..))
+import Stats.Types (OutputMode (..))
 import Control.Monad.Logger
 import Control.Monad.Trans.Resource
 
@@ -40,7 +40,7 @@ rawInfo = info (helper <*> rawParser)
   )
 
 rawParser :: (MonadResource m, MonadLogger m) => Parser (m ())
-rawParser = dispRunsGlob <$> parseMode <*> parsePathGlob <*> parseVerbosity
+rawParser = dispRunsGlob <$> parseMode <*> parsePathGlob
 
 aggInfo :: (MonadResource m, MonadLogger m) => ParserInfo (m ())
 aggInfo = info (helper <*> aggParser)
@@ -78,15 +78,12 @@ readMode = do
     "xlsx" -> pure FormatXlsx
     _ -> fail $ "Invalid argument: " <> show modeInput <> ". Valid modes are csv and table"
 
-parseVerbosity :: Parser Verbosity
-parseVerbosity = flag Quiet Verbose (short 'v')
-
-dispRunsGlob :: (MonadResource m, MonadLogger m) => OutputMode -> FilePath -> Verbosity -> m ()
-dispRunsGlob mode pathGlob verbosity = do
+dispRunsGlob :: (MonadResource m, MonadLogger m) => OutputMode -> FilePath -> m ()
+dispRunsGlob mode pathGlob = do
   logDebugN $ "pathGlob: " <> tshow pathGlob
 
   paths <- liftBase $ namesMatching pathGlob
-  dispRuns mode paths verbosity
+  dispRuns mode paths
 
 readLevel :: ReadM LogLevel
 readLevel = do
