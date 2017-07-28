@@ -43,6 +43,13 @@ library
                      , filepath
                      , colour
                      , monad-logger
+                     , gogol
+                     , gogol-drive
+                     , mono-traversable
+                     , aeson
+                     , resourcet
+                     , conduit
+                     , conduit-combinators
   default-language:    Haskell2010
   other-modules:       Scheduler.Types
                      , Scheduler.Arrow
@@ -52,6 +59,9 @@ library
                      , Scheduler.Execute
                      , Scheduler.Icons
                      , Scheduler.Util
+                     , Scheduler.Google
+                     , Scheduler.Google.Server
+                     , Scheduler.Google.Types
 
 source-repository head
   type:     git

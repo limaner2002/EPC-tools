@@ -30,6 +30,13 @@ packages:
 - location: plots
 - location: stats
 - location: log-downloader
+# Gogol dependencies 
+- location: /Users/joshuamccartney/workspace/gogol/core
+  extra-dep: true
+- location: /Users/joshuamccartney/workspace/gogol/gogol-drive
+  extra-dep: true
+- location: /Users/joshuamccartney/workspace/gogol/gogol
+  extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:

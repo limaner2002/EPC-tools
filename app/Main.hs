@@ -73,6 +73,7 @@ parseCommands tz = subparser
   <> command "download-log" logsInfo
   <> command "make-table" tableInfo
   <> command "scheduler-ui" (schedulerInfo (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
+  <> command "new-scheduler-ui" newSchedulerInfo
   <> command "plot-metrics" (plotInfo tz)
   <> command "get-stats" statsInfo
   )
