@@ -30,12 +30,13 @@ packages:
 - location: plots
 - location: stats
 - location: log-downloader
-# Gogol dependencies 
-- location: /Users/joshuamccartney/workspace/gogol/core
-  extra-dep: true
-- location: /Users/joshuamccartney/workspace/gogol/gogol-drive
-  extra-dep: true
-- location: /Users/joshuamccartney/workspace/gogol/gogol
+- location:
+    git: https://github.com/brendanhay/gogol.git
+    commit: d61c7f507fd53c5a416d863601b18e8fe14594e9
+  subdirs:
+  - core
+  - gogol-drive
+  - gogol
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

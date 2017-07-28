@@ -75,10 +75,10 @@ login mgr nodeName un pw baseUrl = do
 
   (n, v) <- getCSRFToken resp
 
-  let mkReq = addRequestHeaders baseHeaders >>> setQueryString ((n, Just v) : authParams un pw) >>> uncurry addRequestHeader csrfHeader
+  let mkReq = addRequestHeaders baseHeaders >>> setQueryString ((n, Just v) : authParams un pw) -- >>> uncurry addRequestHeader csrfHeader
       req'' = mkReq req'
       csrfHeader = (mk n, v)
-
+  logDebugN $ tshow req''
   http req'' mgr
 
 addRequestHeaders headers req = req { requestHeaders = headers <> requestHeaders req }
@@ -91,12 +91,12 @@ setRequestMethod meth req = req { method = encodeUtf8 (tshow meth) }
 printResponse :: MonadIO m => S.Stream (S.Of (Response (BSS.ByteString m b))) m r -> m r
 printResponse = S.map responseBody >>> S.mapM_ BSS.stdout
 
-loginReq :: MonadThrow m => ByteString -> ByteString -> String -> m Request
-loginReq un pw url = setQueryString (authParams un pw) . addRequestHeaders baseHeaders <$> parseRequest url
+-- loginReq :: MonadThrow m => ByteString -> ByteString -> String -> m Request
+-- loginReq un pw url = setQueryString (authParams un pw) . addRequestHeaders baseHeaders <$> parseRequest url
 
 downloadLogs :: (MonadIO m, MonadLogger m, MonadBaseControl IO m, MonadThrow m) => Text -> Text -> [Text] -> [FilePath] -> FilePath -> String -> m ()
 downloadLogs un pw nodes logs dir baseUrl = do
-  mgr <- liftIO $ newManager tlsManagerSettings
+  mgr <- liftIO $ newManager mgrSettings
   runResourceT $ traverse_
     (\(nodeName, logNames) -> do
         loginResp <- login mgr (Just $ encodeUtf8 nodeName) (encodeUtf8 un) (encodeUtf8 pw) baseUrl
@@ -113,3 +113,16 @@ downloadLogs un pw nodes logs dir baseUrl = do
 
 flatten3 :: (a, (b, c)) -> (a, b, c)
 flatten3 (a, (b, c)) = (a, b, c)
+
+mgrSettings :: ManagerSettings
+mgrSettings = settings
+  where
+    reqLoggerFunc req = print req >> return req
+    settings = tlsManagerSettings { managerModifyRequest = reqLoggerFunc
+                                  , managerModifyResponse = respLoggerFunc
+                                  }
+    respLoggerFunc resp = do
+      print (responseStatus resp)
+      print (responseHeaders resp)
+      return resp
+
