@@ -25,10 +25,12 @@ import Control.Arrow
 import Control.Lens
 import Data.Time
 import Scheduler.Icons
+import Scheduler.Google.Server (driveServer, DriveAPI, ServerSettings)
 
-type HomePageAPI = Get '[HTML] (Html ())
+type HomePageAPI = "legacy" :> Get '[HTML] (Html ())
 type CreateJobAPI = "new" :> Get '[HTML] (Html ())
 type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
+type AddJobAPI' = "addJob1" :> ReqBody '[JSON] Text :> Post '[HTML] (Html ())
 type RemoveJobAPI = "remJob" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
 type ScheduleJobsAPI = "schedule" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
@@ -58,6 +60,7 @@ instance MimeUnrender BodyParams BodyMap where
 type API = HomePageAPI
   :<|> CreateJobAPI
   :<|> AddJobAPI
+  :<|> AddJobAPI'
   :<|> RunJobsAPI
   :<|> ScheduleJobsAPI
   :<|> CancelJobsAPI
@@ -74,10 +77,11 @@ type HandlerT a = ServerT a ServantHandler
 proxyAPI :: Proxy API
 proxyAPI = Proxy
 
-server :: (Text -> ServantHandler a) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT API
+server :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT API
 server mkJob jobAct jobsT = homepage jobsT
   :<|> newJob
   :<|> addJob mkJob jobsT
+  :<|> addJob' mkJob jobsT
   :<|> runJobs jobAct jobsT
   :<|> scheduleJobs jobAct jobsT
   :<|> cancelJobs jobsT
@@ -94,31 +98,47 @@ homepage jobsT = do
   tz <- liftIO getCurrentTimeZone
   return $ renderHomepage tz jobs
 
+homeLink :: Link
+homeLink = safeLink proxyAPI (Proxy :: Proxy HomePageAPI)
+
 newJob :: HandlerT CreateJobAPI
 newJob = return $ do
   header
   createJob
 
-addJob :: (Text -> ServantHandler a) -> TVar (JobQueue a) -> HandlerT AddJobAPI
-addJob mkJob jobsT (BodyMap bodyParams) = do
-  case lookup "job-name" bodyParams of
-    Nothing -> pure $ p_ "No job-name supplied!"
-    Just jobName -> do
-      case lookup "job-val" bodyParams of
-        Nothing -> pure $ p_ "No file path supplied!"
-        Just jobPath -> do
-          eJobVal <- tryAny $ mkJob jobPath
-          case eJobVal of
-            Left err -> return $ p_ $ toHtml $ tshow err
-            Right jobVal -> do
-              _ <- atomically $ do
-                modifyTVar jobsT (Sched.addJob $ job jobVal)
-                readTVar jobsT
-              redirect303 "/"
-        where
-          job jobVal = Job jobName Queued jobVal
+createJobLink :: Link
+createJobLink = safeLink proxyAPI (Proxy :: Proxy CreateJobAPI)
 
-application :: (Text -> ServantHandler a) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
+addJob :: (Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT AddJobAPI
+addJob mkJob jobsT (BodyMap bodyParams) = do
+  case lookup "job-val" bodyParams of
+    Nothing -> pure $ p_ "No file path supplied!"
+    Just jobPath -> do
+      eJobVal <- tryAny $ mkJob jobPath
+      case eJobVal of
+        Left err -> return $ p_ $ toHtml $ tshow err
+        Right (jobName, jobVal) -> do
+          _ <- atomically $ do
+            modifyTVar jobsT (Sched.addJob $ job jobName jobVal)
+            readTVar jobsT
+          redirect303 $ homeLink
+    where
+      job jn jobVal = Job jn Queued jobVal
+
+addJob' :: (Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT AddJobAPI'
+addJob' mkJob jobsT jobPath = do
+  eJobVal <- tryAny $ mkJob jobPath
+  case eJobVal of
+    Left err -> return $ p_ $ toHtml $ tshow err
+    Right (jobName, jobVal) -> do
+          _ <- atomically $ do
+            modifyTVar jobsT (Sched.addJob $ job jobName jobVal)
+            readTVar jobsT
+          redirect303 $ homeLink
+    where
+      job jn jobVal = Job jn Queued jobVal
+
+application :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
 application mkJob jobAct jobsT = serve proxyAPI $ server mkJob jobAct jobsT
 
 renderHomepage :: TimeZone -> JobQueue a -> Html ()
@@ -127,7 +147,7 @@ renderHomepage tz jobs =
     True -> do
       header
       p_ "No jobs queued"
-      a_ [class_ "pure-button pure-button-primary", href_ "/new"] "Add Job"
+      a_ [class_ "pure-button pure-button-primary", href_ $ toUrlPiece createJobLink] "Add Job"
       showScheduledTime
       br_ mempty
       br_ mempty
@@ -150,13 +170,12 @@ renderHomepage tz jobs =
             scheduleInput
           Just t -> do
             p_ $ toHtml $ showTime t
-            pureButton "/cancel" "Cancel Jobs"
-
+            pureButton (toUrlPiece cancelLink) "Cancel Jobs"
 
 runJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT RunJobsAPI
 runJobs f jobsT = do
   _ <- fork $ (Scheduler.runJobs f) jobsT
-  redirect303 "/"
+  redirect303 homeLink
 
 scheduleJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT ScheduleJobsAPI
 scheduleJobs f jobsT (BodyMap bodyParams) = do
@@ -167,7 +186,7 @@ scheduleJobs f jobsT (BodyMap bodyParams) = do
       _ <- atomically $ do
         modifyTVar jobsT (qStartTime .~ Just (localTimeToUTC tz time))
       fork $ Sched.schedule jobsT (Scheduler.runJobs f jobsT)
-      redirect303 "/"
+      redirect303 homeLink
   where
     timeTup = (,) <$> lookup "date" bodyParams <*> lookup "time" bodyParams
     timeStr (date, time) = date <> " " <> time <> " "
@@ -177,22 +196,25 @@ scheduleJobs f jobsT (BodyMap bodyParams) = do
 cancelJobs :: TVar (JobQueue a) -> HandlerT CancelJobsAPI
 cancelJobs jobsT = do
   atomically $ modifyTVar jobsT (qStartTime .~ Nothing)
-  redirect303 "/"
+  redirect303 homeLink
+
+cancelLink :: Link
+cancelLink = safeLink proxyAPI (Proxy :: Proxy CancelJobsAPI)
 
 removeJob :: TVar (JobQueue a) -> HandlerT RemoveJobAPI
 removeJob jobsT mIdx = do
   mapM_ (\idx -> runKleisli (Scheduler.removeJobK idx) jobsT) mIdx
-  redirect303 "/"
+  redirect303 homeLink
 
 moveJobUp :: TVar (JobQueue a) -> HandlerT MoveJobUpAPI
 moveJobUp jobsT mIdx = do
   mapM_ (\idx -> runKleisli (Scheduler.moveJobUpK idx) jobsT) mIdx
-  redirect303 "/"
+  redirect303 homeLink
 
 moveJobDown :: TVar (JobQueue a) -> HandlerT MoveJobDownAPI
 moveJobDown jobsT mIdx = do
   mapM_ (\idx -> runKleisli (Scheduler.moveJobDownK idx) jobsT) mIdx
-  redirect303 "/"
+  redirect303 homeLink
 
 sendArrUp :: HandlerT ArrUpIcon
 sendArrUp = return $ SvgDiagram' arrUp
@@ -203,6 +225,17 @@ sendArrDown = return $ SvgDiagram' arrDown
 sendRemove :: HandlerT RemoveIcon
 sendRemove = return $ SvgDiagram' removeIcon
 
-redirect303 :: ByteString -> ServantHandler a
-redirect303 url = S.Handler $ throwE $ err303 { errHeaders = [("Location", url)] }
+redirect303 :: Link -> ServantHandler a
+redirect303 link = S.Handler $ throwE $ err303 { errHeaders = [("Location", url)] }
+  where
+    url = encodeUtf8 $ toUrlPiece link
 
+combinedServer :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a ()
+  -> ServerSettings -> TVar (JobQueue a) -> Server CombinedAPI
+combinedServer mkJob jobAct settings jobVar =
+  server mkJob jobAct jobVar :<|> driveServer settings
+
+type CombinedAPI = API :<|> DriveAPI
+
+combinedProxy :: Proxy CombinedAPI
+combinedProxy = Proxy

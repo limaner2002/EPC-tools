@@ -20,6 +20,8 @@ import Types ( JMeterOpts (..)
              , LogSettings (..)
              , Run (..)
              , NUsers (..)
+             , runName
+             , getRunName
              )
 import Data.Time
 import qualified System.IO as SIO
@@ -46,6 +48,7 @@ import Plot.Opts
 import Stats.Opts
 import Control.Monad.Logger
 import Development.GitRev
+import Control.Lens ((^.))
 
 parseMany :: ReadM [String]
 parseMany = readerAsk >>= pure . words
@@ -72,8 +75,7 @@ parseCommands tz = subparser
   (  command "analyse" resultsInfo
   <> command "download-log" logsInfo
   <> command "make-table" tableInfo
-  <> command "scheduler-ui" (schedulerInfo (toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
-  <> command "new-scheduler-ui" newSchedulerInfo
+  <> command "scheduler-ui" (schedulerInfo (fmap (\jo -> (jo ^. runName . getRunName, jo)) . toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
   <> command "plot-metrics" (plotInfo tz)
   <> command "get-stats" statsInfo
   )
@@ -127,78 +129,6 @@ readJMeterOpts execType cfg =
 data ExecuteType
   = Execute
   | DryRun
-
--- runTests :: ExecuteType -> ToScheduledTime -> [FilePath] -> IO ()
--- runTests execType timestamp configFiles = do
---   tz <- getCurrentTimeZone
---   cfgs <- mapM (readConfigFile . unpack) configFiles
---   let eOpts = sequence $ fmap (readJMeterOpts execType) cfgs
---   case eOpts of
---     Left msg -> fail $ show msg
---     Right opts -> do
---       ct <- getCurrentTime
---       let time' = mkScheduledTime tz timestamp ct
---           sendScheduledTime = mkScheduledTime tz sendScheduledInfo ct
---           checkJobStatusTime' = mkScheduledTime tz checkJobStatusTime ct
---       initialize tz time' sendScheduledTime checkJobStatusTime' opts
-
--- initialize :: TimeZone -> ScheduledTime -> ScheduledTime -> ScheduledTime -> [JMeterOpts] -> IO ()
--- initialize tz jobTime sendScheduledTime checkJobStatusTime' opts = do
---   (validatedOpts, vr) <- runStateT (validateBatchOpts $ createBatchOpts opts) mempty
---   let dispMsg (rn, msg) = show rn <> "\n" <> msg <> "\n\n"
---   print vr
---   mapM_ (putStr . pack . dispMsg) $ valMsgs vr
---   SIO.hFlush stdout
---   runningStatus <- newTVarIO NotStarted
---   _ <- concurrently
---     ( do
---         schedule (trace ("scheduledMsg: " <> show sendScheduledTime) sendScheduledTime) $ do
---           putStrLn "Sending message now"
---           sendMessage $ scheduledMessage validatedOpts sendScheduledTime
---         schedule (trace ("checkMsg: " <> show checkJobStatusTime') checkJobStatusTime') $ checkStatus tz runningStatus validatedOpts
---     )
---     (
---       doIfDirIsEmpty $ do
---         atomically $ writeTVar runningStatus Running
---         sendMessage $ scheduledMessage validatedOpts jobTime
---         schedule jobTime $ batchJMeterScripts $ validatedOpts
---         atomically $ writeTVar runningStatus Finished
---         clt <- utcToLocalTime tz <$> getCurrentTime
---         sendMessage $ jobsCompletedMessage clt
---     )
---   return ()
-
--- checkStatus :: TimeZone -> TVar ExecutionStatus -> BatchOpts Validated -> IO ()
--- checkStatus tz runningStatus opts = go
---   where
---     go = do
---       putStrLn "Sending message now"
---       SIO.hFlush stdout
---       isRunning <- atomically $ readTVar runningStatus
---       clt <- utcToLocalTime tz <$> getCurrentTime
---       case isRunning of
---         Running -> do
---           sendMessage $ stillRunningMessage opts clt
---           threadDelay 600000000
---           go
---         Finished -> sendMessage $ nothingScheduledMessage clt
---         NotStarted -> do
---           sendMessage $ notStartedMessage clt
---           threadDelay 600000000
---           go
-
--- toTimeOfDay :: Text -> TimeOfDay
--- toTimeOfDay txt = fromJust $ readMay txt
---   where
---     -- The value is hardcoded for now so this is safe to use
---     fromJust (Just t) = t
---     fromJust _ = error "Should not have been called like this! Moreso this function should be removed."
-
--- checkJobStatusTime :: ToScheduledTime
--- checkJobStatusTime = TOD $ toTimeOfDay "21:00:00"
-
--- sendScheduledInfo :: ToScheduledTime
--- sendScheduledInfo = TOD $ toTimeOfDay "08:00:00"
 
 toJMeterOpts :: (MonadThrow m, MonadIO m) => FilePath -> m JMeterOpts
 toJMeterOpts fp = do

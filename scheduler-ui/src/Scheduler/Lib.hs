@@ -40,8 +40,8 @@ jobTable jobs = do
 createJob :: Html ()
 createJob = form_ [class_ "pure-form pure-form-stacked", action_ "/addJob", method_ "post", enctype_ "application/json"] $ fieldset_ $ do
   legend_ "Add a job to the queue"
-  label_ [for_ "job-name"] "Job Name"
-  input_ [name_ "job-name", type_ "text", class_ "pure-u-23-24"]
+  -- label_ [for_ "job-name"] "Job Name"
+  -- input_ [name_ "job-name", type_ "text", class_ "pure-u-23-24"]
   label_ [for_ "job-val"] "Config File Path"
   input_ [name_ "job-val", type_ "text", class_ "pure-u-23-24"]
   button_ [type_ "submit", class_ "pure-button pure-button-primary"] "Add"

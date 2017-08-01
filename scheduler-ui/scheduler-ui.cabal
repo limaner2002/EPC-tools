@@ -50,6 +50,7 @@ library
                      , resourcet
                      , conduit
                      , conduit-combinators
+                     , zip-archive
   default-language:    Haskell2010
   other-modules:       Scheduler.Types
                      , Scheduler.Arrow

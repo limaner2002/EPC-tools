@@ -18,7 +18,15 @@ import qualified Scheduler.Google.Server as DS
 import Control.Monad.Trans.Except hiding (throwM)
 import Scheduler.Google.Types hiding (fId, fName)
 import Network.Wai.Handler.Warp (run)
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, listDirectory)
+import qualified Data.ByteString.Lazy as BL
+import System.FilePath (takeDirectory)
+import Codec.Archive.Zip
+
+newtype MissingConfigException = MissingConfigException Text
+  deriving Show
+
+instance Exception MissingConfigException
 
 g :: MonadResource m => ResumableSource m ByteString -> FilePath -> m ()
 g stream fp = stream $$+- CC.sinkFile fp
@@ -34,7 +42,7 @@ downloadFile :: (HasScope'
           "https://www.googleapis.com/auth/drive.readonly"]
       ~
       'True,
-      MonadGoogle s m, MonadThrow m, MonadResource m) => FilePath -> DS.DReq -> m ()
+      MonadGoogle s m, MonadThrow m, MonadResource m) => FilePath -> DS.DReq -> m FilePath
 downloadFile pathPrefix req = do
   case filesGet <$> df ^? DS.fId of
     Nothing -> throwM $ DS.err400 "No file to download!"
@@ -45,9 +53,20 @@ downloadFile pathPrefix req = do
       putStrLn $ "Downloading file " <> tshow (df ^. DS.fName) <> " to " <> tshow fp
       liftIO $ createDirectoryIfMissing True dir
       liftBase $ runResourceT $ g stream fp
-      return ()
+      extractFile fp
  where
    df = req ^. reqFile
+
+extractFile :: (MonadBase IO m, MonadThrow m) => FilePath -> m FilePath
+extractFile fp = do
+  ct <- liftBase $ BL.readFile fp
+  let dir = takeDirectory fp
+  liftBase $ extractFilesFromArchive [OptDestination dir] . toArchive $ ct
+  files <- liftBase $ listDirectory dir
+  let mCfg = files ^? traverse . filtered (isSuffixOf ".cfg")
+  case mCfg of
+    Nothing -> throwM $ MissingConfigException "There is no configuration file! This script cannot be scheduled."
+    Just cfgFile -> return $ dir </> cfgFile
 
 epcEnv :: (MonadCatch f, MonadIO f) => f (Env '["https://www.googleapis.com/auth/drive.readonly"])
 epcEnv = do

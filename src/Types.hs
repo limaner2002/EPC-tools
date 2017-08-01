@@ -7,6 +7,7 @@ module Types
   ( LogSettings (..)
   , JMeterOpts (..)
   , RunName (..)
+  , getRunName
   , NUsers (..)
   , Run (..)
   , Validated
@@ -37,7 +38,6 @@ module Types
 
 import ClassyPrelude
 import Data.Aeson
--- import qualified Data.ByteString.Lazy as BL
 import Path
 import Data.Time
 import Control.Lens hiding (deep, cons)
@@ -91,6 +91,11 @@ instance FromJSON Run
 
 newtype RunName = RunName Text
   deriving (Show, Generic, Read, Eq, Ord)
+
+getRunName :: Functor f => (Text -> f Text) -> RunName -> f RunName
+getRunName = lens fromRunName modRN
+  where
+    modRN (RunName _) name = RunName name
 
 fromRunName :: RunName -> Text
 fromRunName (RunName n) = n

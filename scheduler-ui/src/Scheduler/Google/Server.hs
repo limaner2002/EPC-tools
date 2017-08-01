@@ -14,7 +14,6 @@ module Scheduler.Google.Server
   , toDriveFile
   , Control.Monad.Trans.Except.throwE
   , servantErr400
-  , proxyAPI
   , _DriveFile
   , _Root
   , fName
@@ -26,7 +25,9 @@ module Scheduler.Google.Server
   , reqFile
   , reqCrumbs
   , DriveRequest (..)
-  , runServer
+  , DriveAPI
+  , driveServer
+  , driveProxyAPI
   )where
 
 import ClassyPrelude hiding (Handler)
@@ -43,35 +44,35 @@ import Servant.HTML.Lucid
 import Lucid
 import Lucid.Base (makeAttribute)
 
-type HomepageAPI = Get '[HTML] (Html ())
+type DriveHomepageAPI = Get '[HTML] (Html ())
 type ViewFilesAPI = "browse" :> ReqBody '[JSON] DReq :> Post '[JSON] ([DriveFile DriveFileType], BreadCrumbs (DriveFile DriveFileType))
-type DownloadAPI = "download" :> ReqBody '[JSON] DReq :> Post '[JSON] ()
+type DownloadAPI = "download" :> ReqBody '[JSON] DReq :> Post '[JSON] Text
 type StaticAPI = "static" :> Raw
 type DReq = DriveRequest (DriveFile DriveFileType)
 
 class IsDriveFile a where
   toDriveFile :: MonadResource m => a -> m (DriveFile DriveFileType)
 
-type API = ViewFilesAPI
+type DriveAPI = ViewFilesAPI
   :<|> DownloadAPI
   :<|> StaticAPI
-  :<|> HomepageAPI
+  :<|> DriveHomepageAPI
 
 data ServerSettings = ServerSettings
   { _servFetchContents :: DReq -> Handler ([DriveFile DriveFileType], BreadCrumbs (DriveFile DriveFileType))
-  , _servDownloadFile :: DReq -> Handler ()
+  , _servDownloadFile :: DReq -> Handler FilePath
   , _staticPath :: FilePath
   }
 
-proxyAPI :: Proxy API
-proxyAPI = Proxy
+driveProxyAPI :: Proxy DriveAPI
+driveProxyAPI = Proxy
 
-server :: ServerSettings -> Server API
-server (ServerSettings f g path) = f :<|> g
+driveServer :: ServerSettings -> Server DriveAPI
+driveServer (ServerSettings f g path) = f :<|> (g >=> pure . pack)
   :<|> serveDirectory path
   :<|> serveHomepage
 
-serveHomepage :: Server HomepageAPI
+serveHomepage :: Server DriveHomepageAPI
 serveHomepage = return $ html_ $ do
   head_ $ do
     script'_ [language_ "javascript", src_ "static/rts.js"] mempty
@@ -88,4 +89,4 @@ servantErr400 msg = throwE $ SV.err400 {errBody = msg}
 err400 msg = SV.err400 {errBody = msg}
 
 runServer :: ServerSettings -> Application
-runServer settings = serve proxyAPI $ server settings
+runServer settings = serve driveProxyAPI $ driveServer settings
