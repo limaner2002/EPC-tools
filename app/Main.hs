@@ -134,3 +134,7 @@ toJMeterOpts :: (MonadThrow m, MonadIO m) => FilePath -> m JMeterOpts
 toJMeterOpts fp = do
   cfg <- readConfigFile fp
   readJMeterOpts Execute cfg
+
+mkJob
+  :: (MonadThrow m, MonadIO m) => Text -> m (Text, JMeterOpts)
+mkJob = fmap (\jo -> (jo ^. runName . getRunName, jo)) . toJMeterOpts . unpack

@@ -17,8 +17,13 @@ module Scheduler.Types
   , QStatus (..)
   ) where
 
-import ClassyPrelude
 import Control.Lens
+import GHC.Exception
+import Prelude
+import Data.Text (Text)
+import GHC.Generics
+import Data.Time
+import Data.Aeson
 
 data JobStatus
   = Queued
@@ -41,7 +46,7 @@ data JobQueue a = JobQueue
 data QStatus
   = QRunning
   | QWaiting
-  deriving Show
+  deriving (Show, Generic)
 
 data QueueException = QueueException Text
   deriving (Show, Eq)
@@ -53,3 +58,15 @@ makeLenses ''JobQueue
 
 emptyQueue :: JobQueue a
 emptyQueue = JobQueue mempty Nothing QWaiting
+
+instance ToJSON JobStatus
+instance FromJSON JobStatus
+
+instance ToJSON QStatus
+instance FromJSON QStatus
+
+instance ToJSON a => ToJSON (Job a)
+instance FromJSON a => FromJSON (Job a)
+
+instance ToJSON a => ToJSON (JobQueue a)
+instance FromJSON a => FromJSON (JobQueue a)

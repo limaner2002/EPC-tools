@@ -19,8 +19,13 @@ import Data.Semigroup
 import Control.Monad.Ref (Ref)
 import GHC.IORef (IORef)
 import Prelude
+import Common
+import SchedulerUI
+import Scheduler.Types
 
-main = mainWidgetWithHead Main.head runIt
+main = mainWidgetWithHead Common.head $ do
+  elAttr "div" ("class" =: "pure-u-1-1") $ schedulerWidget emptyQueue
+  elAttr "div" ("class" =: "pure-u-1-1") fileWidget
 
 type DFile = DriveFile DriveFileType
 type DReq = DriveRequest DFile
@@ -34,8 +39,8 @@ data NavType
   = FileNav DFile
   | CrumbNav DFile
 
-runIt :: MonadWidget t m => m ()
-runIt = do
+fileWidget :: MonadWidget t m => m ()
+fileWidget = do
   pb <- getPostBuild
   rec resDyn <- browseXhr $ leftmost [DriveRequest Root breadCrumbs <$ pb, evt']
       let files = fmap (^. _Right . _1 . getFiles) resDyn
@@ -92,12 +97,7 @@ toDynHtml :: MonadWidget t m => Text -> Dynamic t DFile -> m (Event t DFile)
 toDynHtml elName d = do
   let d' = fmap (toStrict . renderText . toHtml) d
   e <- elDynHtml' elName d'
-  let evt = domEvent Click e
+  let evt = domEvent Dblclick e
 
   return $ attachPromptlyDynWith (\x _ -> x) d evt
 
-head :: MonadWidget t m => m ()
-head = do
-  elAttr "link" ( "rel" =: "stylesheet"
-               <> "href" =: "http://yui.yahooapis.com/pure/0.6.0/pure-min.css"
-                ) blank
