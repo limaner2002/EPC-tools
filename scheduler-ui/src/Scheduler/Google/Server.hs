@@ -45,8 +45,8 @@ import Lucid
 import Lucid.Base (makeAttribute)
 
 type DriveHomepageAPI = Get '[HTML] (Html ())
-type ViewFilesAPI = "browse" :> ReqBody '[JSON] DReq :> Post '[JSON] ([DriveFile DriveFileType], BreadCrumbs (DriveFile DriveFileType))
-type DownloadAPI = "download" :> ReqBody '[JSON] DReq :> Post '[JSON] Text
+type ViewFilesAPI = "browse" :> ReqBody '[JSON] DReq :> Post '[JSON] NavResponse
+type DownloadAPI = "download" :> ReqBody '[JSON] DReq :> Post '[JSON] NavResponse
 type StaticAPI = "static" :> Raw
 type DReq = DriveRequest (DriveFile DriveFileType)
 
@@ -59,8 +59,8 @@ type DriveAPI = ViewFilesAPI
   :<|> DriveHomepageAPI
 
 data ServerSettings = ServerSettings
-  { _servFetchContents :: DReq -> Handler ([DriveFile DriveFileType], BreadCrumbs (DriveFile DriveFileType))
-  , _servDownloadFile :: DReq -> Handler FilePath
+  { _servFetchContents :: DReq -> Handler NavResponse
+  , _servDownloadFile :: DReq -> Handler NavResponse
   , _staticPath :: FilePath
   }
 
@@ -68,7 +68,7 @@ driveProxyAPI :: Proxy DriveAPI
 driveProxyAPI = Proxy
 
 driveServer :: ServerSettings -> Server DriveAPI
-driveServer (ServerSettings f g path) = f :<|> (g >=> pure . pack)
+driveServer (ServerSettings f g path) = f :<|> g
   :<|> serveDirectory path
   :<|> serveHomepage
 

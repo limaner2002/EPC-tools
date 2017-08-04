@@ -1,3 +1,4 @@
+
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DataKinds #-}
@@ -31,7 +32,7 @@ import Data.Aeson
 type HomePageAPI = "legacy" :> Get '[HTML] (Html ())
 type CreateJobAPI = "new" :> Get '[HTML] (Html ())
 type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
-type AddJobAPI' = "addJob1" :> ReqBody '[JSON] Text :> Post '[HTML] (Html ())
+type (AddJobAPI' a) = "addJob1" :> ReqBody '[JSON] Text :> Post '[JSON] (JobQueue a)
 type RemoveJobAPI = "remJob" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
 type RemoveJobAPI' a = "remJob1" :> QueryParam "idx" Int :> Get '[JSON] (JobQueue a)
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
@@ -63,7 +64,7 @@ instance MimeUnrender BodyParams BodyMap where
 type API a = HomePageAPI
   :<|> CreateJobAPI
   :<|> AddJobAPI
-  :<|> AddJobAPI'
+  :<|> AddJobAPI' a
   :<|> RunJobsAPI
   :<|> ScheduleJobsAPI
   :<|> CancelJobsAPI
@@ -132,16 +133,15 @@ addJob mkJob jobsT (BodyMap bodyParams) = do
     where
       job jn jobVal = Job jn Queued jobVal
 
-addJob' :: (Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT AddJobAPI'
+addJob' :: (Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT (AddJobAPI' a)
 addJob' mkJob jobsT jobPath = do
   eJobVal <- tryAny $ mkJob jobPath
   case eJobVal of
-    Left err -> return $ p_ $ toHtml $ tshow err
-    Right (jobName, jobVal) -> do
-          _ <- atomically $ do
-            modifyTVar jobsT (Sched.addJob $ job jobName jobVal)
-            readTVar jobsT
-          redirect303 $ homeLink
+    Left err -> S.Handler $ throwE $ err400 {errBody = encodeUtf8 (fromStrict $ tshow err) }
+    Right (jobName, jobVal) ->
+      atomically $ do
+        modifyTVar jobsT (Sched.addJob $ job jobName jobVal)
+        readTVar jobsT
     where
       job jn jobVal = Job jn Queued jobVal
 

@@ -24,13 +24,7 @@ import Prelude
 import Common
 import Scheduler.Types
 
-type DFile = DriveFile DriveFileType
 type DReq = DriveRequest DFile
-
-data BrowseEvent
-  = Crumb DFile
-  | Nav DFile
-  | Download DFile
 
 data NavType
   = FileNav DFile
@@ -39,8 +33,11 @@ data NavType
 fileWidget :: MonadWidget t m => Event t () -> m ()
 fileWidget pb = do
   rec resDyn <- browseXhr $ leftmost [DriveRequest Root breadCrumbs <$ pb, evt']
-      let files = fmap (^. _Right . _1 . getFiles) resDyn
-          crumbs = fmap (^. _Right . _2 . bcCrumbs) resDyn
+      let files = fmap (^. _Right . _FileList . _1 . getFiles) resDyn
+          crumbs = fmap (^. _Right . _FileList . _2 . bcCrumbs) resDyn
+          addJobEvt = fmapMaybe (^? _Right . _AddJob) $ updated resDyn
+          addJobR = fmap addJobReq addJobEvt
+      _ <- performRequestAsync addJobR
       bcDyn <- el "div" $ simpleList crumbs (toDynHtml "div")
       navDyn <- elAttr "table" ("class" =: "pure-table") $ do
         el "thead" $ do
@@ -51,6 +48,7 @@ fileWidget pb = do
           bcEvt = switchPromptlyDyn $ fmap (fmap CrumbNav . leftmost) bcDyn
           evt = leftmost [navEvt, bcEvt]
           evt' = attachPromptlyDynWith mkReqEvt crumbs evt
+
   return ()
 
 mkReqEvt :: [DFile] -> NavType -> DReq
@@ -71,17 +69,22 @@ browseReq req
     typ = file ^? fType
     file = req ^. reqFile
 
-browseXhr :: MonadWidget t m => Event t DReq -> m (Dynamic t (Either String (Files, BreadCrumbs DFile)))
+browseXhr :: MonadWidget t m => Event t DReq -> m (Dynamic t (Either String NavResponse))
 browseXhr req = do
   let fileReq = fmapMaybe browseReq req
   evt <- performRequestAsync fileReq
-  holdDyn (Right (Fetching, breadCrumbs)) $ fmap (^. xhrResponse_responseText . to decodeResponse) evt
+  holdDyn (Right $ FileList (Fetching, breadCrumbs)) $ fmap (^. xhrResponse_responseText . to decodeResponse) evt
 
-decodeResponse :: Maybe Text -> Either String (Files, BreadCrumbs DFile)
+decodeResponse :: Maybe Text -> Either String NavResponse
 decodeResponse Nothing = Left "Received an empty response from the server."
-decodeResponse (Just t) = do
-  (fList, crumbs) <- eitherDecode . encodeUtf8 . fromStrict $ t
-  return $ (Files fList, crumbs)
+decodeResponse (Just t) = eitherDecode . encodeUtf8 . fromStrict $ t
+
+addJobReq :: Text -> XhrRequest Text
+addJobReq fp = xhrRequest "POST" "addJob1" cfg
+  where
+    cfg = (xhrRequestConfig_headers .~ ("Content-type" =: "application/json"))
+      . (xhrRequestConfig_sendData .~ (toStrict . decodeUtf8 . encode $ fp))
+      $ def
 
 toNav :: MonadWidget t m => DFile -> m (Event t DFile)
 toNav file = do

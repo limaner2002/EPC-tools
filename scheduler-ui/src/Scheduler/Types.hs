@@ -50,9 +50,12 @@ data QStatus
   deriving (Show, Generic)
 
 data QueueException = QueueException Text
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 instance Exception QueueException
+
+instance ToJSON QueueException
+instance FromJSON QueueException
 
 makeLenses ''Job
 makeLenses ''JobQueue

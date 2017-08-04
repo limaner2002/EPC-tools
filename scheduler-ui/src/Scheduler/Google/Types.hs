@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Scheduler.Google.Types where
 
@@ -14,6 +15,7 @@ import Lucid
 import Data.Semigroup
 import GHC.Base ((<|>))
 import Data.Containers (lookup)
+import GHC.Generics (Generic)
 
 data DriveFileType
   = File Text
@@ -112,11 +114,14 @@ data Files
     { _getFiles :: [DriveFile DriveFileType]
     }
   | Fetching
-  deriving Show
+  deriving (Show, Generic)
 
 makeLenses ''Files
 makePrisms ''Files
 makeLenses ''BreadCrumbs
+
+instance ToJSON Files
+instance FromJSON Files
 
 breadCrumbs :: BreadCrumbs a
 breadCrumbs = mempty
@@ -130,3 +135,15 @@ instance ToJSON a => ToJSON (BreadCrumbs a) where
 
 instance FromJSON a => FromJSON (BreadCrumbs a) where
   parseJSON (Object o) = BreadCrumbs <$> o .: "crumbs"
+
+type DFile = DriveFile DriveFileType
+
+data NavResponse
+  = FileList (Files, BreadCrumbs DFile)
+  | AddJob Text
+  deriving (Show, Generic)
+
+instance ToJSON NavResponse
+instance FromJSON NavResponse
+
+makePrisms ''NavResponse

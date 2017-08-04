@@ -42,7 +42,7 @@ downloadFile :: (HasScope'
           "https://www.googleapis.com/auth/drive.readonly"]
       ~
       'True,
-      MonadGoogle s m, MonadThrow m, MonadResource m) => FilePath -> DS.DReq -> m FilePath
+      MonadGoogle s m, MonadThrow m, MonadResource m) => FilePath -> DS.DReq -> m NavResponse
 downloadFile pathPrefix req = do
   case filesGet <$> df ^? DS.fId of
     Nothing -> throwM $ DS.err400 "No file to download!"
@@ -53,7 +53,8 @@ downloadFile pathPrefix req = do
       putStrLn $ "Downloading file " <> tshow (df ^. DS.fName) <> " to " <> tshow fp
       liftIO $ createDirectoryIfMissing True dir
       liftBase $ runResourceT $ g stream fp
-      extractFile fp
+      cfgPath <- extractFile fp
+      return $ AddJob $ pack cfgPath
  where
    df = req ^. reqFile
 
@@ -102,11 +103,11 @@ fetchContents :: (HasScope'
           "https://www.googleapis.com/auth/drive.readonly"]
       ~
       'True,
-      MonadGoogle s m, MonadThrow m, MonadResource m) => DS.DReq -> m ([DS.DriveFile DS.DriveFileType], BreadCrumbs (DS.DriveFile DS.DriveFileType))
+      MonadGoogle s m, MonadThrow m, MonadResource m) => DS.DReq -> m NavResponse
 fetchContents (DS.DriveRequest DS.Root _) = do
   fl <- rootContents
   l <- sequence $ fl ^.. flFiles . traverse . to DS.toDriveFile
-  return (l, addCrumb DS.Root breadCrumbs)
+  return $ FileList (Files l, addCrumb DS.Root breadCrumbs)
 fetchContents req =
   case df ^? DS.fType of
     Nothing -> throwM $ DS.err400 "Can only display the contents of a folder."
@@ -114,7 +115,7 @@ fetchContents req =
       let query = df ^? DS.fId . to mkQuery
       fl <- send $ flQ .~ query $ filesList
       l <- sequence $ fl ^.. flFiles . traverse . to DS.toDriveFile
-      return (l, addCrumb df $ req ^. reqCrumbs)
+      return $ FileList (Files l, addCrumb df $ req ^. reqCrumbs)
     Just _ -> throwM $ DS.err400 "Can only display the contens of a folder."
  where
    df = req ^. reqFile
