@@ -153,6 +153,6 @@ serverSettings :: (HasScope'
       HasEnv s r, AllowScopes s) => FilePath -> FilePath -> r -> DS.ServerSettings
 serverSettings rootDownloadDir staticDir env = DS.ServerSettings f g staticDir
   where
-    f req = catch (runResourceT . runGoogle env . fetchContents $ req) handleErrors
-    g = runResourceT . runGoogle env . downloadFile rootDownloadDir
-    handleErrors e@(MissingConfigException _) = throwM $ DS.err400 $ encodeUtf8 $ fromStrict $ tshow e
+    f = runResourceT . runGoogle env . fetchContents
+    g req = catch (runResourceT . runGoogle env . downloadFile rootDownloadDir $ req) handleErrors
+    handleErrors e@(MissingConfigException _) = DS.Handler . DS.throwE $ DS.err400 $ encodeUtf8 $ fromStrict $ tshow e

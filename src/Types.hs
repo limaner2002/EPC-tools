@@ -36,7 +36,12 @@ module Types
   , module Control.Lens
   ) where
 
-import ClassyPrelude
+-- import ClassyPrelude
+import Prelude
+import GHC.Exception
+import Data.Text (Text, pack)
+import GHC.Generics
+import Data.Semigroup
 import Data.Aeson
 import Path
 import Data.Time
@@ -91,6 +96,9 @@ instance FromJSON Run
 
 newtype RunName = RunName Text
   deriving (Show, Generic, Read, Eq, Ord)
+
+tshow :: Show a => a -> Text
+tshow = pack . show
 
 getRunName :: Functor f => (Text -> f Text) -> RunName -> f RunName
 getRunName = lens fromRunName modRN

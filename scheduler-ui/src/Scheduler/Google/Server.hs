@@ -7,7 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Scheduler.Google.Server
-  ( Servant.Handler
+  ( Servant.Handler (..)
   , DriveFileType (..)
   , DriveFile (..)
   , IsDriveFile

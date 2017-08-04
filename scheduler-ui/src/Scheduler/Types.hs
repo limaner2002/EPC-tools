@@ -15,6 +15,7 @@ module Scheduler.Types
   , qStatus
   , QueueException (..)
   , QStatus (..)
+  , testJobQueue
   ) where
 
 import Control.Lens
@@ -70,3 +71,13 @@ instance FromJSON a => FromJSON (Job a)
 
 instance ToJSON a => ToJSON (JobQueue a)
 instance FromJSON a => FromJSON (JobQueue a)
+
+testJobQueue :: JobQueue Text
+testJobQueue = foldl (\jq job -> qJobs %~ (|> job) $ jq) emptyQueue testJobs
+
+testJobs :: [Job Text]
+testJobs = [ Job "Job 1" Queued "Tis my duty!"
+           , Job "Job 2" Queued "Tis my duty!"
+           , Job "471 Crap" Queued "Tis my duty!"
+           , Job "Job Form 500 things" Queued "Tis my duty!"
+           ]

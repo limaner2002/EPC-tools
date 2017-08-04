@@ -13,28 +13,29 @@ import Network.Wai.Handler.Warp
 import Control.Arrow
 import Control.Monad.Trans.Except
 import Scheduler.Server
-import Scheduler.Types (emptyQueue)
+import Scheduler.Types (emptyQueue, JobQueue)
 import Servant as S
 import Control.Monad.Logger
 import Scheduler.Google (serverSettings, epcEnv, serverSettings)
 import Scheduler.Google.Server hiding (runServer)
 import qualified Scheduler.Google.Server as SGS
+import Data.Aeson
 
-runServer :: (MonadLogger m, MonadIO m) => (Text -> ExceptT ServantErr IO (Text, a)) -> Kleisli (ExceptT ServantErr IO) a () -> Port -> FilePath -> FilePath -> m ()
+runServer :: (MonadLogger m, MonadIO m, ToJSON a) => (Text -> ExceptT ServantErr IO (Text, a)) -> Kleisli (ExceptT ServantErr IO) a () -> Port -> FilePath -> FilePath -> m ()
 runServer mkJob jobAct port downloadRootDir staticDir = do
   v <- liftIO $ newTVarIO emptyQueue
   env <- liftIO $ epcEnv
   let settings = serverSettings downloadRootDir staticDir env
   liftIO $ run port $ serve combinedProxy $ combinedServer (S.Handler . mkJob) (toHandler jobAct) settings v
 
-schedulerInfo :: (MonadLogger m, MonadIO m) => (Text -> ExceptT ServantErr IO (Text, a)) -> Kleisli (ExceptT ServantErr IO) a () -> ParserInfo (m ())
+schedulerInfo :: (MonadLogger m, MonadIO m, ToJSON a) => (Text -> ExceptT ServantErr IO (Text, a)) -> Kleisli (ExceptT ServantErr IO) a () -> ParserInfo (m ())
 schedulerInfo mkJob jobAct = info (helper <*> schedulerParser mkJob jobAct)
   (  fullDesc
   <> header "Test scheduler UI."
   <> progDesc "Runs a simple server which allows for scheduling of tests."
   )
 
-schedulerParser :: (MonadLogger m, MonadIO m) => (Text -> ExceptT ServantErr IO (Text, a)) -> Kleisli (ExceptT ServantErr IO) a () -> Parser (m ())
+schedulerParser :: (MonadLogger m, MonadIO m, ToJSON a) => (Text -> ExceptT ServantErr IO (Text, a)) -> Kleisli (ExceptT ServantErr IO) a () -> Parser (m ())
 schedulerParser mkJob jobAct = runServer <$>
   pure mkJob
   <*>

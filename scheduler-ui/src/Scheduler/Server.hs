@@ -26,12 +26,14 @@ import Control.Lens
 import Data.Time
 import Scheduler.Icons
 import Scheduler.Google.Server (driveServer, DriveAPI, ServerSettings)
+import Data.Aeson
 
 type HomePageAPI = "legacy" :> Get '[HTML] (Html ())
 type CreateJobAPI = "new" :> Get '[HTML] (Html ())
 type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
 type AddJobAPI' = "addJob1" :> ReqBody '[JSON] Text :> Post '[HTML] (Html ())
 type RemoveJobAPI = "remJob" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
+type RemoveJobAPI' a = "remJob1" :> QueryParam "idx" Int :> Get '[JSON] (JobQueue a)
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
 type ScheduleJobsAPI = "schedule" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
 type CancelJobsAPI = "cancel" :> Get '[HTML] (Html ())
@@ -40,6 +42,7 @@ type MoveJobDownAPI = "moveDown" :> QueryParam "idx" Int :> Get '[HTML] (Html ()
 type ArrUpIcon = "icon" :> "arrUp" :> Get '[SvgDiagram] SvgDiagram'
 type ArrDownIcon = "icon" :> "arrDown" :> Get '[SvgDiagram] SvgDiagram'
 type RemoveIcon = "icon" :> "remove" :> Get '[SvgDiagram] SvgDiagram'
+type GetJobQueueAPI a = "jobQueue" :> Get '[JSON] (JobQueue a)
 
 data BodyParams
 newtype BodyMap = BodyMap (Map Text Text)
@@ -57,7 +60,7 @@ instance MimeUnrender BodyParams BodyMap where
       mkTuple _ = Left "Could not decode body parameters."
       queryText = parseQueryText $ toStrict bs
 
-type API = HomePageAPI
+type API a = HomePageAPI
   :<|> CreateJobAPI
   :<|> AddJobAPI
   :<|> AddJobAPI'
@@ -65,19 +68,21 @@ type API = HomePageAPI
   :<|> ScheduleJobsAPI
   :<|> CancelJobsAPI
   :<|> RemoveJobAPI
+  :<|> RemoveJobAPI' a
   :<|> MoveJobUpAPI
   :<|> MoveJobDownAPI
   :<|> ArrUpIcon
   :<|> ArrDownIcon
   :<|> RemoveIcon
+  :<|> GetJobQueueAPI a
 
 type ServantHandler = S.Handler
 type HandlerT a = ServerT a ServantHandler
 
-proxyAPI :: Proxy API
+proxyAPI :: Proxy (API a)
 proxyAPI = Proxy
 
-server :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT API
+server :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT (API a)
 server mkJob jobAct jobsT = homepage jobsT
   :<|> newJob
   :<|> addJob mkJob jobsT
@@ -86,11 +91,13 @@ server mkJob jobAct jobsT = homepage jobsT
   :<|> scheduleJobs jobAct jobsT
   :<|> cancelJobs jobsT
   :<|> removeJob jobsT
+  :<|> removeJob1 jobsT
   :<|> moveJobUp jobsT
   :<|> moveJobDown jobsT
   :<|> sendArrUp
   :<|> sendArrDown
   :<|> sendRemove
+  :<|> sendJobQueue jobsT
 
 homepage :: TVar (JobQueue a) -> HandlerT HomePageAPI
 homepage jobsT = do
@@ -138,7 +145,7 @@ addJob' mkJob jobsT jobPath = do
     where
       job jn jobVal = Job jn Queued jobVal
 
-application :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
+application :: ToJSON a => (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
 application mkJob jobAct jobsT = serve proxyAPI $ server mkJob jobAct jobsT
 
 renderHomepage :: TimeZone -> JobQueue a -> Html ()
@@ -181,7 +188,7 @@ scheduleJobs :: Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT Sch
 scheduleJobs f jobsT (BodyMap bodyParams) = do
   tz <- liftIO getCurrentTimeZone
   case mTime of
-    Nothing -> S.Handler $ throwE $ err500 { errBody = "Could not parse the time " }
+    Nothing -> S.Handler $ throwE $ err400 { errBody = "Could not parse the time " }
     Just time -> do
       _ <- atomically $ do
         modifyTVar jobsT (qStartTime .~ Just (localTimeToUTC tz time))
@@ -205,6 +212,12 @@ removeJob :: TVar (JobQueue a) -> HandlerT RemoveJobAPI
 removeJob jobsT mIdx = do
   mapM_ (\idx -> runKleisli (Scheduler.removeJobK idx) jobsT) mIdx
   redirect303 homeLink
+
+removeJob1 :: TVar (JobQueue a) -> HandlerT (RemoveJobAPI' a)
+removeJob1 jobsT Nothing = S.Handler . throwE $ err400 { errBody = "No id supplied. No job has been removed from the queue." }
+removeJob1 jobsT (Just idx) = do
+  runKleisli (Scheduler.removeJobK idx) jobsT
+  atomically . readTVar $ jobsT
 
 moveJobUp :: TVar (JobQueue a) -> HandlerT MoveJobUpAPI
 moveJobUp jobsT mIdx = do
@@ -231,11 +244,14 @@ redirect303 link = S.Handler $ throwE $ err303 { errHeaders = [("Location", url)
     url = encodeUtf8 $ toUrlPiece link
 
 combinedServer :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a ()
-  -> ServerSettings -> TVar (JobQueue a) -> Server CombinedAPI
+  -> ServerSettings -> TVar (JobQueue a) -> Server (CombinedAPI a)
 combinedServer mkJob jobAct settings jobVar =
   server mkJob jobAct jobVar :<|> driveServer settings
 
-type CombinedAPI = API :<|> DriveAPI
+type CombinedAPI a = API a :<|> DriveAPI
 
-combinedProxy :: Proxy CombinedAPI
+combinedProxy :: Proxy (CombinedAPI a)
 combinedProxy = Proxy
+
+sendJobQueue :: TVar (JobQueue a) -> HandlerT (GetJobQueueAPI a)
+sendJobQueue = atomically . readTVar

@@ -1,3 +1,4 @@
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Common where
@@ -5,6 +6,7 @@ module Common where
 import Reflex.Dom
 import Data.Semigroup
 import Data.Text (pack, Text)
+import Prelude
 
 head :: MonadWidget t m => m ()
 head = do
@@ -15,3 +17,7 @@ head = do
 tshow :: Show a => a -> Text
 tshow = pack . show
 
+pureButton :: MonadWidget t m => Text -> m (Event t ())
+pureButton label = do
+  (e, _) <- elAttr' "a" ("class" =: "pure-button") $ text label
+  return $ () <$ domEvent Click e

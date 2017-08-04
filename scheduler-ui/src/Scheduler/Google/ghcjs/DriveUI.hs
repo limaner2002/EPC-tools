@@ -6,6 +6,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds #-}
 
+module DriveUI where
+
 import Reflex.Dom
 import Reflex.Dom.Xhr
 import Scheduler.Google.Types
@@ -20,12 +22,7 @@ import Control.Monad.Ref (Ref)
 import GHC.IORef (IORef)
 import Prelude
 import Common
-import SchedulerUI
 import Scheduler.Types
-
-main = mainWidgetWithHead Common.head $ do
-  elAttr "div" ("class" =: "pure-u-1-1") $ schedulerWidget emptyQueue
-  elAttr "div" ("class" =: "pure-u-1-1") fileWidget
 
 type DFile = DriveFile DriveFileType
 type DReq = DriveRequest DFile
@@ -39,9 +36,8 @@ data NavType
   = FileNav DFile
   | CrumbNav DFile
 
-fileWidget :: MonadWidget t m => m ()
-fileWidget = do
-  pb <- getPostBuild
+fileWidget :: MonadWidget t m => Event t () -> m ()
+fileWidget pb = do
   rec resDyn <- browseXhr $ leftmost [DriveRequest Root breadCrumbs <$ pb, evt']
       let files = fmap (^. _Right . _1 . getFiles) resDyn
           crumbs = fmap (^. _Right . _2 . bcCrumbs) resDyn
