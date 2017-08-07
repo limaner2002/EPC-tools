@@ -21,10 +21,16 @@ import Data.Text.Lazy (toStrict, fromStrict)
 data QAction
   = Fetching
   | Remove Int
+  | Start
 
 schedulerWidget :: (MonadWidget t m, FromJSON a) => Event t () -> (Map Int (Job a) -> Map Int (Job a)) -> m ()
 schedulerWidget pb f = do
-  rec jq <- jobQueueXhr $ leftmost [Fetching <$ pb, x, Fetching <$ btn]
+  rec jq <- jobQueueXhr $ leftmost
+        [ Fetching <$ pb
+        , x
+        , Fetching <$ btn
+        , Start <$ startBtn
+        ]
       let mpEvt = fmap (f . toMpEvt) jq
 
       x <- elAttr "table" ("class" =: "pure-table") $ do
@@ -37,7 +43,8 @@ schedulerWidget pb f = do
           d <- holdDyn mempty $ mpEvt
           removes <- listViewWithKey d toClickable
           return $ fmap (Remove . Prelude.head . keys) removes
-      btn <- pureButton "Refresh"
+      btn <- pureButtonPrimary "Refresh"
+      startBtn <- pureButtonPrimary "Run Jobs"
 
   return ()
 
@@ -74,6 +81,9 @@ jobQueueReq = xhrRequest "GET" "jobQueue" cfg
 remJobReq :: Int -> XhrRequest ()
 remJobReq idx = xhrRequest "GET" ("remJob1?idx=" <> tshow (idx - 1)) def
 
+startJobReq :: XhrRequest ()
+startJobReq = xhrRequest "GET" "runJobs" def
+
 jobQueueXhr :: (MonadWidget t m, FromJSON a) => Event t QAction -> m (Event t (JobQueue a))
 jobQueueXhr evt = do
   qEvt <- performRequestAsync $ fmap makeReq evt
@@ -84,3 +94,4 @@ jobQueueXhr evt = do
 makeReq :: QAction -> XhrRequest ()
 makeReq Fetching = jobQueueReq
 makeReq (Remove idx) = remJobReq idx
+makeReq Start = startJobReq

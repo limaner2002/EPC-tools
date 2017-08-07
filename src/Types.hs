@@ -45,7 +45,7 @@ import Data.Semigroup
 import Data.Aeson
 import Path
 import Data.Time
-import Control.Lens hiding (deep, cons)
+import Control.Lens hiding (deep, cons, mapped)
 
 data LogSettings = LogSettings
   { username :: Text

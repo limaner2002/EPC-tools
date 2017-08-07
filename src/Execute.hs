@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Execute
   ( schedule
@@ -11,14 +12,20 @@ module Execute
 import ClassyPrelude
 import System.Directory
 import System.FilePath ((</>))
-import qualified Data.Conduit.Combinators as CC
-import Data.Conduit.Process hiding (runCommand)
-import System.Process hiding (runCommand)
 import qualified System.IO as SIO
 import GHC.IO.Exception
 import Data.Time
-import Control.Concurrent.Async.Lifted
 import Types
+
+       -- New process imports
+import Data.Streaming.Process hiding (runCommand)
+import Streaming hiding ((<>))
+import qualified Streaming.Prelude as S
+import qualified Data.ByteString.Streaming as BSS
+import qualified Data.ByteString.Streaming.Char8 as SC8
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C8
+import Control.Arrow
 
 createCommand :: JMeterOpts -> NUsers -> CmdSpec
 createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts _) (NUsers n) =
@@ -41,10 +48,64 @@ readNUsers = fmap NUsers . readMay
 newCP :: CmdSpec -> CreateProcess
 newCP cs = (shell mempty) {cmdspec = cs}
 
-streamConsumer = CC.mapM_ (\bs -> putStr (decodeUtf8 bs) >> SIO.hFlush (stdout))
+-- streamConsumer = CC.mapM_ (\bs -> putStr (decodeUtf8 bs) >> SIO.hFlush (stdout))
 
-runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
+streamConsumer :: (MonadIO m, MonadBase IO m) => TimeZone -> TVar UTCTime -> Handle -> m ()
+streamConsumer tz var =
+      SC8.fromHandle
+  >>> SC8.lines
+  >>> mapped SC8.toStrict
+  >>> S.mapM (addTime tz)
+  >>> S.mapM (updateLastSeen var)
+  >>> S.mapM_ (liftBase . C8.putStrLn)
 
+-- runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
+addTime :: MonadBase IO m => TimeZone -> ByteString -> m ByteString
+addTime tz bs = do
+  ct <- liftBase $ utcToZonedTime tz <$> getCurrentTime
+  return $ encodeUtf8 (pack $ formatTime defaultTimeLocale "%F %T %Z" ct) <> ":\t" <> bs
+
+updateLastSeen :: MonadBase IO m => TVar UTCTime -> ByteString -> m ByteString
+updateLastSeen var str = do
+  ct <- liftBase getCurrentTime
+  liftBase . atomically $ writeTVar var ct
+  return str
+
+type Secs = Int
+
+checkLastSeen :: MonadBase IO m => Handle -> StreamingProcessHandle -> TVar UTCTime -> Secs -> m ()
+checkLastSeen input sHandle var delay = loop
+  where
+    loop = do
+      liftBase $ threadDelay (delay * 1000000)
+      t <- liftBase $ atomically $ readTVar var
+      ct <- liftBase getCurrentTime
+
+      let tDelta = diffUTCTime ct t
+
+      case tDelta > fromIntegral delay of
+        True -> liftBase $ interruptProcessGroupOf $ streamingProcessHandleRaw sHandle
+        False -> loop
+
+runCommand
+  :: (Forall (Pure m),
+      MonadIO m, MonadBaseControl IO m) =>
+     CreateProcess -> m ()
+runCommand cp = do
+  (input, out, err, cph) <- streamingProcess cp
+  tz <- liftIO getCurrentTimeZone
+  var <- liftIO $ newTVarIO =<< getCurrentTime
+
+  runConcurrently
+     $ Concurrently (streamConsumer tz var out)
+    *> Concurrently (streamConsumer tz var err)
+    *> Concurrently (checkLastSeen input cph var 300)
+    *> Concurrently ( do
+                        res <- waitForStreamingProcess cph
+                        print res
+                    )
+
+    -- EPC-tools specific stuff
 isEmptyDirectory [] = True
 isEmptyDirectory _ = False
 

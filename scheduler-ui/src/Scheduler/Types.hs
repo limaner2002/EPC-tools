@@ -30,6 +30,7 @@ data JobStatus
   = Queued
   | Running
   | Finished
+  | Cancelled
   deriving (Show, Eq, Generic)
 
 data Job a = Job
