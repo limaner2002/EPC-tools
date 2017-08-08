@@ -140,7 +140,7 @@ type DFile = DriveFile DriveFileType
 
 data NavResponse
   = FileList (Files, BreadCrumbs DFile)
-  | AddJob Text
+  | AddJob (Text, Text)
   deriving (Show, Generic)
 
 instance ToJSON NavResponse

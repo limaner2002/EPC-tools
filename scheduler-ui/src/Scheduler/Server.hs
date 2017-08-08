@@ -32,7 +32,7 @@ import Data.Aeson
 type HomePageAPI = "legacy" :> Get '[HTML] (Html ())
 type CreateJobAPI = "new" :> Get '[HTML] (Html ())
 type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
-type (AddJobAPI' a) = "addJob1" :> ReqBody '[JSON] Text :> Post '[JSON] (JobQueue a)
+type (AddJobAPI' a) = "addJob1" :> ReqBody '[JSON] (Text, Text) :> Post '[JSON] (JobQueue a)
 type RemoveJobAPI = "remJob" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
 type RemoveJobAPI' a = "remJob1" :> QueryParam "idx" Int :> Get '[JSON] (JobQueue a)
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
@@ -63,7 +63,7 @@ instance MimeUnrender BodyParams BodyMap where
 
 type API a = HomePageAPI
   :<|> CreateJobAPI
-  :<|> AddJobAPI
+--   :<|> AddJobAPI
   :<|> AddJobAPI' a
   :<|> RunJobsAPI
   :<|> ScheduleJobsAPI
@@ -83,10 +83,10 @@ type HandlerT a = ServerT a ServantHandler
 proxyAPI :: Proxy (API a)
 proxyAPI = Proxy
 
-server :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT (API a)
+server :: (FilePath -> Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT (API a)
 server mkJob jobAct jobsT = homepage jobsT
   :<|> newJob
-  :<|> addJob mkJob jobsT
+--  :<|> addJob mkJob jobsT
   :<|> addJob' mkJob jobsT
   :<|> runJobs jobAct jobsT
   :<|> scheduleJobs jobAct jobsT
@@ -133,9 +133,9 @@ addJob mkJob jobsT (BodyMap bodyParams) = do
     where
       job jn jobVal = Job jn Queued jobVal
 
-addJob' :: (Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT (AddJobAPI' a)
-addJob' mkJob jobsT jobPath = do
-  eJobVal <- tryAny $ mkJob jobPath
+addJob' :: (FilePath -> Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT (AddJobAPI' a)
+addJob' mkJob jobsT (jobPath, jmxPath) = do
+  eJobVal <- tryAny $ mkJob (unpack jmxPath) jobPath 
   case eJobVal of
     Left err -> S.Handler $ throwE $ err400 {errBody = encodeUtf8 (fromStrict $ tshow err) }
     Right (jobName, jobVal) ->
@@ -145,7 +145,7 @@ addJob' mkJob jobsT jobPath = do
     where
       job jn jobVal = Job jn Queued jobVal
 
-application :: ToJSON a => (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
+application :: ToJSON a => (FilePath -> Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> Application
 application mkJob jobAct jobsT = serve proxyAPI $ server mkJob jobAct jobsT
 
 renderHomepage :: TimeZone -> JobQueue a -> Html ()
@@ -243,7 +243,7 @@ redirect303 link = S.Handler $ throwE $ err303 { errHeaders = [("Location", url)
   where
     url = encodeUtf8 $ toUrlPiece link
 
-combinedServer :: (Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a ()
+combinedServer :: (FilePath -> Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a ()
   -> ServerSettings -> TVar (JobQueue a) -> Server (CombinedAPI a)
 combinedServer mkJob jobAct settings jobVar =
   server mkJob jobAct jobVar :<|> driveServer settings

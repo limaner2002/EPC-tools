@@ -9,7 +9,7 @@ module Scheduler.Google where
 import Control.Lens
 import Network.Google
 import Network.Google.Drive
-import ClassyPrelude
+import ClassyPrelude hiding (find)
 import Data.Conduit
 import qualified Data.Conduit.Combinators as CC
 import Control.Monad.Trans.Resource hiding (throwM)
@@ -20,13 +20,23 @@ import Scheduler.Google.Types hiding (fId, fName)
 import Network.Wai.Handler.Warp (run)
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import qualified Data.ByteString.Lazy as BL
-import System.FilePath (takeDirectory)
+import System.FilePath (takeDirectory, takeBaseName)
+import System.FilePath.Find (find, (~~?), fileName, always)
 import Codec.Archive.Zip
 
-newtype MissingConfigException = MissingConfigException Text
-  deriving Show
+data ScheduleException
+  = MissingConfigException
+  | MultipleConfigException
+  | MissingJMXException
+  | MultipleJMXException
 
-instance Exception MissingConfigException
+instance Exception ScheduleException
+
+instance Show ScheduleException where
+  show MultipleConfigException = "There should be exactly one config file. This script cannot be scheduled."
+  show MissingConfigException = "There is no configuration file! This script cannot be scheduled."
+  show MultipleJMXException = "There should be exactly one .jmx file. This script cannot be scheduled."
+  show MissingJMXException = "There is no .jmx file. This script cannot be scheduled."
 
 g :: MonadResource m => ResumableSource m ByteString -> FilePath -> m ()
 g stream fp = stream $$+- CC.sinkFile fp
@@ -47,29 +57,33 @@ downloadFile pathPrefix req = do
   case filesGet <$> df ^? DS.fId of
     Nothing -> throwM $ DS.err400 "No file to download!"
     Just fg -> do
-      let dir = pathPrefix </> unpack (intercalate "/" $ req ^.. reqCrumbs . bcCrumbs . traverse . DS.fName)
-          fp = dir </> baseName </> fName
-          baseName = fName
+      let dir = pathPrefix </> unpack (intercalate "/" $ req ^.. reqCrumbs . bcCrumbs . traverse . DS.fName) </> baseName
+          fp = dir </> fName
+          baseName = takeBaseName fName
           fName = unpack (df ^. DS.fName)
       stream <- download fg
       putStrLn $ "Downloading file " <> tshow (df ^. DS.fName) <> " to " <> tshow fp
       liftIO $ createDirectoryIfMissing True dir
       liftBase $ runResourceT $ g stream fp
       cfgPath <- extractFile fp
-      return $ AddJob $ pack cfgPath
+      return $ AddJob cfgPath
  where
    df = req ^. reqFile
 
-extractFile :: (MonadBase IO m, MonadThrow m) => FilePath -> m FilePath
+extractFile :: (MonadBase IO m, MonadThrow m) => FilePath -> m (Text, Text)
 extractFile fp = do
   ct <- liftBase $ BL.readFile fp
   let dir = takeDirectory fp
   liftBase $ extractFilesFromArchive [OptDestination dir] . toArchive $ ct
-  files <- liftBase $ listDirectory dir
-  let mCfg = files ^? traverse . filtered (isSuffixOf ".cfg")
-  case mCfg of
-    Nothing -> throwM $ MissingConfigException "There is no configuration file! This script cannot be scheduled."
-    Just cfgFile -> return $ dir </> cfgFile
+  cfgFiles <- liftBase $ find always (fileName ~~? "*.cfg") dir
+  jmxFiles <- liftBase $ find always (fileName ~~? "*.jmx") dir
+  case cfgFiles of
+    [cfgFile] -> case jmxFiles of
+      [jmxFile] -> return $ (pack cfgFile, pack jmxFile)
+      [] -> throwM $ MissingJMXException
+      _ -> throwM $ MultipleJMXException
+    [] -> throwM $ MissingConfigException
+    _ -> throwM $ MultipleConfigException
 
 epcEnv :: (MonadCatch f, MonadIO f) => f (Env '["https://www.googleapis.com/auth/drive.readonly"])
 epcEnv = do
@@ -158,4 +172,6 @@ serverSettings rootDownloadDir staticDir env = DS.ServerSettings f g staticDir
   where
     f = runResourceT . runGoogle env . fetchContents
     g req = catch (runResourceT . runGoogle env . downloadFile rootDownloadDir $ req) handleErrors
-    handleErrors e@(MissingConfigException _) = DS.Handler . DS.throwE $ DS.err400 $ encodeUtf8 $ fromStrict $ tshow e
+    handleErrors :: ScheduleException -> DS.Handler NavResponse
+    handleErrors e = DS.Handler . DS.throwE $ DS.err400 $ encodeUtf8 $ fromStrict $ tshow e
+

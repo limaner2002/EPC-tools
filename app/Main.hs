@@ -75,7 +75,7 @@ parseCommands tz = subparser
   (  command "analyse" resultsInfo
   <> command "download-log" logsInfo
   <> command "make-table" tableInfo
-  <> command "scheduler-ui" (schedulerInfo (fmap (\jo -> (jo ^. runName . getRunName, jo)) . toJMeterOpts . unpack) (Kleisli (lift . runJMeter)))
+  <> command "scheduler-ui" (schedulerInfo mkJob (Kleisli (lift . runJMeter)))
   <> command "plot-metrics" (plotInfo tz)
   <> command "get-stats" statsInfo
   )
@@ -107,12 +107,14 @@ data ExecutionStatus
   | Running
   | Finished
 
-readJMeterOpts :: MonadThrow m => ExecuteType -> Config -> m JMeterOpts
-readJMeterOpts execType cfg =
+readJMeterOpts :: MonadThrow m => FilePath -> FilePath -> ExecuteType -> Config -> m JMeterOpts
+readJMeterOpts jmeterPath jmxPath execType cfg =
   JMeterOpts <$> dryVal execType (pure $ Run 1) (getVal' "nRuns")
              <*> dryVal execType (pure $ [NUsers 1]) (getVal' "nUsers")
-             <*> getVal' "jmxPath"
-             <*> getVal' "jmeterPath"
+             -- <*> getVal' "jmxPath"
+             -- <*> getVal' "jmeterPath"
+             <*> pure jmxPath
+             <*> pure jmeterPath
              <*> getVal' "runName"
              <*> (replaceIt <$> getVal' "otherOpts")
              <*> getVal' "sleepTime"
@@ -130,11 +132,10 @@ data ExecuteType
   = Execute
   | DryRun
 
-toJMeterOpts :: (MonadThrow m, MonadIO m) => FilePath -> m JMeterOpts
-toJMeterOpts fp = do
+toJMeterOpts :: (MonadThrow m, MonadIO m) => FilePath -> FilePath -> FilePath -> m JMeterOpts
+toJMeterOpts jmeterPath jmxPath fp = do
   cfg <- readConfigFile fp
-  readJMeterOpts Execute cfg
+  readJMeterOpts jmeterPath jmxPath Execute cfg
 
-mkJob
-  :: (MonadThrow m, MonadIO m) => Text -> m (Text, JMeterOpts)
-mkJob = fmap (\jo -> (jo ^. runName . getRunName, jo)) . toJMeterOpts . unpack
+mkJob :: (MonadThrow m, MonadIO m) => FilePath -> FilePath -> Text -> m (Text, JMeterOpts)
+mkJob jmeterPath jmxPath = fmap (\jo -> (jo ^. runName . getRunName, jo)) . toJMeterOpts jmeterPath jmxPath . unpack

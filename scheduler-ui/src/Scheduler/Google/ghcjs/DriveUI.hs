@@ -37,6 +37,8 @@ fileWidget pb = do
           crumbs = fmap (^. _Right . _FileList . _2 . bcCrumbs) resDyn
           addJobEvt = fmapMaybe (^? _Right . _AddJob) $ updated resDyn
           addJobR = fmap addJobReq addJobEvt
+          resErrDyn = fmap (^. _Left . to pack) resDyn
+      dynText resErrDyn
       _ <- performRequestAsync addJobR
       bcDyn <- el "div" $ simpleList crumbs (toDynHtml "div")
       navDyn <- elAttr "table" ("class" =: "pure-table") $ do
@@ -79,7 +81,7 @@ decodeResponse :: Maybe Text -> Either String NavResponse
 decodeResponse Nothing = Left "Received an empty response from the server."
 decodeResponse (Just t) = eitherDecode . encodeUtf8 . fromStrict $ t
 
-addJobReq :: Text -> XhrRequest Text
+addJobReq :: (Text, Text) -> XhrRequest Text
 addJobReq fp = xhrRequest "POST" "addJob1" cfg
   where
     cfg = (xhrRequestConfig_headers .~ ("Content-type" =: "application/json"))
