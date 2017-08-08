@@ -48,7 +48,9 @@ downloadFile pathPrefix req = do
     Nothing -> throwM $ DS.err400 "No file to download!"
     Just fg -> do
       let dir = pathPrefix </> unpack (intercalate "/" $ req ^.. reqCrumbs . bcCrumbs . traverse . DS.fName)
-          fp = dir </> unpack (df ^. DS.fName)
+          fp = dir </> baseName </> fName
+          baseName = fName
+          fName = unpack (df ^. DS.fName)
       stream <- download fg
       putStrLn $ "Downloading file " <> tshow (df ^. DS.fName) <> " to " <> tshow fp
       liftIO $ createDirectoryIfMissing True dir

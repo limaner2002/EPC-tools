@@ -55,6 +55,9 @@ library
                      , optparse-applicative
                      , machinecell
                      , monad-logger
+                     , streaming
+                     , streaming-bytestring
+                     , streaming-commons
   default-language:    Haskell2010
 
 executable EPC-tools
