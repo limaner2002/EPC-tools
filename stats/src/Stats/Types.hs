@@ -3,6 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Stats.Types where
 
@@ -165,9 +166,11 @@ data AggregateRow = AggregateRow
   , _aggMaxVal :: Int
   , _aggErrors :: Int
   , _aggErrorPct :: Double
-  } deriving (Show, Eq, Generic)
+  }
+  deriving (Show, Eq, Generic)
 
 makeLenses ''AggregateRow
+-- makePrisms ''AggregateRow
 
 instance ToRecord AggregateRow where
   toRecord agg = record
@@ -229,6 +232,8 @@ instance FromNamedRecord AggregateRow where
 
 instance ToSheetRow AggregateRow
 instance ToJSON AggregateRow
+instance ToCellValue a => ToSheetRow [a] where
+  toSheetRow = fmap toCellValue
 
 statToAggregateRow :: Label -> Stat -> AggregateRow
 statToAggregateRow statLabel stat = AggregateRow
@@ -249,3 +254,14 @@ statToAggregateRow statLabel stat = AggregateRow
     avg :: Double
     avg = fromIntegral (stat ^. statElapsed) / fromIntegral (stat ^. statTotal)
     dg = stat ^. statDigest
+
+data RecordLensTest a = R
+  { _a :: Text
+  , _b :: Text
+  }
+  | H
+  { _c :: a
+  }
+  deriving (Show, Generic)
+
+instance ToCellValue a => ToSheetRow (RecordLensTest a)

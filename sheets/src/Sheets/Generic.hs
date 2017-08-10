@@ -9,8 +9,9 @@ module Sheets.Generic
   , Codec.Xlsx.fromXlsx
   , wsColumnFold
   , wsRowFold
+  , wsRowFold'
   , xlsxSheetFold
-  , ToSheetRow
+  , ToSheetRow (..)
   )where
 
 import ClassyPrelude
@@ -51,9 +52,18 @@ wsColumnFold n begin = F.Fold stepColumn (0, begin) snd
     stepColumn (m, ws) val = (m+1, ws & cellValueAt (n,m) ?~ val)
 
 wsRowFold :: ToSheetRow a => F.Fold a Worksheet
-wsRowFold = F.Fold stepRow (1, def) snd
+wsRowFold = wsRowFold' (1, def)
+-- wsRowFold = F.Fold stepRow (1, def) snd
+--   where
+--     stepRow (n, ws) r = (n+1, F.fold (wsColumnFold n ws) $ toSheetRow r)
+
+wsRowFold' :: ToSheetRow a => (Int, Worksheet) -> F.Fold a Worksheet
+wsRowFold' init = F.Fold stepRow init snd
   where
     stepRow (n, ws) r = (n+1, F.fold (wsColumnFold n ws) $ toSheetRow r)
+
+wsRowFoldWithHead :: ToSheetRow a => a -> F.Fold a Worksheet
+wsRowFoldWithHead headers = wsRowFold' (2, F.fold wsRowFold [headers])
 
 xlsxSheetFold :: Xlsx -> F.Fold (Text, Worksheet) Xlsx
 xlsxSheetFold begin = F.Fold stepSheet begin id
