@@ -55,19 +55,9 @@ setJob = arr (uncurry S.setJob)
 
 runJob :: MonadBase IO m => Kleisli m a () -> Kleisli m (TVar (JobQueue a)) ()
 runJob f = proc var -> do
-  q <- getQueue -< var
-  res <- arr (runKleisli getNextQueued) -< q
-  case res of
-    Left exc -> Kleisli (liftBase . print) -< exc
-    Right (job, q) -> do
-      _ <- setQueue -< (var, q)
-      _ <- passthroughK (\j -> liftBase $ putStrLn $ "Running job " <> tshow (j ^. jobName)) >>> arr _jobVal >>> f -< job
-      q' <- arr (jobStatus .~ Finished) *** id >>> setJob -< (job, q)
-      _ <- setQueue -< (var, q')
-      runJob f -< var
-
-setQueueRunning :: Arrow cat => cat (JobQueue a) (JobQueue a)
-setQueueRunning = arr (qStatus .~ QRunning)
+  job <- Kleisli (liftBase . atomically . S.setRunning) -< var
+  _ <- passthroughK (\j -> liftBase $ putStrLn $ "Running job " <> tshow (j ^. jobName)) >>> arr _jobVal >>> f -< job
+  Kleisli (liftBase . atomically . uncurry S.setFinished) -< (var, job)
 
 runJobs :: (MonadBase IO m, MonadCatch m, MonadThrow m) => Kleisli m a () -> TVar (JobQueue a) -> m ()
 runJobs f var = do
@@ -82,23 +72,12 @@ runJobs f var = do
     Right r -> do
       liftBase $ setCurrentDirectory cwd
       return r
-    
-  -- bracket
-  --   (liftBase getCurrentDirectory)
-  --   (\cwd -> do
-  --       liftBase $ do
-  --         dir <- createTodayDirectory cwd
-  --         setCurrentDirectory dir
-  --       runKleisli (runJob f) var
-  --   )
-  --   (liftBase . setCurrentDirectory)
 
 passthroughK :: Monad m => (a -> m ()) -> Kleisli m a a
 passthroughK f = proc a -> do
   _ <- Kleisli f -< a
   returnA -< a
 
--- moveJobUp :: MonadBase IO m => Int -> TVar (JobQueue a) -> m ()
 moveJobUpK :: MonadBase IO m => Int -> Kleisli m (TVar (JobQueue a)) ()
 moveJobUpK idx = id &&& getQueue
   >>> id *** arr (qJobs %~ S.moveUp idx)

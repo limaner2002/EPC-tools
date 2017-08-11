@@ -48,8 +48,6 @@ readNUsers = fmap NUsers . readMay
 newCP :: CmdSpec -> CreateProcess
 newCP cs = (shell mempty) {cmdspec = cs}
 
--- streamConsumer = CC.mapM_ (\bs -> putStr (decodeUtf8 bs) >> SIO.hFlush (stdout))
-
 streamConsumer :: (MonadIO m, MonadBase IO m) => TimeZone -> TVar UTCTime -> Handle -> m ()
 streamConsumer tz var =
       SC8.fromHandle
@@ -59,7 +57,6 @@ streamConsumer tz var =
   >>> S.mapM (updateLastSeen var)
   >>> S.mapM_ (liftBase . C8.putStrLn)
 
--- runCommand cp = sourceProcessWithStreams cp CC.sinkNull streamConsumer streamConsumer
 addTime :: MonadBase IO m => TimeZone -> ByteString -> m ByteString
 addTime tz bs = do
   ct <- liftBase $ utcToZonedTime tz <$> getCurrentTime
@@ -92,14 +89,14 @@ runCommand
       MonadIO m, MonadBaseControl IO m) =>
      CreateProcess -> m ()
 runCommand cp = do
-  (input, out, err, cph) <- streamingProcess cp
+  (ClosedStream, out, err, cph) <- streamingProcess cp
   tz <- liftIO getCurrentTimeZone
   var <- liftIO $ newTVarIO =<< getCurrentTime
 
   runConcurrently
      $ Concurrently (streamConsumer tz var out)
     *> Concurrently (streamConsumer tz var err)
-    *> Concurrently (checkLastSeen input cph var 300)
+--     *> Concurrently (checkLastSeen input cph var 300)
     *> Concurrently ( do
                         res <- waitForStreamingProcess cph
                         print res

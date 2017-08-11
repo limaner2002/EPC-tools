@@ -30,9 +30,7 @@ import Scheduler.Google.Server (driveServer, DriveAPI, ServerSettings)
 import Data.Aeson
 
 type HomePageAPI = "legacy" :> Get '[HTML] (Html ())
-type CreateJobAPI = "new" :> Get '[HTML] (Html ())
-type AddJobAPI = "addJob" :> ReqBody '[BodyParams] BodyMap :> Post '[HTML] (Html ())
-type (AddJobAPI' a) = "addJob1" :> ReqBody '[JSON] (Text, Text) :> Post '[JSON] (JobQueue a)
+type (AddJobAPI a) = "addJob1" :> ReqBody '[JSON] (Text, Text) :> Post '[JSON] (JobQueue a)
 type RemoveJobAPI = "remJob" :> QueryParam "idx" Int :> Get '[HTML] (Html ())
 type RemoveJobAPI' a = "remJob1" :> QueryParam "idx" Int :> Get '[JSON] (JobQueue a)
 type RunJobsAPI = "runJobs" :> Get '[HTML] (Html ())
@@ -62,9 +60,7 @@ instance MimeUnrender BodyParams BodyMap where
       queryText = parseQueryText $ toStrict bs
 
 type API a = HomePageAPI
-  :<|> CreateJobAPI
---   :<|> AddJobAPI
-  :<|> AddJobAPI' a
+  :<|> AddJobAPI a
   :<|> RunJobsAPI
   :<|> ScheduleJobsAPI
   :<|> CancelJobsAPI
@@ -85,9 +81,7 @@ proxyAPI = Proxy
 
 server :: (FilePath -> Text -> ServantHandler (Text, a)) -> Kleisli ServantHandler a () -> TVar (JobQueue a) -> HandlerT (API a)
 server mkJob jobAct jobsT = homepage jobsT
-  :<|> newJob
---  :<|> addJob mkJob jobsT
-  :<|> addJob' mkJob jobsT
+  :<|> addJob mkJob jobsT
   :<|> runJobs jobAct jobsT
   :<|> scheduleJobs jobAct jobsT
   :<|> cancelJobs jobsT
@@ -109,32 +103,8 @@ homepage jobsT = do
 homeLink :: Link
 homeLink = safeLink proxyAPI (Proxy :: Proxy HomePageAPI)
 
-newJob :: HandlerT CreateJobAPI
-newJob = return $ do
-  header
-  createJob
-
-createJobLink :: Link
-createJobLink = safeLink proxyAPI (Proxy :: Proxy CreateJobAPI)
-
-addJob :: (Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT AddJobAPI
-addJob mkJob jobsT (BodyMap bodyParams) = do
-  case lookup "job-val" bodyParams of
-    Nothing -> pure $ p_ "No file path supplied!"
-    Just jobPath -> do
-      eJobVal <- tryAny $ mkJob jobPath
-      case eJobVal of
-        Left err -> return $ p_ $ toHtml $ tshow err
-        Right (jobName, jobVal) -> do
-          _ <- atomically $ do
-            modifyTVar jobsT (Sched.addJob $ job jobName jobVal)
-            readTVar jobsT
-          redirect303 $ homeLink
-    where
-      job jn jobVal = Job jn Queued jobVal
-
-addJob' :: (FilePath -> Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT (AddJobAPI' a)
-addJob' mkJob jobsT (jobPath, jmxPath) = do
+addJob :: (FilePath -> Text -> ServantHandler (Text, a)) -> TVar (JobQueue a) -> HandlerT (AddJobAPI a)
+addJob mkJob jobsT (jobPath, jmxPath) = do
   eJobVal <- tryAny $ mkJob (unpack jmxPath) jobPath 
   case eJobVal of
     Left err -> S.Handler $ throwE $ err400 {errBody = encodeUtf8 (fromStrict $ tshow err) }
@@ -154,7 +124,7 @@ renderHomepage tz jobs =
     True -> do
       header
       p_ "No jobs queued"
-      a_ [class_ "pure-button pure-button-primary", href_ $ toUrlPiece createJobLink] "Add Job"
+      a_ [class_ "pure-button pure-button-primary", href_ $ "badLink"] "Add Job"
       showScheduledTime
       br_ mempty
       br_ mempty

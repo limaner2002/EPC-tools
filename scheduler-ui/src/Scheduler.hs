@@ -12,6 +12,7 @@ incJobStatus :: JobStatus -> JobStatus
 incJobStatus Queued = Running
 incJobStatus Running = Finished
 incJobStatus Finished = Finished
+incJobStatus Cancelled = Cancelled
 
 getNotFinished :: MonadThrow m => JobQueue a -> m (Job a, JobQueue a)
 getNotFinished q = (,) <$> job <*> (fmap (qJobs .~) newList <*> pure q)
@@ -64,21 +65,27 @@ addJob job = qJobs %~ (|> job)
 getQueue :: MonadBase IO m => TVar (JobQueue a) -> m (JobQueue a)
 getQueue = liftBase . atomically . readTVar
 
+getQueue' :: TVar (JobQueue a) -> STM (JobQueue a)
+getQueue' = readTVar
+
 setQueue :: MonadBase IO m => TVar (JobQueue a) -> JobQueue a -> m ()
 setQueue var q = liftBase $ atomically $ writeTVar var q
 
+setQueue' :: TVar (JobQueue a) -> JobQueue a -> STM ()
+setQueue' var q = writeTVar var q
+
 setJob :: Job a -> JobQueue a -> JobQueue a
-setJob job q = qJobs .~ (first <> [job] <> drop 1 rest) $ q
+setJob job q = qJobs .~ (firstPart <> [job] <> drop 1 rest) $ q
   where
-    (first, rest) = splitWhenFirst (\j -> j ^. jobName == job ^. jobName) (q ^. qJobs)
+    (firstPart, rest) = splitWhenFirst (\j -> j ^. jobName == job ^. jobName) (q ^. qJobs)
 
 splitWhenFirst :: IsSequence seq => (Element seq -> Bool) -> seq -> (seq, seq)
 splitWhenFirst f s = span (not . f) s
 
 getFirst :: (MonadThrow m, IsSequence seq) => (Element seq -> Bool) -> seq -> m (Element seq, seq, seq)
-getFirst f s = (,,) <$> a <*> pure first <*> pure rest'
+getFirst f s = (,,) <$> a <*> pure firstPart <*> pure rest'
   where
-    (first, rest) = splitWhenFirst f s
+    (firstPart, rest) = splitWhenFirst f s
     (a, rest') = (headThrow rest, drop 1 rest)
 
 schedule :: MonadBase IO m => TVar (JobQueue a) -> m () -> m ()
@@ -101,12 +108,6 @@ schedule tScheduledTime action = loop
               liftBase $ threadDelay 1000000
               loop
 
--- q1 = qJobs .~ [Job "6742" Queued Nothing, Job "6619" Queued Nothing] $ emptyQueue
-
--- q2 = (qJobs .~ [Job "3761" Running Nothing, Job "6781" Queued Nothing]) . (qStatus .~ QRunning) $ emptyQueue
-
--- q3 = qJobs .~ [Job "4222" Finished Nothing, Job "4313" Queued Nothing] $ emptyQueue
-
     -- Utility Functions
 
 splitEm :: IsSequence seq => Index seq -> seq -> (seq, (seq, (seq, seq)))
@@ -120,5 +121,21 @@ moveBack n l = pfx <> b <> a <> sfx
 moveUp :: (IsSequence t, Semigroup t) => Index t -> t -> t
 moveUp n l = moveBack (n-1) l
 
-remove :: Foldable f => Int -> f a -> [a]
-remove n l = l ^.. folded . ifiltered (\i _ -> i /= n)
+remove :: Foldable f => Int -> f (Job a) -> [Job a]
+remove n l = l ^.. folded . ifiltered (\i job -> i /= n || (job ^. jobStatus == Running))
+
+             -- Finds the next queued job, marks it as running and returns the job.
+setRunning :: TVar (JobQueue a) -> STM (Job a)
+setRunning var = do
+  q <- readTVar var
+  (job, q') <- getNotFinished q
+  let job' = jobStatus .~ Running $ job
+      q'' = setJob job' q'
+  writeTVar var q''
+  return job'
+
+setFinished :: TVar (JobQueue a) -> Job a -> STM ()
+setFinished var job = modifyTVar var setFinished'
+  where
+    setFinished' q = setJob finishedJob q
+    finishedJob = jobStatus .~ Finished $ job
