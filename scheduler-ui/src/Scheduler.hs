@@ -14,11 +14,11 @@ incJobStatus Running = Finished
 incJobStatus Finished = Finished
 incJobStatus Cancelled = Cancelled
 
-getNotFinished :: MonadThrow m => JobQueue a -> m (Job a, JobQueue a)
+getNotFinished :: JobQueue a -> Maybe (Job a, JobQueue a)
 getNotFinished q = (,) <$> job <*> (fmap (qJobs .~) newList <*> pure q)
   where
     (done, rest) = span isFinished jobList
-    (job, rest') = (headThrow rest, drop 1 rest)
+    (job, rest') = (headMay rest, drop 1 rest)
     rest'' = (:) <$> job' <*> pure rest'
     job' = (jobStatus .~ Running) <$> job
     jobList = q ^. qJobs
@@ -125,14 +125,17 @@ remove :: Foldable f => Int -> f (Job a) -> [Job a]
 remove n l = l ^.. folded . ifiltered (\i job -> i /= n || (job ^. jobStatus == Running))
 
              -- Finds the next queued job, marks it as running and returns the job.
-setRunning :: TVar (JobQueue a) -> STM (Job a)
+setRunning :: TVar (JobQueue a) -> STM (Maybe (Job a))
 setRunning var = do
   q <- readTVar var
-  (job, q') <- getNotFinished q
-  let job' = jobStatus .~ Running $ job
-      q'' = setJob job' q'
-  writeTVar var q''
-  return job'
+  let mRes = getNotFinished q
+  case mRes of
+    Nothing -> return Nothing
+    Just (job, q') -> do
+      let job' = jobStatus .~ Running $ job
+          q'' = setJob job' q'
+      writeTVar var q''
+      return $ Just job'
 
 setFinished :: TVar (JobQueue a) -> Job a -> STM ()
 setFinished var job = modifyTVar var setFinished'
