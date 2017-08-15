@@ -22,6 +22,7 @@ data QAction
   = Fetching
   | Remove Int
   | Start
+  | Cancel
 
 schedulerWidget :: (MonadWidget t m, FromJSON a) => Event t () -> (Map Int (Job a) -> Map Int (Job a)) -> m ()
 schedulerWidget pb f = do
@@ -30,6 +31,7 @@ schedulerWidget pb f = do
         , x
         , Fetching <$ btn
         , Start <$ startBtn
+        , Cancel <$ cancelBtn
         ]
       let mpEvt = fmap (f . toMpEvt) jq
 
@@ -45,6 +47,7 @@ schedulerWidget pb f = do
           return $ fmap (Remove . Prelude.head . keys) removes
       btn <- pureButtonPrimary "Refresh"
       startBtn <- pureButtonPrimary "Run Jobs"
+      cancelBtn <- pureButtonError "Cancel Job"
 
   return ()
 
@@ -84,6 +87,9 @@ remJobReq idx = xhrRequest "GET" ("remJob1?idx=" <> tshow (idx - 1)) def
 startJobReq :: XhrRequest ()
 startJobReq = xhrRequest "GET" "runJobs" def
 
+cancelJobReq :: XhrRequest ()
+cancelJobReq = xhrRequest "GET" "kill" def
+
 jobQueueXhr :: (MonadWidget t m, FromJSON a) => Event t QAction -> m (Event t (JobQueue a))
 jobQueueXhr evt = do
   qEvt <- performRequestAsync $ fmap makeReq evt
@@ -95,3 +101,4 @@ makeReq :: QAction -> XhrRequest ()
 makeReq Fetching = jobQueueReq
 makeReq (Remove idx) = remJobReq idx
 makeReq Start = startJobReq
+makeReq Cancel = cancelJobReq

@@ -2,20 +2,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scheduler.Types
   ( JobStatus (..)
-  , Job (..)
+  , Job-- (..)
+  , newJob
   , JobQueue
   , jobName
   , jobStatus
+  , jobVal
+  , jobId
   , qJobs
   , qStartTime
   , emptyQueue
   , qStatus
   , QueueException (..)
   , QStatus (..)
-  , testJobQueue
   ) where
 
 import Control.Lens
@@ -25,18 +28,21 @@ import Data.Text (Text)
 import GHC.Generics
 import Data.Time
 import Data.Aeson
+import Control.Monad.State
 
 data JobStatus
   = Queued
   | Running
   | Finished
+  | Cancelling
   | Cancelled
   deriving (Show, Eq, Generic)
 
 data Job a = Job
-  { _jobName :: Text
+  { _jobNameInternal :: Text
   , _jobStatus :: JobStatus
-  , _jobVal :: a
+  , _jobValInternal :: a
+  , _jobIdInternal :: Int
   } deriving (Show, Generic)
 
 data JobQueue a = JobQueue
@@ -76,12 +82,16 @@ instance FromJSON a => FromJSON (Job a)
 instance ToJSON a => ToJSON (JobQueue a)
 instance FromJSON a => FromJSON (JobQueue a)
 
-testJobQueue :: JobQueue Text
-testJobQueue = foldl (\jq job -> qJobs %~ (|> job) $ jq) emptyQueue testJobs
+newJob :: MonadState Int m => Text -> JobStatus -> a -> m (Job a)
+newJob name status jobVal = state newJob'
+  where
+    newJob' id = (Job name status jobVal id, id+1)
 
-testJobs :: [Job Text]
-testJobs = [ Job "Job 1" Queued "Tis my duty!"
-           , Job "Job 2" Queued "Tis my duty!"
-           , Job "471 Crap" Queued "Tis my duty!"
-           , Job "Job Form 500 things" Queued "Tis my duty!"
-           ]
+jobId :: (Functor f, Contravariant f) => LensLike' f (Job a) Int
+jobId = getting jobIdInternal
+
+jobName :: (Functor f, Contravariant f) => LensLike' f (Job a) Text
+jobName = getting jobNameInternal
+
+jobVal :: (Functor f, Contravariant f) => LensLike' f (Job a) a
+jobVal = getting jobValInternal

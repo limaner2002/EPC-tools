@@ -34,6 +34,7 @@ module Types
   , jmeterPath
   , otherOpts
   , module Control.Lens
+  , Action (..)
   ) where
 
 -- import ClassyPrelude
@@ -172,3 +173,7 @@ showJobDelay (AtTime (TOD t)) = "Wait until " <> tshow t <> " or until current j
 showJobDelay (AtTime (At t)) = "Wait until " <> tshow t <> " or until current job completes. Whichever is later."
 
 makeLenses ''JMeterOpts
+
+data Action
+  = Stop
+  | Continue

@@ -87,7 +87,7 @@ extractFile fp = do
 
 epcEnv :: (MonadCatch f, MonadIO f) => f (Env '["https://www.googleapis.com/auth/drive.readonly"])
 epcEnv = do
-  lgr <- newLogger Debug stdout
+  lgr <- newLogger Error stdout
   newEnv <&> (envLogger .~ lgr) . (envScopes .~ driveReadOnlyScope)
 
 mkQuery :: Text -> Text
@@ -174,4 +174,3 @@ serverSettings rootDownloadDir staticDir env = DS.ServerSettings f g staticDir
     g req = catch (runResourceT . runGoogle env . downloadFile rootDownloadDir $ req) handleErrors
     handleErrors :: ScheduleException -> DS.Handler NavResponse
     handleErrors e = DS.Handler . DS.throwE $ DS.err400 $ encodeUtf8 $ fromStrict $ tshow e
-

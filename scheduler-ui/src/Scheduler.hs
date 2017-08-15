@@ -12,17 +12,32 @@ incJobStatus :: JobStatus -> JobStatus
 incJobStatus Queued = Running
 incJobStatus Running = Finished
 incJobStatus Finished = Finished
+incJobStatus Cancelling = Cancelled
 incJobStatus Cancelled = Cancelled
 
-getNotFinished :: JobQueue a -> Maybe (Job a, JobQueue a)
-getNotFinished q = (,) <$> job <*> (fmap (qJobs .~) newList <*> pure q)
+getFirstJobNot :: (Job a -> Bool) -> (Job a -> Maybe (Job a)) -> JobQueue a -> Maybe (Job a, JobQueue a)
+getFirstJobNot pred update q = (,) <$> job <*> (fmap (qJobs .~) newList <*> pure q)
   where
-    (done, rest) = span isFinished jobList
+    (done, rest) = span pred jobList
     (job, rest') = (headMay rest, drop 1 rest)
     rest'' = (:) <$> job' <*> pure rest'
-    job' = (jobStatus .~ Running) <$> job
+    job' =  join $ mapM update job
     jobList = q ^. qJobs
     newList = mappend <$> pure done <*> rest''
+
+getNotFinished :: JobQueue a -> Maybe (Job a, JobQueue a)
+getNotFinished = getFirstJobNot (\j -> isFinished j || isCancelled j) update
+  where
+    update job = case job ^. jobStatus == Queued of
+      True -> Just (jobStatus .~ Running $ job)
+      False -> Nothing
+
+cancelRunning :: JobQueue a -> Maybe (Job a, JobQueue a)
+cancelRunning = getFirstJobNot (not . isRunning) update
+  where
+    update job = case job ^. jobStatus of
+      Running -> Just (jobStatus .~ Cancelling $ job)
+      _ -> Nothing
 
 checkRunning :: MonadThrow m => Job a -> m (Job a)
 checkRunning job = case isRunning job of
@@ -44,6 +59,12 @@ isFinished j = j ^. jobStatus == Finished
 isRunning :: Job a -> Bool
 isRunning j = j ^. jobStatus == Running
 
+isCancelling :: Job a -> Bool
+isCancelling j = j ^. jobStatus == Cancelling
+
+isCancelled :: Job a -> Bool
+isCancelled j = j ^. jobStatus == Cancelled
+
 newtype EmptyHeadException = EmptyHeadException Text
   deriving (Show, Eq)
 
@@ -55,7 +76,7 @@ instance Exception EmptyHeadException
          -- actual exceptions.
 headThrow :: (MonadThrow m, MonoFoldable mono) => mono -> m (Element mono)
 headThrow l = case headMay l of
-            Nothing -> throwM $ EmptyHeadException "There are no jobs queued. Not doing anything."
+            Nothing -> throwM $ EmptyHeadException "There are no jobs queued or a job is currently active. Not doing anything."
             Just v -> return v
 
 -- Appends a job to the end of the queue
@@ -122,7 +143,7 @@ moveUp :: (IsSequence t, Semigroup t) => Index t -> t -> t
 moveUp n l = moveBack (n-1) l
 
 remove :: Foldable f => Int -> f (Job a) -> [Job a]
-remove n l = l ^.. folded . ifiltered (\i job -> i /= n || (job ^. jobStatus == Running))
+remove n l = l ^.. folded . ifiltered (\i job -> i /= n || (job ^. jobStatus == Running) || (job ^. jobStatus == Cancelling))
 
              -- Finds the next queued job, marks it as running and returns the job.
 setRunning :: TVar (JobQueue a) -> STM (Maybe (Job a))
@@ -137,8 +158,21 @@ setRunning var = do
       writeTVar var q''
       return $ Just job'
 
-setFinished :: TVar (JobQueue a) -> Job a -> STM ()
-setFinished var job = modifyTVar var setFinished'
+setJobStatus :: (JobStatus -> JobStatus) -> TVar (JobQueue a) -> Job a -> STM ()
+setJobStatus statusUpdate var job = modifyTVar var setStatus
   where
-    setFinished' q = setJob finishedJob q
-    finishedJob = jobStatus .~ Finished $ job
+    setStatus q = qJobs . traverse . filtered hasId . jobStatus %~ statusUpdate $ q
+    hasId j = j ^. jobId == job ^. jobId
+
+setFinished :: TVar (JobQueue a) -> Job a -> STM ()
+setFinished var job = setJobStatus finishedJob var job
+  where
+    finishedJob Cancelling = Cancelled
+    finishedJob Running = Finished
+    finishedJob status = error $ "Invalid job status when finishing: " <> show status
+
+setCancelling :: TVar (JobQueue a) -> Job a -> STM ()
+setCancelling var job = setJobStatus cancellingJob var job
+  where
+    cancellingJob Running = Cancelling
+    cancellingJob status = error $ "Invalid job status when cancelling: " <> show status

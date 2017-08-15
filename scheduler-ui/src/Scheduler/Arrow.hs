@@ -49,7 +49,7 @@ runJob f = proc var -> do
   case mJob of
     Nothing -> Kleisli (const $ liftBase $ putStrLn "No more jobs queued. Not running anything.") -< mJob
     Just job -> do
-      _ <- passthroughK (\j -> liftBase $ putStrLn $ "Running job " <> tshow (j ^. jobName)) >>> arr _jobVal >>> f -< job
+      _ <- passthroughK (\j -> liftBase $ putStrLn $ "Running job " <> tshow (j ^. jobName)) >>> arr (^. jobVal) >>> f -< job
       Kleisli (liftBase . atomically . uncurry S.setFinished) -< (var, job)
       runJob f -< var
 

@@ -70,18 +70,18 @@ readTime' fmt = do
   input <- readerAsk
   parseTimeM True defaultTimeLocale fmt input
 
-parseCommands :: (MonadLogger m, MonadIO m, MonadBase IO m, MonadBaseControl IO m, MonadMask m) => TimeZone -> Parser (m ())
-parseCommands tz = subparser
+parseCommands :: (MonadLogger m, MonadIO m, MonadBase IO m, MonadBaseControl IO m, MonadMask m) => TimeZone -> TMVar Int -> Parser (m ())
+parseCommands tz tmVar = subparser
   (  command "analyse" resultsInfo
   <> command "download-log" logsInfo
   <> command "make-table" tableInfo
-  <> command "scheduler-ui" (schedulerInfo mkJob (Kleisli (lift . runJMeter)))
+  <> command "scheduler-ui" (schedulerInfo tmVar mkJob (Kleisli (lift . runJMeter tmVar)))
   <> command "plot-metrics" (plotInfo tz)
   <> command "get-stats" statsInfo
   )
 
-commandsInfo :: (MonadLogger m, MonadIO m, MonadBase IO m, MonadBaseControl IO m, MonadMask m) => TimeZone -> ParserInfo (m ())
-commandsInfo tz = info (helper <*> parseCommands tz)
+commandsInfo :: (MonadLogger m, MonadIO m, MonadBase IO m, MonadBaseControl IO m, MonadMask m) => TimeZone -> TMVar Int -> ParserInfo (m ())
+commandsInfo tz tmVar = info (helper <*> parseCommands tz tmVar)
   (  fullDesc
   <> progDesc progInfo
   )
@@ -96,8 +96,9 @@ loggingLevelParser = option readLevel (short 'd') <|> pure LevelInfo
 main :: IO ()
 main = do
   tz <- getCurrentTimeZone
+  tmVar <- newEmptyTMVarIO
   SIO.hSetBuffering stdout SIO.NoBuffering
-  runStderrLoggingT . (setLoggingLevel LevelInfo) =<< execParser (commandsInfo tz)
+  runStderrLoggingT . (setLoggingLevel LevelInfo) =<< execParser (commandsInfo tz tmVar)
 
 setLoggingLevel :: LogLevel -> LoggingT m a -> LoggingT m a
 setLoggingLevel lv = filterLogger (\_ lv' -> lv <= lv')

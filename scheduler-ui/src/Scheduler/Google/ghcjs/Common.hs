@@ -28,3 +28,6 @@ pureButton label = pureButtonAttr label ("class" =: "pure-button")
 
 pureButtonPrimary :: MonadWidget t m => Text -> m (Event t ())
 pureButtonPrimary label = pureButtonAttr label ("class" =: "pure-button pure-button-primary")
+
+pureButtonError :: MonadWidget t m => Text -> m (Event t ())
+pureButtonError label = pureButtonAttr label ("class" =: "pure-button pure-button-error")

@@ -4,7 +4,6 @@
 
 module Execute
   ( schedule
-  , batchJMeterScripts
   , doIfDirIsEmpty
   , runJMeter
   ) where
@@ -84,11 +83,18 @@ checkLastSeen input sHandle var delay = loop
         True -> liftBase $ interruptProcessGroupOf $ streamingProcessHandleRaw sHandle
         False -> loop
 
+handleKill :: MonadBase IO m => StreamingProcessHandle -> TMVar Int -> TVar Action -> m ()
+handleKill sHandle tmv actionT = liftBase $ do
+  _ <- atomically $ do
+    takeTMVar tmv
+    writeTVar actionT Stop
+  terminateProcess $ streamingProcessHandleRaw sHandle
+
 runCommand
   :: (Forall (Pure m),
       MonadIO m, MonadBaseControl IO m) =>
-     CreateProcess -> m ()
-runCommand cp = do
+     TMVar Int -> TVar Action -> CreateProcess -> m ()
+runCommand tmVar actionT cp = do
   (ClosedStream, out, err, cph) <- streamingProcess cp
   tz <- liftIO getCurrentTimeZone
   var <- liftIO $ newTVarIO =<< getCurrentTime
@@ -97,17 +103,16 @@ runCommand cp = do
      $ Concurrently (streamConsumer tz var out)
     *> Concurrently (streamConsumer tz var err)
 --     *> Concurrently (checkLastSeen input cph var 300)
-    *> Concurrently ( do
-                        res <- waitForStreamingProcess cph
-                        print res
-                    )
+    *> Concurrently (handleKill cph tmVar actionT)
+  res <- waitForStreamingProcess cph
+  print res
 
     -- EPC-tools specific stuff
 isEmptyDirectory [] = True
 isEmptyDirectory _ = False
 
-runJMeter_ :: JMeterOpts -> IO ()
-runJMeter_ opts = mapM_ runForNUsers (opts ^. nUsers)
+runJMeter_ :: TMVar Int -> TVar Action -> JMeterOpts -> IO ()
+runJMeter_ tmVar actionT opts = mapM_ runForNUsers (opts ^. nUsers)
   where
     createNUsersDir (NUsers u) = do
       exists <- doesDirectoryExist $ show u
@@ -115,42 +120,47 @@ runJMeter_ opts = mapM_ runForNUsers (opts ^. nUsers)
         True -> putStrLn $ "Directory: " <> tshow u <> " already exists!"
         False -> createDirectory $ show u
     runForNUsers user@(NUsers u) = do
-      createNUsersDir user
-      setCurrentDirectory $ show u
-      mapM_ (run user) [1..(extractRun $ opts ^. nRuns)]
-      putStrLn "runForNUsers: Moving to parent"
-      setCurrentDirectory "../"
+      action <- atomically $ readTVar actionT
+      case action of
+        Stop -> putStrLn "This job has been cancelled. Not continuing."
+        Continue -> do
+          createNUsersDir user
+          setCurrentDirectory $ show u
+          mapM_ (run user) [1..(extractRun $ opts ^. nRuns)]
+          putStrLn "runForNUsers: Moving to parent"
+          setCurrentDirectory "../"
     run u r = do
-      let newDir = "Run " <> show r
-          cmd = createCommand opts u
-      createDirectory newDir
-      setCurrentDirectory newDir
-      putStrLn $ "Running command: " <> (pack $ showCmdSpec cmd)
-      res <- tryAny $ runCommand (newCP cmd)
-      case res of
-        Left exc -> print exc
-        Right x -> return ()
-      putStrLn "run: Moving to parent"
-      setCurrentDirectory "../"
+      action <- atomically $ readTVar actionT
+      case action of
+        Stop -> putStrLn "This job has been cancelled. Not continuing."
+        Continue -> do
+          let newDir = "Run " <> show r
+              cmd = createCommand opts u
+          createDirectory newDir
+          setCurrentDirectory newDir
+          delayJob $ opts ^. sleepTime
+          putStrLn $ "Running command: " <> (pack $ showCmdSpec cmd)
+          res <- tryAny $ runCommand tmVar actionT (newCP cmd)
+          case res of
+            Left exc -> print exc
+            Right x -> return ()
+          putStrLn "run: Moving to parent"
+          setCurrentDirectory "../"
     extractRun (Run n) = n
     extractUser (NUsers u) = u
 
-batchJMeterScripts :: BatchOpts Validated -> IO ()
-batchJMeterScripts batchOpts = mapM_ runJMeter runs
-  where
-    runs = fromBatchOpts batchOpts
-
-runJMeter :: JMeterOpts -> IO ()
-runJMeter run = do
-      createDirectoryIfMissing False $ unpack . fromRunName $ run ^. runName
-      setCurrentDirectory $ unpack . fromRunName $ run ^. runName
-      res <- tryAny $ runJMeter_ run
-      case res of
-        Left exc -> print exc
-        Right x -> return x
-      putStrLn "runJMeter: Moving to parent"
-      setCurrentDirectory "../"
-      delayJob $ run ^. sleepTime
+runJMeter :: TMVar Int -> JMeterOpts -> IO ()
+runJMeter tmVar run = do
+  createDirectoryIfMissing False $ unpack . fromRunName $ run ^. runName
+  setCurrentDirectory $ unpack . fromRunName $ run ^. runName
+  actionT <- newTVarIO Continue
+  res <- tryAny $ runJMeter_ tmVar actionT run
+  case res of
+    Left exc -> print exc
+    Right x -> return x
+  putStrLn "runJMeter: Moving to parent"
+  setCurrentDirectory "../"
+  delayJob $ run ^. sleepTime
 
 runningMessage :: JMeterOpts -> Text
 runningMessage (JMeterOpts n users jmxPath jmeterPath runName otherOpts sleepTime) = do
