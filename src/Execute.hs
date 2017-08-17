@@ -85,9 +85,11 @@ checkLastSeen input sHandle var delay = loop
 
 handleKill :: MonadBase IO m => StreamingProcessHandle -> TMVar Int -> TVar Action -> m ()
 handleKill sHandle tmv actionT = liftBase $ do
-  _ <- atomically $ do
+  res <- atomically $ do
     takeTMVar tmv
     writeTVar actionT Stop
+    return "Wrote stop to TVar"
+  print res
   terminateProcess $ streamingProcessHandleRaw sHandle
 
 runCommand
@@ -99,13 +101,17 @@ runCommand tmVar actionT cp = do
   tz <- liftIO getCurrentTimeZone
   var <- liftIO $ newTVarIO =<< getCurrentTime
 
-  runConcurrently
+  _ <- runConcurrently
      $ Concurrently (streamConsumer tz var out)
     *> Concurrently (streamConsumer tz var err)
 --     *> Concurrently (checkLastSeen input cph var 300)
-    *> Concurrently (handleKill cph tmVar actionT)
-  res <- waitForStreamingProcess cph
-  print res
+    *> Concurrently (race (handleKill cph tmVar actionT)
+                          (do
+                              res <- waitForStreamingProcess cph
+                              print res
+                          )
+                    )
+  return ()
 
     -- EPC-tools specific stuff
 isEmptyDirectory [] = True
