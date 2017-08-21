@@ -28,16 +28,16 @@ import Control.Arrow
 
 createCommand :: JMeterOpts -> NUsers -> CmdSpec
 createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts _) (NUsers n) =
-  RawCommand "sleep" ["3000"]
-  -- RawCommand jmeterPath $
-  -- [ "-n"
-  -- , "-t"
-  -- , jmxPath
-  -- , "-Jusers=" <> show n
-  -- , "-JoutputFile=aggregate_" <> show n <> "_" <> show n <> ".csv"
-  -- , "-JsessionPrefix=session_"
-  -- , "-JloopCount=1"
-  -- ] <> fmap unpack otherOpts
+--   RawCommand jmeterPath []
+  RawCommand jmeterPath $
+  [ "-n"
+  , "-t"
+  , jmxPath
+  , "-Jusers=" <> show n
+  , "-JoutputFile=aggregate_" <> show n <> "_" <> show n <> ".csv"
+  , "-JsessionPrefix=session_"
+  , "-JloopCount=1"
+  ] <> fmap unpack otherOpts
 
 readRun :: Text -> Maybe Run
 readRun = fmap Run . readMay
@@ -94,6 +94,7 @@ handleKill sHandle tmv actionT = liftBase $ loop
         return "Wrote stop to TVar"
       print res
       terminateProcess $ streamingProcessHandleRaw sHandle
+      loop
 
 runCommand
   :: (Forall (Pure m),
