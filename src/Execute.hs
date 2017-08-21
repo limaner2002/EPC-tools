@@ -28,15 +28,16 @@ import Control.Arrow
 
 createCommand :: JMeterOpts -> NUsers -> CmdSpec
 createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts _) (NUsers n) =
-  RawCommand jmeterPath $
-  [ "-n"
-  , "-t"
-  , jmxPath
-  , "-Jusers=" <> show n
-  , "-JoutputFile=aggregate_" <> show n <> "_" <> show n <> ".csv"
-  , "-JsessionPrefix=session_"
-  , "-JloopCount=1"
-  ] <> fmap unpack otherOpts
+  RawCommand "sleep" ["3000"]
+  -- RawCommand jmeterPath $
+  -- [ "-n"
+  -- , "-t"
+  -- , jmxPath
+  -- , "-Jusers=" <> show n
+  -- , "-JoutputFile=aggregate_" <> show n <> "_" <> show n <> ".csv"
+  -- , "-JsessionPrefix=session_"
+  -- , "-JloopCount=1"
+  -- ] <> fmap unpack otherOpts
 
 readRun :: Text -> Maybe Run
 readRun = fmap Run . readMay
@@ -84,13 +85,15 @@ checkLastSeen input sHandle var delay = loop
         False -> loop
 
 handleKill :: MonadBase IO m => StreamingProcessHandle -> TMVar Int -> TVar Action -> m ()
-handleKill sHandle tmv actionT = liftBase $ do
-  res <- atomically $ do
-    takeTMVar tmv
-    writeTVar actionT Stop
-    return "Wrote stop to TVar"
-  print res
-  terminateProcess $ streamingProcessHandleRaw sHandle
+handleKill sHandle tmv actionT = liftBase $ loop
+  where
+    loop = do
+      res <- atomically $ do
+        takeTMVar tmv
+        writeTVar actionT Stop
+        return "Wrote stop to TVar"
+      print res
+      terminateProcess $ streamingProcessHandleRaw sHandle
 
 runCommand
   :: (Forall (Pure m),
@@ -111,7 +114,13 @@ runCommand tmVar actionT cp = do
                               print res
                           )
                     )
-  return ()
+  atomically $ do
+    empty <- isEmptyTMVar tmVar
+    case empty of
+      True -> return ()
+      False -> do
+        _ <- takeTMVar tmVar
+        return ()
 
     -- EPC-tools specific stuff
 isEmptyDirectory [] = True
