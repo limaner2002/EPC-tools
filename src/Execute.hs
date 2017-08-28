@@ -28,7 +28,6 @@ import Control.Arrow
 
 createCommand :: JMeterOpts -> NUsers -> CmdSpec
 createCommand (JMeterOpts _ _ jmxPath jmeterPath _ otherOpts _) (NUsers n) =
---   RawCommand jmeterPath []
   RawCommand jmeterPath $
   [ "-n"
   , "-t"

@@ -38,6 +38,8 @@ packages:
   - gogol-drive
   - gogol
   extra-dep: true
+- location: /Users/josh/workspace/servant/servant-client
+- location: automater
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
@@ -45,6 +47,7 @@ extra-deps:
 - Stream-0.4.7.2
 - lazysmallcheck-0.6
 - servant-0.10
+# - servant-client-0.10
 - servant-server-0.10
 - tdigest-0.1
 
