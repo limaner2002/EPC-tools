@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Appian.Types where
 
@@ -19,10 +20,19 @@ newtype AppianInt = AppianInt Int
 newtype AppianString = AppianString Text
   deriving (Show, Eq)
 
+newtype AppianText = AppianText Text
+  deriving (Show, Eq)
+
 newtype AppianList a = AppianList [a]
   deriving Show
 
 newtype AppianBoolean = AppianBoolean Bool
+  deriving (Show, Eq)
+
+newtype AppianUsername = AppianUsername Text
+  deriving (Show, Eq)
+
+newtype AppianPickerData = AppianPickerData [AppianUsername]
   deriving (Show, Eq)
 
 parseAppianTypeWith :: Monad m => (Text -> Bool) -> m a -> Value -> m a
@@ -42,16 +52,42 @@ instance FromJSON AppianInt where
   parseJSON val@(Object o) = parseAppianType "int" mkAppianInt val
     where
       mkAppianInt = AppianInt <$> o .: "#v"
+  parseJSON _ = fail "Could not parse AppianInt"
 
 instance FromJSON AppianString where
   parseJSON val@(Object o) = parseAppianType "string" mkAppianInt val
     where
       mkAppianInt = AppianString <$> o .: "#v"
+  parseJSON _ = fail "Could not parse AppianString"
+
+instance FromJSON AppianText where
+  parseJSON val@(Object o) = parseAppianType "Text" mkAppianInt val
+    where
+      mkAppianInt = AppianText <$> o .: "#v"
+  parseJSON _ = fail "Could not parse AppianText"
+
+instance FromJSON AppianUsername where
+  parseJSON val@(Object o) = parseAppianType "User" mkUser val
+    where
+      mkUser = AppianUsername <$> o .: "id"
+  parseJSON _ = fail "Could not parse AppianUsername"
+
+instance FromJSON AppianPickerData where
+  parseJSON val@(Object o) = parseAppianType "PickerData" mkPicker val
+    where
+      mkPicker = AppianPickerData <$> o .: "identifiers"
+  parseJSON _ = fail "Could not parse AppianPickerData"
 
 instance ToJSON AppianInt where
   toJSON (AppianInt n) = object
     [ "#v" .= n
     , ("#t", "Integer")
+    ]
+
+instance ToJSON (AppianList Int) where
+  toJSON (AppianList l) = object
+    [ "#v" .= l
+    , ("#t", "Integer?list")
     ]
 
 instance ToJSON AppianString where
@@ -60,10 +96,29 @@ instance ToJSON AppianString where
     , ("#t", "string")
     ]
 
+instance ToJSON AppianText where
+  toJSON (AppianText s) = object
+    [ "#v" .= s
+    , ("#t", "Text")
+    ]
+
+instance ToJSON AppianUsername where
+  toJSON (AppianUsername un) = object
+    [ "#id" .= un
+    , ("#t", "User")
+    ]
+
+instance ToJSON AppianPickerData where
+  toJSON (AppianPickerData apd) = object
+    [ "identifiers" .= apd
+    , ("#t", "PickerData")
+    ]
+
 instance FromJSON AppianBoolean where
   parseJSON val@(Object o) = parseAppianType "boolean" mkAppianInt val
     where
       mkAppianInt = AppianBoolean <$> o .: "#v"
+  parseJSON _ = fail "Could not parse AppianBoolean"
 
 data DropdownField = DropdownField
   { _dfClearIconLabel :: Text
@@ -81,7 +136,7 @@ data CheckboxGroup = CheckboxGroup
   , _cbgDisabled :: Bool
   , _cbgAccessibilityLabel :: Text
   , _cbgCid :: Text
-  , _cbgKeyboard :: Text
+  , _cbgKeyboard :: Maybe Text
   , _cbgAlign :: Text
   , _cbgChoices :: [Text]
   , _cbgChoiceLayout :: Text
@@ -105,12 +160,42 @@ data ButtonWidget = ButtonWidget
   , _bwLabel :: Text
   , _bwConfirmMessage :: Text
   , _bwButtonStyle :: Text
+  , _bwDisabled :: Bool
   } deriving Show
 
 data UiConfig a = UiConfig
   { _uiContext :: AppianString
   , _uiUuid :: Text
   , _uiUpdates :: Maybe a
+  } deriving Show
+
+data TextField = TextField
+  { _tfSaveInto :: [Text]
+  , _tfValue :: Text
+  , _tfCid :: Text
+  , _tfRequired :: Bool
+  , _tfKeyboard :: Text
+  , _tfAlign :: Text
+  , _tfPlaceholder :: Text
+  , _tfRefreshAfter :: Text
+  } deriving Show
+
+data PickerWidget = PickerWidget
+  { _pwMaxSelections :: Int
+  , _pwSelectedTokensHint :: Text
+  , _pwImageSize :: Text
+  , _pwNumSuggestionsHint :: Text
+  , _pwSaveInto :: [Text]
+  , _pwNoResultsLabel :: Text
+  , _pwSearchingLabel :: Text
+  , _pwValue :: AppianPickerData
+  , _pwWidth :: Text
+  , _pwCid :: Text
+  , _pwRequired :: Bool
+  , _pwFailedRequiredness :: Text
+  , _pwSuggestions :: [Text]
+  , _pwTestLabel :: Text
+  , _pwPlaceholder :: Text
   } deriving Show
 
 newtype SaveRequestList update = SaveRequestList {_srlList :: [update]}
@@ -125,6 +210,8 @@ makeLenses ''ButtonWidget
 makeLenses ''UiConfig
 makeLenses ''SaveRequestList
 makeLenses ''Update
+makeLenses ''TextField
+makeLenses ''PickerWidget
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -138,6 +225,7 @@ instance FromJSON DropdownField where
         <*> o .: "required"
         <*> o .: "hasPlaceholderLabel"
         <*> o .: "choices"
+  parseJSON _ = fail "Could not parse DropdownField"
 
 instance ToJSON DropdownField where
   toJSON df = object
@@ -160,10 +248,11 @@ instance FromJSON CheckboxGroup where
         <*> o .: "disabled"
         <*> o .: "accessibilityLabel"
         <*> o .: "_cId"
-        <*> o .: "keyboard"
+        <*> o .:? "keyboard"
         <*> o .: "align"
         <*> o .: "choices"
         <*> o .: "choiceLayout"
+  parseJSON _ = fail "Could not parse CheckboxGroup"
 
 instance ToJSON CheckboxGroup where
   toJSON cbg = object
@@ -198,6 +287,10 @@ instance FromJSON ButtonWidget where
         <*> o .: "label"
         <*> o .: "confirmMessage"
         <*> o .: "buttonStyle"
+        <*> o .: "disabled"
+  parseJSON _ = fail "Could not parse ButtonWidget"
+
+
 
 instance ToJSON ButtonWidget where
   toJSON bw = object
@@ -219,6 +312,7 @@ instance ToJSON ButtonWidget where
     , "label" .= (bw ^. bwLabel)
     , "confirmMessage" .= (bw ^. bwConfirmMessage)
     , "buttonStyle" .= (bw ^. bwButtonStyle)
+    , "disabled" .= (bw ^. bwDisabled)
     ]
 
 instance ToJSON a => ToJSON (SaveRequestList a) where
@@ -227,33 +321,51 @@ instance ToJSON a => ToJSON (SaveRequestList a) where
     , "#v" .= (srl ^. srlList)
     ]
 
+instance ToJSON TextField where
+  toJSON tf = object
+    [ "saveInto" .= (tf ^. tfSaveInto)
+    , "value" .= (tf ^. tfValue)
+    , "_cId" .= (tf ^. tfCid)
+    , "required" .= (tf ^. tfRequired)
+    , ("#t", "TextWidget")
+    , "keyboard" .= (tf ^. tfKeyboard)
+    , "align" .= (tf ^. tfAlign)
+    , "placeholder" .= (tf ^. tfPlaceholder)
+    , "refreshAfter" .= (tf ^. tfRefreshAfter)
+    ]
+
+instance ToJSON PickerWidget where
+  toJSON pw = object
+    [ "maxSelections" .= (pw ^. pwMaxSelections)
+    , "selectedTokensHint" .= (pw ^. pwSelectedTokensHint)
+    , "imageSize" .= (pw ^. pwImageSize)
+    , "numSuggestionsHint" .= (pw ^. pwNumSuggestionsHint)
+    , "saveInto" .= (pw ^. pwSaveInto)
+    , "noResultsLabel" .= (pw ^. pwNoResultsLabel)
+    , "searchingLabel" .= (pw ^. pwSearchingLabel)
+    , "value" .= (pw ^. pwValue)
+    , "width" .= (pw ^. pwWidth)
+    , "_cId" .= (pw ^. pwCid)
+    , "required" .= (pw ^. pwRequired)
+    , "failedRequiredness" .= (pw ^. pwFailedRequiredness)
+    , "suggestions" .= (pw ^. pwSuggestions)
+    , "testLabel" .= (pw ^. pwTestLabel)
+    , "placeholder" .= (pw ^. pwPlaceholder)
+    , ("#t", "PickerWidget")
+    ]
+
 instance FromJSON a => FromJSON (SaveRequestList a) where
   parseJSON val@(Object o) = parseAppianType "SaveRequest?list" mkSaveRequestList val
     where
       mkSaveRequestList = SaveRequestList <$> o .: "#v"
+  parseJSON _ = fail "Could not parse SaveRequestList"
 
 instance ToJSON Update where
   toJSON up = toJSON $ up ^. getUpdateVal
-  -- toJSON up = object
-  --   [ "saveInto" .= (up ^. upSaveInto)
-  --   , "value" .= (up ^. upVal)
-  --   , "saveType" .= (up ^. upSaveType)
-  --   , "_cId" .= (up ^. upCid)
-  --   , "model" .= (up ^. upModel)
-  --   , "label" .= (up ^. upLabel)
-  --   , "blocking" .= (up ^. upBlocking)
-  --   ]
 
 instance FromJSON Update where
   parseJSON (Object o) = error "FromJSON for Update is not impletented yet!"
-  -- parseJSON (Object o) = Update
-  --   <$> o .: "_cId"
-  --   <*> o .: "label"
-  --   <*> o .: "model"
-  --   <*> o .: "value"
-  --   <*> o .: "saveInto"
-  --   <*> o .: "saveType"
-  --   <*> o .: "blocking"
+  parseJSON _ = fail "Could not parse Update"
 
 instance ToJSON a => ToJSON (UiConfig a) where
   toJSON ui = object
@@ -270,6 +382,40 @@ instance FromJSON a => FromJSON (UiConfig a) where
         <$> o .: "context"
         <*> o .: "uuid"
         <*> o .:? "updates"
+  parseJSON _ = fail "Could not parse UiConfig"
+
+instance FromJSON TextField where
+  parseJSON val@(Object o) = parseAppianTypeWith (\t -> t == "TextField" || t == "TextWidget") mkField val
+    where
+      mkField = TextField
+        <$> o .: "saveInto"
+        <*> o .: "value"
+        <*> o .: "_cId"
+        <*> o .: "required"
+        <*> o .: "keyboard"
+        <*> o .: "align"
+        <*> o .: "placeholder"
+        <*> o .: "refreshAfter"
+
+instance FromJSON PickerWidget where
+  parseJSON val@(Object o) = parseAppianTypeWith (\t -> t == "PickerWidget") mkWidget val
+    where
+      mkWidget = PickerWidget
+        <$> o .: "maxSelections"
+        <*> o .: "selectedTokensHint"
+        <*> o .: "imageSize"
+        <*> o .: "numSuggestionsHint"
+        <*> o .: "saveInto"
+        <*> o .: "noResultsLabel"
+        <*> o .: "searchingLabel"
+        <*> o .: "value"
+        <*> o .: "width"
+        <*> o .: "_cId"
+        <*> o .: "required"
+        <*> o .: "failedRequiredness"
+        <*> o .: "suggestions"
+        <*> o .: "testLabel"
+        <*> o .: "placeholder"
 
       -- Util Functions
 capitalize :: Textual a => a -> a
@@ -303,16 +449,6 @@ instance ToUpdate ButtonWidget where
     , ("blocking", Bool False)
     ]
 
--- instance ToUpdate AppianString ButtonWidget where
---   toUpdate bw = Update
---     (bw ^. bwCid )
---     (bw ^. bwLabel)
---      bw
---     (bw ^. bwValue)
---     (bw ^. bwSaveInto)
---     "PRIMARY"
---     False
-
 instance ToUpdate DropdownField where
   toUpdate df = Update $ object
     [ "_cId" .= (df ^. dfCid)
@@ -320,4 +456,30 @@ instance ToUpdate DropdownField where
     , "value" .= (AppianInt $ df ^. dfValue)
     , "saveInto" .= (df ^. dfSaveInto)
     , ("saveType", "PRIMARY")
+    ]
+
+instance ToUpdate CheckboxGroup where
+  toUpdate cbg = Update $ object
+    [ "_cId" .= (cbg ^. cbgCid)
+    , "saveInto" .= (cbg ^. cbgSaveInto)
+    , "value" .= (AppianList [1 :: Int])
+    , ("saveType", "PRIMARY")
+    , "model" .= cbg
+    ]
+
+instance ToUpdate TextField where
+  toUpdate tf = Update $ object
+    [ "_cId" .= (tf ^. tfCid)
+    , "value" .= (AppianText $ tf ^. tfValue)
+    , "saveInto" .= (tf ^. tfSaveInto)
+    , ("saveType", "PRIMARY")
+    ]
+
+instance ToUpdate PickerWidget where
+  toUpdate pw = Update $ object
+    [ "saveInto" .= (pw ^. pwSaveInto)
+    , "value" .= (pw ^. pwValue)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (pw ^. pwCid)
+    , "model" .= pw
     ]

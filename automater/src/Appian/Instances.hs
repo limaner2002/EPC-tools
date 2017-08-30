@@ -16,12 +16,12 @@ module Appian.Instances where
 import ClassyPrelude
 import Servant.Client hiding (responseStatus)
 import Servant
-import Control.Lens
+import Control.Lens hiding ((.=))
 import qualified Web.Cookie as WC
 import Network.HTTP.Client ( newManager, defaultManagerSettings, managerModifyRequest
                            , managerModifyResponse, responseStatus, responseHeaders
                            , responseCookieJar, CookieJar, destroyCookieJar, cookie_name
-                           , cookie_value
+                           , cookie_value, RequestBody (..)
                            )
 import Servant.Common.Req (Req (..), performRequest, performRequestNoBody)
 import Data.Aeson
@@ -50,7 +50,7 @@ instance {-# OVERLAPPING #-} ReflectMethod method => HasClient (Verb method stat
 
   clientWithRoute Proxy req = do
     let method = reflectMethod (Proxy :: Proxy method)
-    (x, bs, mt, hs, resp) <- performRequest method req
+    (_, _, _, _, resp) <- performRequest method req
     return $ responseCookieJar resp
 
 instance HasClient api => HasClient (CookieJar :> api) where
@@ -177,8 +177,8 @@ instance (HasClient api, ToHttpApiData a) => HasClient (PathPiece a :> api) wher
 
 data Debug = Debug
 
-instance HasClient (Get a b :> Debug) where
-  type Client (Get a b :> Debug) = Req
+instance ReflectMethod method => HasClient (Verb method status cts b :> Debug) where
+  type Client (Verb method status cts b :> Debug) = Req
   clientWithRoute Proxy req = req
 
 data TaskParams
@@ -210,3 +210,39 @@ instance HasClient api => HasClient (AppianCsrfToken :> api) where
         cookies = [("Cookie", renderedCookies)]
 
 newtype NextLink = NextLink Text
+
+data Url
+
+instance HasClient api => HasClient (Url :> api) where
+  type Client (Url :> api) = Text -> Client api
+
+  clientWithRoute _ req url = clientWithRoute (Proxy :: Proxy api)
+    $ req { reqPath = unpack url }
+
+data EmptyAppianTV
+
+instance HasClient api => HasClient (EmptyAppianTV :> api) where
+  type Client (EmptyAppianTV :> api) = Client api
+
+  clientWithRoute _ req = clientWithRoute (Proxy :: Proxy api)
+    $ req { reqBody = Just (RequestBodyBS "{}", contentType (Proxy :: Proxy AppianTV)) }
+
+newtype ActionId = ActionId Text
+  deriving (Show, Eq)
+
+instance ToHttpApiData ActionId where
+  toUrlPiece (ActionId id) = id
+
+newtype ProcessModelId = ProcessModelId Int
+  deriving (Show, Eq)
+
+instance ToHttpApiData ProcessModelId where
+  toUrlPiece (ProcessModelId id) = toUrlPiece id
+
+instance FromJSON ProcessModelId where
+  parseJSON (Object o) = ProcessModelId <$> o .: "processModelId"
+
+instance ToJSON ProcessModelId where
+  toJSON (ProcessModelId id) = object
+    [ "processModelId" .= id
+    ]

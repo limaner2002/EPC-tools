@@ -17,6 +17,7 @@ library
                      , Appian.Types
                      , Appian.Instances
                      , Appian.Lens
+                     , Appian.Client
   build-depends:       base
                      , lens
                      , aeson
@@ -29,6 +30,7 @@ library
                      , http-media
                      , servant
                      , exceptions
+                     , http-client-tls
   default-language:    Haskell2010
 
 test-suite automater-test
