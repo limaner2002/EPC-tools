@@ -32,7 +32,9 @@ newtype AppianBoolean = AppianBoolean Bool
 newtype AppianUsername = AppianUsername Text
   deriving (Show, Eq)
 
-newtype AppianPickerData = AppianPickerData [AppianUsername]
+data AppianPickerData
+  = TypedText Text
+  | Identifiers [AppianUsername]
   deriving (Show, Eq)
 
 parseAppianTypeWith :: Monad m => (Text -> Bool) -> m a -> Value -> m a
@@ -75,7 +77,7 @@ instance FromJSON AppianUsername where
 instance FromJSON AppianPickerData where
   parseJSON val@(Object o) = parseAppianType "PickerData" mkPicker val
     where
-      mkPicker = AppianPickerData <$> o .: "identifiers"
+      mkPicker = (TypedText <$> o .: "typedText") <|> (Identifiers <$> o .: "identifiers")
   parseJSON _ = fail "Could not parse AppianPickerData"
 
 instance ToJSON AppianInt where
@@ -104,15 +106,26 @@ instance ToJSON AppianText where
 
 instance ToJSON AppianUsername where
   toJSON (AppianUsername un) = object
-    [ "#id" .= un
+    [ "id" .= un
     , ("#t", "User")
     ]
 
 instance ToJSON AppianPickerData where
-  toJSON (AppianPickerData apd) = object
-    [ "identifiers" .= apd
+  toJSON (TypedText txt) = object
+    [ "typedText" .= txt
+    , "identifiers" .= Array mempty
     , ("#t", "PickerData")
     ]
+
+  toJSON (Identifiers idents) = object
+    [ "identifiers" .= idents
+    , ("#t", "PickerData")
+    ]
+  -- toJSON apd = object
+  --   [ "identifiers" .= (apd ^. apdIdentifiers)
+  --   , "typedText" .= (apd ^. apdTypedText)
+  --   , ("#t", "PickerData")
+  --   ]
 
 instance FromJSON AppianBoolean where
   parseJSON val@(Object o) = parseAppianType "boolean" mkAppianInt val
@@ -160,7 +173,7 @@ data ButtonWidget = ButtonWidget
   , _bwLabel :: Text
   , _bwConfirmMessage :: Text
   , _bwButtonStyle :: Text
-  , _bwDisabled :: Bool
+  , _bwDisabled :: Maybe Bool
   } deriving Show
 
 data UiConfig a = UiConfig
@@ -188,14 +201,24 @@ data PickerWidget = PickerWidget
   , _pwSaveInto :: [Text]
   , _pwNoResultsLabel :: Text
   , _pwSearchingLabel :: Text
-  , _pwValue :: AppianPickerData
+  , _pwValue :: Value
   , _pwWidth :: Text
   , _pwCid :: Text
   , _pwRequired :: Bool
   , _pwFailedRequiredness :: Text
-  , _pwSuggestions :: [Text]
+  , _pwSuggestions :: Value
   , _pwTestLabel :: Text
   , _pwPlaceholder :: Text
+  } deriving Show
+
+data ParagraphField = ParagraphField
+  { _pgfHeight :: Text
+  , _pgfSaveInto :: [Text]
+  , _pgfValue :: Text
+  , _pgfWidth :: Text
+  , _pgfCid :: Text
+  , _pgfPlaceholder :: Text
+  , _pgfRefreshAfter :: Text
   } deriving Show
 
 newtype SaveRequestList update = SaveRequestList {_srlList :: [update]}
@@ -212,6 +235,7 @@ makeLenses ''SaveRequestList
 makeLenses ''Update
 makeLenses ''TextField
 makeLenses ''PickerWidget
+makeLenses ''ParagraphField
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -287,7 +311,7 @@ instance FromJSON ButtonWidget where
         <*> o .: "label"
         <*> o .: "confirmMessage"
         <*> o .: "buttonStyle"
-        <*> o .: "disabled"
+        <*> o .:? "disabled"
   parseJSON _ = fail "Could not parse ButtonWidget"
 
 
@@ -354,6 +378,18 @@ instance ToJSON PickerWidget where
     , ("#t", "PickerWidget")
     ]
 
+instance ToJSON ParagraphField where
+  toJSON pgf = object
+    [ "height" .= (pgf ^. pgfHeight)
+    , "saveInto" .= (pgf ^. pgfSaveInto)
+    , "value" .= (pgf ^. pgfValue)
+    , "width" .= (pgf ^. pgfWidth)
+    , "_cId" .= (pgf ^. pgfCid)
+    , ("#t", "ParagraphWidget")
+    , "placeholder" .= (pgf ^. pgfPlaceholder)
+    , "refreshAfter" .= (pgf ^. pgfRefreshAfter)
+    ]
+
 instance FromJSON a => FromJSON (SaveRequestList a) where
   parseJSON val@(Object o) = parseAppianType "SaveRequest?list" mkSaveRequestList val
     where
@@ -416,6 +452,18 @@ instance FromJSON PickerWidget where
         <*> o .: "suggestions"
         <*> o .: "testLabel"
         <*> o .: "placeholder"
+
+instance FromJSON ParagraphField where
+  parseJSON val@(Object o) = parseAppianTypeWith (== "ParagraphField") mkWidget val
+    where
+      mkWidget = ParagraphField
+        <$> o .: "height"
+        <*> o .: "saveInto"
+        <*> o .: "value"
+        <*> o .: "width"
+        <*> o .: "_cId"
+        <*> o .: "placeholder"
+        <*> o .: "refreshAfter"
 
       -- Util Functions
 capitalize :: Textual a => a -> a
@@ -482,4 +530,13 @@ instance ToUpdate PickerWidget where
     , ("saveType", "PRIMARY")
     , "_cId" .= (pw ^. pwCid)
     , "model" .= pw
+    ]
+
+instance ToUpdate ParagraphField where
+  toUpdate pgf = Update $ object
+    [ "saveInto" .= (pgf ^. pgfSaveInto)
+    , "value" .= AppianText (pgf ^. pgfValue)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (pgf ^. pgfCid)
+    , "model" .= pgf
     ]

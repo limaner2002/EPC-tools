@@ -65,7 +65,7 @@ runAppian f env creds = bracket (runClientM login' env) (\cj -> runClientM (logo
 
 testCreds = Login "app.full.right@testmail.usac.org" "Usac123$"
 
-initialReviewer = Login "initial.reviewer@testmail.usac.org" "qweR123!4"
+initialReviewer = Login "initial.reviewer@testmail.usac.org" "USACuser123$1"
 
 test3Admin = Login "EPC.Application.Administrator" "USACuser123!"
 
@@ -116,7 +116,7 @@ toQueryMap l = mapFromList $ l ^.. traverse . traverse . filtered (\l' -> length
 main :: IO ()
 main = do
   env <- test3ClientEnv
-  res <- runAppian cancelThem env initialReviewer
+  res <- runAppian cancelThem env testCreds
   -- res <- runAppian (do
   --               v <- assignedPostCommit
   --               mapM_ putStrLn $ v ^.. hasKeyValue "dashboard" "summary" . key "_recordRef" . _String
@@ -185,9 +185,53 @@ form486Intake = do
   v'' <- landingPageActionEx $ PathPiece pid
   taskId <- getTaskId v''
   let tid = PathPiece taskId
-  sendText tid "Nickname" "PerfTest" v''
-    >>= sendSelection' taskUpdate tid "Funding Year" 2
-    >>= 
+      typed = TypedText "app.full.right@testmail.usac.org"
+      un = Identifiers [AppianUsername "app.full.right@testmail.usac.org"]
+      updates = v'' ^.. runFold (Fold (to (dropdownUpdate "Funding Year" 2) . traverse) <|> Fold (to (textUpdate "Nickname" "PerfTest") . traverse) <|> Fold (to (pickerUpdate "Main Contact Person" un) . traverse) <|> Fold (to (buttonUpdate "Continue") . traverse))
+  sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) v''
+
+form471Intake :: Appian Value
+form471Intake = do
+  v <- reportsTab
+  rid <- getReportId "My Landing Page" v
+  v' <- editReport (PathPiece rid)
+  form471Link <- handleMissing "FCC Form 471" $ v' ^? landingPageLink "FCC Form 471"
+  aid <- handleMissing "Action ID" $ parseActionId form471Link
+  pid <- landingPageAction $ PathPiece aid
+  v'' <- landingPageActionEx $ PathPiece pid
+  taskId <- getTaskId v''
+  let tid = PathPiece taskId
+      updates = v'' ^.. runFold (    Fold (to (textUpdate "Please enter an application nickname here." "PerfTest") . traverse)
+                                 <|> Fold (to (buttonUpdate "Save & Continue") . traverse)
+                                )
+  basicInfo <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) v''
+  taskId <- getTaskId basicInfo
+  let tid = PathPiece taskId
+      updates = basicInfo ^.. runFold (    Fold (to (buttonUpdate "Yes") . traverse)
+                                       <|> Fold (to (paragraphUpdate "Enter Holiday Contact Information" "Stuff goes in here!") . traverse)
+                                       <|> Fold (to (buttonUpdate "Save & Continue") . traverse)
+                                      )
+  categoryOfService <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) basicInfo
+  taskId <- getTaskId categoryOfService
+  let tid = PathPiece taskId
+      updates = categoryOfService ^.. runFold (    Fold (to (buttonUpdate "Category 1") . traverse)
+                                               <|> Fold (to (buttonUpdate "Save & Continue") . traverse)
+                                              )
+  membersPage <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) categoryOfService
+  taskId <- getTaskId membersPage
+  let tid = PathPiece taskId
+      updates = membersPage ^.. runFold (    Fold (to (buttonUpdate "Save & Continue") . traverse)
+                                        )
+  entityInformation <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) membersPage
+  taskId <- getTaskId entityInformation
+  let tid = PathPiece taskId
+      updates = entityInformation ^.. runFold (    Fold (to (buttonUpdate "Save & Continue") . traverse)
+                                        )
+  discounts <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) entityInformation
+  taskId <- getTaskId discounts
+  let tid = PathPiece taskId
+      updates = discounts ^.. to (buttonUpdate "Show Additional Information") . traverse
+  sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) discounts
 
 getReportId :: Text -> Value -> Appian ReportId
 getReportId label = handleMissing label . (getReportLink label >=> parseReportId)

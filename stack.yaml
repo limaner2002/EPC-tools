@@ -38,7 +38,7 @@ packages:
   - gogol-drive
   - gogol
   extra-dep: true
-- location: /Users/josh/workspace/servant/servant-client
+- location: ../servant/servant-client
 - location: automater
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
