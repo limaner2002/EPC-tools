@@ -33,8 +33,8 @@ type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> Log
 type LogoutAPI = "suite" :> "logout" :> CookieJar :> Get '[HTML] ByteString
 type RecordsTab = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "view" :> "all" :> CookieJar :> Get '[AppianApplication] Value
 type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> RecordId :> "view" :> "all" :> CookieJar :> Get '[AppianApplication] Value
-type ViewRecordEntry = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "dashboards" :> "summary" :> CookieJar :> Get '[InlineSail] Value
-type RecordActions = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "dashboards" :> "actions" :> AppianCsrfToken :> Get '[InlineSail] Value
+type ViewRecordEntry = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "dashboards" :> PathPiece Dashboard :> CookieJar :> Get '[InlineSail] Value
+-- type RecordActions = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "dashboards" :> PathPiece Dashboard :> AppianCsrfToken :> Get '[InlineSail] Value
 type TasksTab = "suite" :> "api" :> "feed" :> TaskParams :> QueryParam "b" UTCTime :> AppianCsrfToken :> Get '[JSON] Value
 type AcceptTask = "suite" :> "rest" :> "a" :> "task" :> "latest" :> PathPiece TaskId :> "accept" :> AppianCsrfToken :> Post '[JSON] NoContent
 type TaskStatus = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> PathPiece TaskId :> "status" :> ReqBody '[PlainText] Text :> AppianCsrfToken :> Put '[AppianTVUI] Value
@@ -61,7 +61,7 @@ type API = TestAPI
   :<|> TaskStatus
   :<|> ReportsTab
   :<|> EditReport
-  :<|> RecordActions
+--   :<|> RecordActions
   :<|> RelatedActionEx
   :<|> AvailableActions
   :<|> LandingPageAction
@@ -82,7 +82,7 @@ navigateSite
   :<|> taskStatus_
   :<|> reportsTab_
   :<|> editReport_
-  :<|> recordActions_
+--  :<|> recordActions_
   :<|> relatedActionEx_
   :<|> actionsTab_
   :<|> landingPageAction_
@@ -90,15 +90,16 @@ navigateSite
   = client api
 
 recordsTab = Appian recordsTab_
+viewRecordDashboard e dashboard = liftIO (putStrLn $ "View Record Dashboard" <> tshow dashboard) >> Appian (viewRecordEntry_ e dashboard)
 viewRecord r = Appian (viewRecord_ r)
-viewRecordEntry e = Appian (viewRecordEntry_ e)
+viewRecordEntry e = Appian (viewRecordEntry_ e (PathPiece $ Dashboard "summary"))
 tasksTab mUtcTime = Appian (tasksTab_ mUtcTime)
 taskAttributes tid = Appian (taskAttributes_ tid)
 acceptTask tid = Appian (acceptTask_ tid)
 taskStatus tid = Appian (taskStatus_ (Just ("ceebc" :: Text)) (Just "stateful") (Just "TEMPO") tid ("accepted" :: Text))
 reportsTab = Appian reportsTab_
 editReport rid = Appian (editReport_ rid)
-recordActions rid = Appian (recordActions_ rid)
+recordActions rid = Appian (viewRecordEntry_ rid (PathPiece $ Dashboard "actions"))
 relatedActionEx url = Appian (relatedActionEx_ (Just "ceebc") url)
 actionsTab = Appian (actionsTab_ (Just "e4bc"))
 landingPageAction aid = Appian (landingPageAction_ aid)
@@ -147,6 +148,13 @@ instance Show MissingComponentException where
   show (MissingComponentException name) = "MissingComponentException: Could not find component " <> show name
 
 instance Exception MissingComponentException
+
+newtype ValidationsException = ValidationsException [Text]
+
+instance Show ValidationsException where
+  show (ValidationsException validations) = "ValidationsException: \n" <> intercalate "\n" (fmap unpack validations)
+
+instance Exception ValidationsException
 
 sendSelection :: PathPiece ReportId -> Text -> Int -> Value -> Appian Value
 sendSelection = sendSelection' uiUpdate
@@ -208,7 +216,11 @@ paragraphUpdate label txt v = toUpdate <$> (_Just . pgfValue .~ txt $ pgf)
 
 sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Maybe (UiConfig (SaveRequestList Update)) -> Appian Value
 sendUpdate _ Nothing = throwM $ MissingComponentException "Cannot create update"
-sendUpdate f (Just x) = f x
+sendUpdate f (Just x) = do
+  v <- f x
+  case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
+    [] -> return v
+    l -> throwM $ ValidationsException l
 
 handleMissing :: Text -> Maybe a -> Appian a
 handleMissing label Nothing = throwM $ MissingComponentException label

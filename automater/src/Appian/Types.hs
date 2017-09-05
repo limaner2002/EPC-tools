@@ -186,7 +186,7 @@ data TextField = TextField
   { _tfSaveInto :: [Text]
   , _tfValue :: Text
   , _tfCid :: Text
-  , _tfRequired :: Bool
+  , _tfRequired :: Maybe Bool
   , _tfKeyboard :: Text
   , _tfAlign :: Text
   , _tfPlaceholder :: Text
@@ -221,11 +221,35 @@ data ParagraphField = ParagraphField
   , _pgfRefreshAfter :: Text
   } deriving Show
 
+newtype GridWidget a = GridWidget
+  { _gwVal :: [(Maybe CheckboxGroup, HashMap Text a)]
+  } deriving Show
+
+newtype TabButtonGroup a = TabButtonGroup
+  { _tbgTabs :: [a]
+  } deriving Show
+
+newtype NonNullString = NonNullString
+  { _nnfStr :: NonNull Text
+  } deriving Show
+
+newtype NonNullValue = NonNullValue
+  { _nnv :: NonNullString
+  } deriving Show
+
 newtype SaveRequestList update = SaveRequestList {_srlList :: [update]}
   deriving (Show, Eq)
 
 newtype Update = Update { _getUpdateVal :: Value }
   deriving Show
+
+newtype LinkRecordRef = LinkRecordRef
+  { _recordRef :: Text
+  } deriving (Show, Eq)
+
+newtype Dashboard = Dashboard
+  { _dsbVal :: Text
+  } deriving (Show, Eq)
 
 makeLenses ''DropdownField
 makeLenses ''CheckboxGroup
@@ -236,6 +260,11 @@ makeLenses ''Update
 makeLenses ''TextField
 makeLenses ''PickerWidget
 makeLenses ''ParagraphField
+makeLenses ''GridWidget
+makeLenses ''NonNullString
+makeLenses ''NonNullValue
+makeLenses ''TabButtonGroup
+makeLenses ''LinkRecordRef
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -427,7 +456,7 @@ instance FromJSON TextField where
         <$> o .: "saveInto"
         <*> o .: "value"
         <*> o .: "_cId"
-        <*> o .: "required"
+        <*> o .:? "required"
         <*> o .: "keyboard"
         <*> o .: "align"
         <*> o .: "placeholder"
@@ -464,6 +493,20 @@ instance FromJSON ParagraphField where
         <*> o .: "_cId"
         <*> o .: "placeholder"
         <*> o .: "refreshAfter"
+
+instance FromJSON Dashboard where
+  parseJSON (Object o) = Dashboard <$> o .: "dashboard"
+
+instance FromJSON NonNullString where
+  parseJSON (String str) =
+    case fromNullable str of
+      Nothing -> fail "Cannot convert empty Text to NonNullString"
+      Just nn -> return $ NonNullString nn
+  parseJSON _ = fail "Decoding NonNullString: Expecting a JSON String"
+
+instance FromJSON NonNullValue where
+  parseJSON (Object o) = NonNullValue <$> o .: "value"
+  parseJSON _ = fail "Decoding NonNullValue: Expecting a JSON Object"
 
       -- Util Functions
 capitalize :: Textual a => a -> a

@@ -26,7 +26,7 @@ import Appian.Types
 import Appian.Instances
 import Appian.Lens
 import Appian.Client
-
+import Data.Attoparsec.Text
 
 test3ClientEnv = do
   mgr <- newManager tlsManagerSettings
@@ -218,20 +218,92 @@ form471Intake = do
                                                <|> Fold (to (buttonUpdate "Save & Continue") . traverse)
                                               )
   membersPage <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) categoryOfService
-  taskId <- getTaskId membersPage
-  let tid = PathPiece taskId
-      updates = membersPage ^.. runFold (    Fold (to (buttonUpdate "Save & Continue") . traverse)
-                                        )
-  entityInformation <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) membersPage
+
+  entityInformation <- selectMembers membersPage
+
   taskId <- getTaskId entityInformation
   let tid = PathPiece taskId
       updates = entityInformation ^.. runFold (    Fold (to (buttonUpdate "Save & Continue") . traverse)
                                         )
   discounts <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) entityInformation
-  taskId <- getTaskId discounts
+
+  listOf470s <- sendUpdates (Fold (to (buttonUpdate "Save & Continue") . traverse)) discounts
+            >>= sendUpdates (Fold $ to (buttonUpdate "Add FRN") . traverse)
+            >>= sendUpdates (    Fold (to (textUpdate "Please enter a Funding Request Nickname here" "PerfTest") . traverse)
+                                               <|> Fold (to (buttonUpdate "No") . traverse)
+                                               <|> Fold (to (dropdownUpdate "Category 1 Service Types" 2) . traverse)
+                                               <|> Fold (to (buttonUpdate "Continue") . traverse)
+                                              )
+            >>= sendUpdates (Fold (to (buttonUpdate "Tariff") . traverse)
+                              <|> Fold (to (buttonUpdate "Continue") . traverse)
+                            )
+            >>= sendUpdates ( Fold (to (textUpdate "How many bids were received?" "3") . traverse)
+                                     <|> Fold (to (buttonUpdate "Yes") . traverse)
+                                   )
+            >>= sendUpdates (Fold $ to (buttonUpdate "Search") . traverse)
+
+  checkbox <- handleMissing "Form 470 Grid" $ listOf470s ^? getGridWidgetValue . gwVal . traverse . _1 . traverse
+
+  taskId <- getTaskId listOf470s
   let tid = PathPiece taskId
-      updates = discounts ^.. to (buttonUpdate "Show Additional Information") . traverse
-  sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) discounts
+      updates = listOf470s ^.. runFold (Fold (to (buttonUpdate "Continue") . traverse))
+  spinSearch <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList $ toUpdate checkbox : updates) listOf470s
+
+  searchResult <- sendUpdates (    Fold (to (textUpdate "Search by SPIN" "143000661") . traverse)
+                               <|> Fold (to (buttonUpdate "Search") . traverse)
+                              ) spinSearch
+
+  return searchResult
+  checkbox <- handleMissing "SPIN Grid" $ searchResult ^? getGridWidgetValue . gwVal . traverse . _1 . traverse
+
+  taskId <- getTaskId searchResult
+  let tid = PathPiece taskId
+      updates = searchResult ^.. runFold (Fold (to (buttonUpdate "Continue") . traverse))
+  sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList $ toUpdate checkbox : updates) searchResult
+
+selectMembers :: Value -> Appian Value
+selectMembers v = do
+  (v', checkboxes) <- validMemberCheckboxes v
+  taskId <- getTaskId v'
+  let tid = PathPiece taskId
+      updates = fmap toUpdate checkboxes
+  checked <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) v'
+
+  taskId <- getTaskId checked
+  let tid = PathPiece taskId
+      updates = checked ^.. runFold ( Fold (to (buttonUpdate "Add") . traverse))
+  added <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) checked
+
+  taskId <- getTaskId added
+  let tid = PathPiece taskId
+      updates = added ^.. runFold ( Fold (to (buttonUpdate "Save & Continue") . traverse))
+  sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) added
+
+validMemberCheckboxes :: Value -> Appian (Value, [CheckboxGroup])
+validMemberCheckboxes v = do
+  let refs = v ^.. taking 1 (hasType "GridWidget") . getGridWidgetRecordRefs "BEN Name" . to (PathPiece . RecordRef)
+  discountRates <- mapM (\r -> (,) <$> pure r <*> viewDiscountRates r) refs
+  taskId <- getTaskId v
+  let validRefs = discountRates ^.. traverse . filtered (has $ _2 . to insufficientDiscountRate . only False) . _1
+      tid = PathPiece taskId
+      updates = v ^.. to (buttonUpdate "No") . traverse
+  v' <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) v
+  let checkBoxes = v' ^.. taking 1 getGridWidgetValue . gwVal . traverse . filtered (has $ _2 . at "BEN Name" . traverse . deep (key "_recordRef") . _String . to (PathPiece . RecordRef) . filtered (flip elem validRefs)) . _1 . traverse
+  return (v', checkBoxes)
+
+viewDiscountRates :: PathPiece RecordRef -> Appian Value
+viewDiscountRates rid = do
+  v <- viewRecordDashboard rid (PathPiece $ Dashboard "summary")
+  dashboard <- handleMissing "Discount Rate" $ v ^? getRecordDashboard "Discount Rate"
+  viewRecordDashboard rid $ PathPiece dashboard
+
+insufficientDiscountRate :: Value -> Bool
+insufficientDiscountRate v = any (checkResult . parseResult) msgs
+  where
+    msgs = v ^.. hasKeyValue "name" "x-embedded-summary" . key "children" . plate . _String . _JSON . asValue . cosmos . key "validations" . plate . key "message" . _String
+    parseResult = parseOnly (manyTill anyChar (string "not sufficient") *> manyTill anyChar (string "Discount Rate") *> pure True)
+    checkResult (Left _) = False
+    checkResult (Right b) = b
 
 getReportId :: Text -> Value -> Appian ReportId
 getReportId label = handleMissing label . (getReportLink label >=> parseReportId)
@@ -241,3 +313,10 @@ getTaskId v = handleMissing "taskId" $ v ^? key "taskId" . _String . to TaskId
 
 landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
 landingPageLink label = deep (filtered $ has $ key "values" . key "values" . _Array . traverse . key "#v" . _String . only label) . key "link" . key "uri" . _String
+
+sendUpdates :: ReifiedFold Value Update -> Value -> Appian Value
+sendUpdates f v = do
+  taskId <- getTaskId v
+  let tid = PathPiece taskId
+      updates = v ^.. runFold f
+  sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList updates) v

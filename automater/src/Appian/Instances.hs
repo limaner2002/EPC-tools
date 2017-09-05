@@ -26,6 +26,7 @@ import Network.HTTP.Client ( newManager, defaultManagerSettings, managerModifyRe
 import Servant.Common.Req (Req (..), performRequest, performRequestNoBody)
 import Data.Aeson
 import Network.HTTP.Media ((//), (/:))
+import Appian.Types
 
 data Login = Login
   { _username :: Text
@@ -164,7 +165,7 @@ instance ToHttpApiData ReportId where
   toUrlPiece (ReportId id) = id
 
 data PathPiece a = PathPiece a
-  deriving Show
+  deriving (Show, Eq)
 
 instance ToHttpApiData a => ToHttpApiData (PathPiece a) where
   toUrlPiece (PathPiece a) = toUrlPiece a
@@ -246,3 +247,6 @@ instance ToJSON ProcessModelId where
   toJSON (ProcessModelId id) = object
     [ "processModelId" .= id
     ]
+
+instance ToHttpApiData Dashboard where
+  toUrlPiece (Dashboard dshbd) = dshbd

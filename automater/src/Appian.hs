@@ -14,6 +14,12 @@ import Servant.Client
 import Network.HTTP.Client (CookieJar)
 import Control.Monad.Catch
 
+data Appian' a
+  = Continue (CookieJar -> ClientM a)
+  | Validations [Text]
+  | MissingComponent Text
+  deriving (Functor)
+
 newtype Appian a = Appian { unAppian :: CookieJar -> ClientM a }
   deriving Functor
 
