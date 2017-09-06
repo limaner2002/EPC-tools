@@ -27,6 +27,7 @@ import Appian.Instances
 import Appian.Lens
 import Appian.Client
 import Data.Attoparsec.Text
+import Data.Time (addDays)
 
 test3ClientEnv = do
   mgr <- newManager tlsManagerSettings
@@ -50,6 +51,10 @@ localClientEnv = do
   mgr <- newManager defaultManagerSettings
   return $ ClientEnv mgr (BaseUrl Http "localhost" 3000 "")  
 
+preprodClientEnv = do
+  mgr <- newManager tlsManagerSettings
+  return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
+
 runAppian :: Appian a -> ClientEnv -> Login -> IO (Either ServantError a)
 runAppian f env creds = bracket (runClientM login' env) (\cj -> runClientM (logout' cj) env) runF
   where
@@ -70,6 +75,8 @@ initialReviewer = Login "initial.reviewer@testmail.usac.org" "USACuser123$1"
 test3Admin = Login "EPC.Application.Administrator" "USACuser123!"
 
 test3Library = Login "libraryuser@testmail.usac.org" "Usac123$"
+
+preprodMaria = Login "maria.carrillo@lausd.net" "EPCPassword123!"
 
 view486 :: IO ()
 view486 = do
@@ -259,7 +266,43 @@ form471Intake = do
   taskId <- getTaskId searchResult
   let tid = PathPiece taskId
       updates = searchResult ^.. runFold (Fold (to (buttonUpdate "Continue") . traverse))
-  sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList $ toUpdate checkbox : updates) searchResult
+  dates <- sendUpdate (taskUpdate tid) $ mkUiUpdate (SaveRequestList $ toUpdate checkbox : updates) searchResult
+  startDate <- handleMissing "Start Date" $ dates ^? hasLabel "What is the service start date?" . dpwValue . appianDate . traverse
+
+  pricing <- sendUpdates (Fold (to (datePickerUpdate "When will the services end? " (AppianDate $ Just $ addDays 360 startDate)) . traverse)
+              <|> Fold (to (buttonUpdate "Continue") . traverse)
+              ) dates
+
+  narrative <- sendUpdates (Fold (to (buttonUpdate "No") . traverse)
+               <|> Fold (to (buttonUpdate "Continue") . traverse)
+              ) pricing
+
+  frnList <- sendUpdates (Fold (to (paragraphUpdate "Provide a brief explanation of the products and services that you are requesting, or provide any other relevant information regarding this Funding Request. You should also use this field to describe any updates to your entity data, such as revised student counts, entity relationships, etc, that you were unable to make after the close of the Administrative filing window for profile updates. These changes will be addressed during the application review process." "Some sort of narrative here.") . traverse)
+                           <|> Fold (to (buttonUpdate "Save & Continue") . traverse)
+                         ) narrative
+
+  sendUpdates (Fold (to (dynLinksUpdate "FRN" 0) . traverse)) frnList
+    >>= sendUpdates (Fold (to (buttonUpdate "Add New FRN Line Item") . traverse))
+    >>= sendUpdates (Fold (to (dropdownUpdate "Function" 2) . traverse))
+    >>= sendUpdates (Fold (to (dropdownUpdate "Type of Connection" 2) . traverse)
+                    <|> Fold (to (buttonUpdate "Continue") . traverse)
+                    )
+    >>= sendUpdates (Fold (textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" "1000")
+                     <|> Fold (textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" "0")
+                     <|> Fold (textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" "3")
+                     <|> Fold (textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" "1000")
+                     <|> Fold (textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" "0")
+                     <|> Fold (textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" "1")
+                     <|> Fold (to (buttonUpdate "Save & Continue") . traverse)
+                    )
+    >>= sendUpdates (Fold (to (buttonUpdate "Select an Entity by Consortium Members") . traverse))
+    >>= sendUpdates (Fold (to (dropdownUpdate "Search for Consortium Member by Entity Type" 2) . traverse))
+
+textFieldCidUpdate :: (Applicative f, Contravariant f) => Text -> Text -> (Update -> f Update) -> Value -> f Value
+textFieldCidUpdate cid txt = textFieldCid cid . to (tfValue .~ txt) . to toUpdate
+
+textFieldCid :: (Applicative f, Contravariant f) => Text -> (TextField -> f TextField) -> Value -> f Value
+textFieldCid cid = hasKeyValue "_cId" cid . _JSON
 
 selectMembers :: Value -> Appian Value
 selectMembers v = do
@@ -313,6 +356,13 @@ getTaskId v = handleMissing "taskId" $ v ^? key "taskId" . _String . to TaskId
 
 landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
 landingPageLink label = deep (filtered $ has $ key "values" . key "values" . _Array . traverse . key "#v" . _String . only label) . key "link" . key "uri" . _String
+
+uiUpdateList :: ReifiedFold Value Update -> Value -> Appian (UiConfig (SaveRequestList Update))
+uiUpdateList f v = do
+  taskId <- getTaskId v
+  let tid = PathPiece taskId
+      updates = v ^.. runFold f
+  handleMissing "UpdateList" $ mkUiUpdate (SaveRequestList updates) v
 
 sendUpdates :: ReifiedFold Value Update -> Value -> Appian Value
 sendUpdates f v = do

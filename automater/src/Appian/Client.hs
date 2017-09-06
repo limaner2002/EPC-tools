@@ -149,12 +149,21 @@ instance Show MissingComponentException where
 
 instance Exception MissingComponentException
 
-newtype ValidationsException = ValidationsException [Text]
+newtype ValidationsException = ValidationsException { _validationsExc :: ([Text], Value, UiConfig (SaveRequestList Update)) }
+
+-- makeLenses ''ValidationsException
 
 instance Show ValidationsException where
-  show (ValidationsException validations) = "ValidationsException: \n" <> intercalate "\n" (fmap unpack validations)
+  show (ValidationsException validations) = "ValidationsException: \n" <> intercalate "\n" (fmap unpack $ validations ^. _1)
 
 instance Exception ValidationsException
+
+newtype ServerException = ServerException { _serverExc :: (SomeException, UiConfig (SaveRequestList Update)) }
+
+instance Show ServerException where
+  show (ServerException exc) = "ServerException: " <> show (exc ^. _1)
+
+instance Exception ServerException
 
 sendSelection :: PathPiece ReportId -> Text -> Int -> Value -> Appian Value
 sendSelection = sendSelection' uiUpdate
@@ -214,13 +223,24 @@ paragraphUpdate label txt v = toUpdate <$> (_Just . pgfValue .~ txt $ pgf)
   where
     pgf = v ^? getParagraphField label
 
+datePickerUpdate :: Text -> AppianDate -> Value -> Maybe Update
+datePickerUpdate label date v = toUpdate <$> (_Just . dpwValue .~ date $ dpw)
+  where
+    dpw = v ^? getDatePicker label
+
+dynLinksUpdate :: Text -> Int -> Value -> Maybe Update
+dynLinksUpdate column idx v = toUpdate <$> v ^? dropping idx (getGridWidgetDynLink column)
+
 sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Maybe (UiConfig (SaveRequestList Update)) -> Appian Value
 sendUpdate _ Nothing = throwM $ MissingComponentException "Cannot create update"
 sendUpdate f (Just x) = do
-  v <- f x
-  case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
-    [] -> return v
-    l -> throwM $ ValidationsException l
+  eV <- tryAny $ f x
+  case eV of
+    Left exc -> throwM $ ServerException (exc, x)
+    Right v ->
+      case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
+        [] -> return v
+        l -> throwM $ ValidationsException (l, v, x)
 
 handleMissing :: Text -> Maybe a -> Appian a
 handleMissing label Nothing = throwM $ MissingComponentException label

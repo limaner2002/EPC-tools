@@ -49,6 +49,9 @@ getNonNullGridWidget = getGridWidget
 getGridWidgetRecordRefs :: (Applicative f, Contravariant f) => Text -> (Text -> f Text) -> Value -> f Value
 getGridWidgetRecordRefs column = getGridWidgetValue . gwVal . traverse . _2 . at column . traverse . key "links" . plate . key "_recordRef" . _String
 
+getGridWidgetDynLink :: (Contravariant f, Applicative f) => Text -> (DynamicLink -> f DynamicLink) -> Value -> f Value
+getGridWidgetDynLink column = getGridWidgetValue . gwVal . traverse . _2 . at column . traverse . key "links" . plate . _JSON
+
 getTabButtonGroup :: (FromJSON a, Contravariant f, Applicative f) =>
                  (TabButtonGroup a -> f (TabButtonGroup a)) -> Value -> f Value
 getTabButtonGroup = hasType "TabButtonGroup" . to fromJSON . traverse
@@ -62,6 +65,9 @@ getRecordDashboardTab = getTabButtonGroup . to toDashboards
 getRecordDashboard :: (Contravariant f, Applicative f, Plated s, AsValue s) =>
      Text -> (Dashboard -> f Dashboard) -> s -> f s
 getRecordDashboard dashboardName = hasKeyValue "title" dashboardName . key "rel" . _String . to (stripPrefix "filter-") . traverse . to Dashboard
+
+getDatePicker :: (Contravariant f, Applicative f, Plated s, AsValue s, AsJSON s) => Text -> (DatePicker -> f DatePicker) -> s -> f s
+getDatePicker label = hasLabel label
 
 suffixed
   :: (Eq (Element a), IsSequence a, Choice p, Applicative f) =>

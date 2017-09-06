@@ -221,6 +221,32 @@ data ParagraphField = ParagraphField
   , _pgfRefreshAfter :: Text
   } deriving Show
 
+data DatePicker = DatePicker
+  { _dpwNoneLabel :: Text
+  , _dpwHelpTooltip :: Text
+  , _dpwSaveInto :: [Text]
+  , _dpwValue :: AppianDate
+  , _dpwCid :: Text
+  , _dpwRequired :: Bool
+  , _dpwAlign :: Text
+  , _dpwPlaceholder :: Text
+  , _dpwTodayLabel :: Text
+  } deriving Show
+
+data DynamicLink = DynamicLink
+  { _dylSaveInto :: [Text]
+  , _dylValue :: AppianString
+  , _dylAction :: Text
+  , _dylCid :: Text
+  , _dylTooltip :: Text
+  , _dylConfirmButtonStyle :: Text
+  , _dylValidate :: Text
+  , _dylLabel :: Text
+  } deriving Show
+
+newtype AppianDate = AppianDate { _appianDate :: Maybe Day }
+  deriving Show
+
 newtype GridWidget a = GridWidget
   { _gwVal :: [(Maybe CheckboxGroup, HashMap Text a)]
   } deriving Show
@@ -265,6 +291,9 @@ makeLenses ''NonNullString
 makeLenses ''NonNullValue
 makeLenses ''TabButtonGroup
 makeLenses ''LinkRecordRef
+makeLenses ''DatePicker
+makeLenses ''AppianDate
+makeLenses ''DynamicLink
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -419,6 +448,39 @@ instance ToJSON ParagraphField where
     , "refreshAfter" .= (pgf ^. pgfRefreshAfter)
     ]
 
+instance ToJSON DatePicker where
+  toJSON dpw = object
+    [ "noneLabel" .= (dpw ^. dpwNoneLabel)
+    , "helpTooltip" .= (dpw ^. dpwHelpTooltip)
+    , "saveInto" .= (dpw ^. dpwSaveInto)
+    , "value" .= (dpw ^. dpwValue)
+    , "_cId" .= (dpw ^. dpwCid)
+    , "required" .= (dpw ^. dpwRequired)
+    , ("#t", "DatePickerWidget")
+    , "align" .= (dpw ^. dpwAlign)
+    , "placeholder" .= (dpw ^. dpwPlaceholder)
+    , "todayLabel" .= (dpw ^. dpwTodayLabel)
+    ]
+
+instance ToJSON DynamicLink where
+  toJSON dyl = object
+    [ "saveInto" .= (dyl ^. dylSaveInto)
+    , "value" .= (dyl ^. dylValue)
+    , "action" .= (dyl ^. dylAction)
+    , "_cId" .= (dyl ^. dylCid)
+    , "tooltip" .= (dyl ^. dylTooltip)
+    , "confirmButtonStyle" .= (dyl ^. dylConfirmButtonStyle)
+    , "validate" .= (dyl ^. dylValidate)
+    , "label" .= (dyl ^. dylLabel)
+    , ("#t", "DynamicLink")
+    ]
+
+instance ToJSON AppianDate where
+  toJSON apd = object
+    [ ("#t", "date")
+    , "#v" .= (apd ^. appianDate)
+    ]
+
 instance FromJSON a => FromJSON (SaveRequestList a) where
   parseJSON val@(Object o) = parseAppianType "SaveRequest?list" mkSaveRequestList val
     where
@@ -508,6 +570,45 @@ instance FromJSON NonNullValue where
   parseJSON (Object o) = NonNullValue <$> o .: "value"
   parseJSON _ = fail "Decoding NonNullValue: Expecting a JSON Object"
 
+instance FromJSON DatePicker where
+  parseJSON val@(Object o) = parseAppianType "DatePickerField" mkDatePicker val
+    where
+      mkDatePicker = DatePicker
+        <$> o .: "noneLabel"
+        <*> o .: "helpTooltip"
+        <*> o .: "saveInto"
+        <*> o .: "value"
+        <*> o .: "_cId"
+        <*> o .: "required"
+        <*> o .: "align"
+        <*> o .: "placeholder"
+        <*> o .: "todayLabel"
+
+instance FromJSON DynamicLink where
+  parseJSON val@(Object o) = parseAppianType "DynamicLink" mkDynLink val
+    where
+      mkDynLink = DynamicLink
+        <$> o .: "saveInto"
+        <*> o .: "value"
+        <*> o .: "action"
+        <*> o .: "_cId"
+        <*> o .: "tooltip"
+        <*> o .: "confirmButtonStyle"
+        <*> o .: "validate"
+        <*> o .: "label"
+
+instance FromJSON AppianDate where
+  parseJSON val@(Object o) = parseAppianType "date" mkDate val
+    where
+      mkDate = do
+        mDateString <- o .:? "#v"
+        case mDateString of
+          Nothing -> return $ AppianDate Nothing
+          Just dateString ->
+            case stripSuffix "Z" dateString of
+              Nothing -> fail $ "Decoding AppianDate: Invalid date format " <> show dateString
+              Just d -> AppianDate <$> parseJSON (String d)
+
       -- Util Functions
 capitalize :: Textual a => a -> a
 capitalize = (toUpper . take 1 &&& drop 1 >>> arr (uncurry mappend))
@@ -582,4 +683,23 @@ instance ToUpdate ParagraphField where
     , ("saveType", "PRIMARY")
     , "_cId" .= (pgf ^. pgfCid)
     , "model" .= pgf
+    ]
+
+instance ToUpdate DatePicker where
+  toUpdate dpw = Update $ object
+    [ "saveInto" .= (dpw ^. dpwSaveInto)
+    , "value" .= (dpw ^. dpwValue)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (dpw ^. dpwCid)
+    , "model" .= dpw
+    ]
+
+instance ToUpdate DynamicLink where
+  toUpdate dyl = Update $ object
+    [ "saveInto" .= (dyl ^. dylSaveInto)
+    , "value" .= (dyl ^. dylValue)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (dyl ^. dylCid)
+    , "model" .= dyl
+    , "label" .= (dyl ^. dylLabel)
     ]
