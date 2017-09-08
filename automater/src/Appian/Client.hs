@@ -142,10 +142,17 @@ parseLinkId f url = fmap f . handleList . parseReportId' $ url
     handleList _ = Nothing
     parseReportId' = take 1 . reverse . splitElem '/'
 
-newtype MissingComponentException = MissingComponentException Text
+newtype BadUpdateException = BadUpdateException Text
+
+instance Show BadUpdateException where
+  show (BadUpdateException msg) = "BadUpdateException: " <> show msg
+
+instance Exception BadUpdateException
+
+newtype MissingComponentException = MissingComponentException (Text, Value)
 
 instance Show MissingComponentException where
-  show (MissingComponentException name) = "MissingComponentException: Could not find component " <> show name
+  show (MissingComponentException (name, _)) = "MissingComponentException: Could not find component " <> show name
 
 instance Exception MissingComponentException
 
@@ -174,10 +181,10 @@ sendSelection' f pathPiece label n v = handleMissing label =<< (sequence $ f pat
     up = join $ mkUpdate <$> (_Just . dfValue .~ n $ dropdown) <*> pure v
     dropdown = v ^? getDropdown label
 
-dropdownUpdate :: Text -> Int -> Value -> Maybe Update
-dropdownUpdate label n v = toUpdate <$> (_Just . dfValue .~ n $ dropdown)
+dropdownUpdate :: Text -> Int -> Value -> Either Text Update
+dropdownUpdate label n v = toUpdate <$> (_Right . dfValue .~ n $ dropdown)
   where
-    dropdown = v ^? getDropdown label
+    dropdown = maybeToEither ("Could not locate dropdown " <> tshow label) $ v ^? getDropdown label
 
 clickButton :: PathPiece ReportId -> Text -> Value -> Appian Value
 clickButton = clickButton' uiUpdate
@@ -188,10 +195,10 @@ clickButton' f pathPiece label v = handleMissing label =<< (sequence $ f pathPie
     up = join $ mkUpdate <$> btn <*> pure v
     btn = v ^? getButton label
 
-buttonUpdate :: Text -> Value -> Maybe Update
+buttonUpdate :: Text -> Value -> Either Text Update
 buttonUpdate label v = toUpdate <$> btn
   where
-    btn = v ^? getButton label
+    btn = maybeToEither ("Could not locate button " <> tshow label) $ v ^? getButton label
 
 sendText :: PathPiece TaskId -> Text -> Text -> Value -> Appian Value
 sendText = sendText' taskUpdate
@@ -202,10 +209,10 @@ sendText' f pathPiece label txt v = handleMissing label =<< (sequence $ f pathPi
     up = join $ mkUpdate <$> (_Just . tfValue .~ txt $ tf) <*> pure v
     tf = v ^? getTextField label
 
-textUpdate :: Text -> Text -> Value -> Maybe Update
-textUpdate label txt v = toUpdate <$> (_Just . tfValue .~ txt $ tf)
+textUpdate :: Text -> Text -> Value -> Either Text Update
+textUpdate label txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
   where
-    tf = v ^? getTextField label
+    tf = maybeToEither ("Could not find TextField " <> tshow label) $ v ^? getTextField label
 
 sendPicker :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> AppianPickerData -> Value -> Appian Value
 sendPicker f pathPiece label uname v = handleMissing label =<< (sequence $ f pathPiece <$> up)
@@ -218,22 +225,22 @@ pickerUpdate label uname v = toUpdate <$> (_Just . pwValue .~ toJSON uname $ apd
   where
     apd = v ^? getPickerWidget label
 
-paragraphUpdate :: Text -> Text -> Value -> Maybe Update
-paragraphUpdate label txt v = toUpdate <$> (_Just . pgfValue .~ txt $ pgf)
+paragraphUpdate :: Text -> Text -> Value -> Either Text Update
+paragraphUpdate label txt v = toUpdate <$> (_Right . pgfValue .~ txt $ pgf)
   where
-    pgf = v ^? getParagraphField label
+    pgf = maybeToEither ("Could not locate ParagraphField " <> tshow label) $ v ^? getParagraphField label
 
-datePickerUpdate :: Text -> AppianDate -> Value -> Maybe Update
-datePickerUpdate label date v = toUpdate <$> (_Just . dpwValue .~ date $ dpw)
+datePickerUpdate :: Text -> AppianDate -> Value -> Either Text Update
+datePickerUpdate label date v = toUpdate <$> (_Right . dpwValue .~ date $ dpw)
   where
-    dpw = v ^? getDatePicker label
+    dpw = maybeToEither ("Could not locate DatePicker" <> tshow label) $ v ^? getDatePicker label
 
-dynLinksUpdate :: Text -> Int -> Value -> Maybe Update
-dynLinksUpdate column idx v = toUpdate <$> v ^? dropping idx (getGridWidgetDynLink column)
+dynLinksUpdate :: Text -> Int -> Value -> Either Text Update
+dynLinksUpdate column idx v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? dropping idx (getGridWidgetDynLink column))
 
-sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Maybe (UiConfig (SaveRequestList Update)) -> Appian Value
-sendUpdate _ Nothing = throwM $ MissingComponentException "Cannot create update"
-sendUpdate f (Just x) = do
+sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian Value
+sendUpdate _ (Left msg) = throwM $ BadUpdateException msg
+sendUpdate f (Right x) = do
   eV <- tryAny $ f x
   case eV of
     Left exc -> throwM $ ServerException (exc, x)
@@ -243,7 +250,7 @@ sendUpdate f (Just x) = do
         l -> throwM $ ValidationsException (l, v, x)
 
 handleMissing :: Text -> Maybe a -> Appian a
-handleMissing label Nothing = throwM $ MissingComponentException label
+handleMissing label Nothing = throwM $ BadUpdateException label
 handleMissing label (Just component) = return component
 
 makeSelection :: Value -> Text -> Int -> Maybe DropdownField
@@ -252,5 +259,43 @@ makeSelection v label n = v ^? hasKeyValue "label" label . _JSON . to (dfValue .
 mkUpdate :: ToUpdate a => a -> Value -> Maybe (UiConfig (SaveRequestList Update))
 mkUpdate component v = v ^? _JSON . to (id :: UiConfig (SaveRequestList Update) -> UiConfig (SaveRequestList Update)) . to (uiUpdates .~ (Just . SaveRequestList . pure . toUpdate $ component))
 
-mkUiUpdate :: SaveRequestList Update -> Value -> Maybe (UiConfig (SaveRequestList Update))
-mkUiUpdate saveList v = v ^? _JSON . to (id :: UiConfig (SaveRequestList Update) -> UiConfig (SaveRequestList Update)) . to (uiUpdates .~ Just saveList)
+mkUiUpdate :: [Update] -> Value -> Either Text (UiConfig (SaveRequestList Update))
+mkUiUpdate [] _ = Left "No updates to send!"
+mkUiUpdate saveList v = maybeToEither "Could not create UiUpdate" $ v ^? _JSON . to (id :: UiConfig (SaveRequestList Update) -> UiConfig (SaveRequestList Update)) . to (uiUpdates .~ (Just $ SaveRequestList saveList))
+
+textFieldCidUpdate :: Text -> Text -> Value -> Either Text Update
+textFieldCidUpdate cid txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
+  where
+    tf = maybeToEither ("Could not locate TextField with _cId " <> tshow cid) $ v ^? textFieldCid cid
+
+textFieldCid :: (Applicative f, Contravariant f) => Text -> (TextField -> f TextField) -> Value -> f Value
+textFieldCid cid = hasKeyValue "_cId" cid . _JSON
+
+getReportId :: Text -> Value -> Appian ReportId
+getReportId label = handleMissing label . (getReportLink label >=> parseReportId)
+
+getTaskId :: Value -> Appian TaskId
+getTaskId v = handleMissing "taskId" $ v ^? key "taskId" . _String . to TaskId
+
+landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
+landingPageLink label = deep (filtered $ has $ key "values" . key "values" . _Array . traverse . key "#v" . _String . only label) . key "link" . key "uri" . _String
+
+-- uiUpdateList :: ReifiedFold Value Update -> Value -> Appian (UiConfig (SaveRequestList Update))
+-- uiUpdateList f v = do
+--   taskId <- getTaskId v
+--   let tid = PathPiece taskId
+--       updates = v ^.. runFold f
+--   handleMissing "UpdateList" $ mkUiUpdate (SaveRequestList updates) v
+
+sendUpdates :: ReifiedFold Value (Either Text Update) -> Value -> Appian Value
+sendUpdates f v = do
+  taskId <- getTaskId v
+  let tid = PathPiece taskId
+      updates = v ^.. runFold f
+      errors = lefts updates
+  case errors of
+    [] -> sendUpdate (taskUpdate tid) $ mkUiUpdate (rights updates) v
+    l -> throwM $ MissingComponentException (intercalate "\n" l, v)
+
+maybeToEither :: a -> Maybe b -> Either a b
+maybeToEither c = maybe (Left c) Right

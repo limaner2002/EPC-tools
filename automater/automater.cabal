@@ -18,6 +18,7 @@ library
                      , Appian.Instances
                      , Appian.Lens
                      , Appian.Client
+                     , Scripts.FCCForm471
   build-depends:       base
                      , lens
                      , aeson

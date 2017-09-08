@@ -146,9 +146,6 @@ instance HasClient api => HasClient (RecordId :> api) where
   clientWithRoute _ req (RecordId recordId) = clientWithRoute (Proxy :: Proxy api)
     $ req { reqPath = reqPath req <> "/" <> recordId}
 
-newtype RecordRef = RecordRef Text
-  deriving (Show, Eq)
-
 instance ToHttpApiData RecordRef where
   toUrlPiece (RecordRef str) = str
 

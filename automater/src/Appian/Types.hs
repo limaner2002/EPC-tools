@@ -139,7 +139,7 @@ data DropdownField = DropdownField
   , _dfValue :: Int
   , _dfWidth :: Text
   , _dfCid :: Text
-  , _dfRequired :: Bool
+  , _dfRequired :: Maybe Bool
   , _dfHasPlaceholderLabel :: Text
   , _dfChoices :: [Text]
   } deriving Show
@@ -251,6 +251,18 @@ newtype GridWidget a = GridWidget
   { _gwVal :: [(Maybe CheckboxGroup, HashMap Text a)]
   } deriving Show
 
+newtype GridField a = GridField
+  { _gfVal :: HashMap Text a
+  } deriving Show
+
+data GridFieldCell
+  = TextCell (Vector Text)
+  | TextCellLink (Vector Text, Vector RecordRef)
+  deriving Show
+
+newtype RecordRef = RecordRef Text
+  deriving (Show, Eq)
+
 newtype TabButtonGroup a = TabButtonGroup
   { _tbgTabs :: [a]
   } deriving Show
@@ -287,6 +299,7 @@ makeLenses ''TextField
 makeLenses ''PickerWidget
 makeLenses ''ParagraphField
 makeLenses ''GridWidget
+makeLenses ''GridField
 makeLenses ''NonNullString
 makeLenses ''NonNullValue
 makeLenses ''TabButtonGroup
@@ -294,6 +307,8 @@ makeLenses ''LinkRecordRef
 makeLenses ''DatePicker
 makeLenses ''AppianDate
 makeLenses ''DynamicLink
+
+makePrisms ''GridFieldCell
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -304,7 +319,7 @@ instance FromJSON DropdownField where
         <*> o .: "value"
         <*> o .: "width"
         <*> o .: "_cId"
-        <*> o .: "required"
+        <*> o .:? "required"
         <*> o .: "hasPlaceholderLabel"
         <*> o .: "choices"
   parseJSON _ = fail "Could not parse DropdownField"

@@ -89,6 +89,9 @@ gridWidgetHeaders = key "columnHeaders" . plate . key "contents" . plate . key "
 gridWidgetRows :: (Contravariant f, Applicative f, AsValue t, FromJSON a) => ([a] -> f [a]) -> t -> f t
 gridWidgetRows = key "contents" . plate . key "contents" . to fromJSON . traverse
 
+gridFieldColumns :: (FromJSON a, Contravariant f, Applicative f, AsValue t) => ((Text, Result a) -> f (Text, Result a)) -> t -> f t
+gridFieldColumns = key "columns" . plate . runFold ((,) <$> Fold (key "label" . _String) <*> Fold (key "data" . plate . to fromJSON))
+
 toDict :: (Eq a, Hashable a) => [a] -> [b] -> HashMap a b
 toDict headers row = mapFromList $ zip headers row
 
@@ -122,6 +125,20 @@ instance FromJSON a => FromJSON (GridWidget a) where
       checkBoxes :: [CheckboxGroup]
       checkBoxes = val ^.. deep (filtered $ has $ key "accessibilityLabel" . _String . prefixed "Select row") . _JSON . to (id :: CheckboxGroup -> CheckboxGroup)
 
+instance FromJSON a => FromJSON (GridField a) where
+  parseJSON val = case errors of
+                    [] -> return $ GridField dict
+                    l -> fail $ intercalate "\n" l
+    where
+      results = val ^.. gridFieldColumns
+      errors = results ^.. traverse . _2 . _Error
+      dict = mapFromList $ results ^.. traverse . runFold ((,) <$> Fold _1 <*> Fold (_2 . _Success))
+
+instance FromJSON GridFieldCell where
+  parseJSON (Object o) =
+    (TextCellLink <$> ((,) <$> o .: "data" <*> o .: "links"))
+    <|> (TextCell <$> o .: "data")
+
 instance FromJSON a => FromJSON (TabButtonGroup a) where
   parseJSON (Object o) = TabButtonGroup <$> o .: "tabs"
   parseJSON _ = fail "Could not parse TabButton Group. Expecting JSON Object but got something else."
@@ -130,3 +147,19 @@ instance FromJSON LinkRecordRef where
   parseJSON val = case val ^? key "link" . key "_recordRef" . _String of
     Nothing -> fail "Cannot find a recordRef link."
     Just ref -> return $ LinkRecordRef ref
+
+_Error :: (Choice p, Applicative f) =>
+     p String (f String) -> p (Result t) (f (Result t))
+_Error = prism' Error fromResult
+  where
+    fromResult (Error msg) = Just msg
+    fromResult _ = Nothing
+
+_Success :: (Choice p, Applicative f) => p a (f a) -> p (Result a) (f (Result a))
+_Success = prism' Success fromResult
+  where
+    fromResult (Success x) = Just x
+    fromResult _ = Nothing
+
+instance FromJSON RecordRef where
+  parseJSON (Object o) = RecordRef <$> o .: "_recordRef"
