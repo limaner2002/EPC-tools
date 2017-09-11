@@ -188,8 +188,8 @@ form486Intake = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
   v' <- editReport (PathPiece rid)
-  form486Link <- handleMissing "FCC Form 486" $ v' ^? landingPageLink "FCC Form 486"
-  aid <- handleMissing "Action ID" $ parseActionId form486Link
+  form486Link <- handleMissing "FCC Form 486" v' $ v' ^? landingPageLink "FCC Form 486"
+  aid <- handleMissing "Action ID" v' $ parseActionId form486Link
   pid <- landingPageAction $ PathPiece aid
   v'' <- landingPageActionEx $ PathPiece pid
   taskId <- getTaskId v''

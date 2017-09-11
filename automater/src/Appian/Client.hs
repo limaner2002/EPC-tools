@@ -142,10 +142,23 @@ parseLinkId f url = fmap f . handleList . parseReportId' $ url
     handleList _ = Nothing
     parseReportId' = take 1 . reverse . splitElem '/'
 
-newtype BadUpdateException = BadUpdateException Text
+data BadUpdateException = BadUpdateException
+  { _badUpdateExceptionMsg :: Text
+  , _badUpdateExceptionVal :: Maybe Value
+  }
+
+badUpdateExceptionMsg :: Functor f => (Text -> f Text) -> BadUpdateException -> f (BadUpdateException)
+badUpdateExceptionMsg = lens _badUpdateExceptionMsg upd
+  where
+    upd exc v = exc {_badUpdateExceptionMsg = v}
+
+badUpdateExceptionVal :: Functor f => (Maybe Value -> f (Maybe Value)) -> BadUpdateException -> f (BadUpdateException)
+badUpdateExceptionVal = lens _badUpdateExceptionVal upd
+  where
+    upd exc v = exc {_badUpdateExceptionVal = v}
 
 instance Show BadUpdateException where
-  show (BadUpdateException msg) = "BadUpdateException: " <> show msg
+  show exc = "BadUpdateException: " <> show (exc ^. badUpdateExceptionMsg)
 
 instance Exception BadUpdateException
 
@@ -176,7 +189,7 @@ sendSelection :: PathPiece ReportId -> Text -> Int -> Value -> Appian Value
 sendSelection = sendSelection' uiUpdate
 
 sendSelection' :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> Int -> Value -> Appian Value
-sendSelection' f pathPiece label n v = handleMissing label =<< (sequence $ f pathPiece <$> up)
+sendSelection' f pathPiece label n v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
   where
     up = join $ mkUpdate <$> (_Just . dfValue .~ n $ dropdown) <*> pure v
     dropdown = v ^? getDropdown label
@@ -190,7 +203,7 @@ clickButton :: PathPiece ReportId -> Text -> Value -> Appian Value
 clickButton = clickButton' uiUpdate
 
 clickButton' :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> Value -> Appian Value
-clickButton' f pathPiece label v = handleMissing label =<< (sequence $ f pathPiece <$> up)
+clickButton' f pathPiece label v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
   where
     up = join $ mkUpdate <$> btn <*> pure v
     btn = v ^? getButton label
@@ -204,7 +217,7 @@ sendText :: PathPiece TaskId -> Text -> Text -> Value -> Appian Value
 sendText = sendText' taskUpdate
 
 sendText' :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> Text -> Value -> Appian Value
-sendText' f pathPiece label txt v = handleMissing label =<< (sequence $ f pathPiece <$> up)
+sendText' f pathPiece label txt v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
   where
     up = join $ mkUpdate <$> (_Just . tfValue .~ txt $ tf) <*> pure v
     tf = v ^? getTextField label
@@ -215,7 +228,7 @@ textUpdate label txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
     tf = maybeToEither ("Could not find TextField " <> tshow label) $ v ^? getTextField label
 
 sendPicker :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> AppianPickerData -> Value -> Appian Value
-sendPicker f pathPiece label uname v = handleMissing label =<< (sequence $ f pathPiece <$> up)
+sendPicker f pathPiece label uname v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
   where
     up = join $ mkUpdate <$> (_Just . pwValue . _JSON .~ uname $ apd) <*> pure v
     apd = v ^? getPickerWidget label
@@ -239,7 +252,7 @@ dynLinksUpdate :: Text -> Int -> Value -> Either Text Update
 dynLinksUpdate column idx v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? dropping idx (getGridWidgetDynLink column))
 
 sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian Value
-sendUpdate _ (Left msg) = throwM $ BadUpdateException msg
+sendUpdate _ (Left msg) = throwM $ BadUpdateException msg Nothing
 sendUpdate f (Right x) = do
   eV <- tryAny $ f x
   case eV of
@@ -249,9 +262,9 @@ sendUpdate f (Right x) = do
         [] -> return v
         l -> throwM $ ValidationsException (l, v, x)
 
-handleMissing :: Text -> Maybe a -> Appian a
-handleMissing label Nothing = throwM $ BadUpdateException label
-handleMissing label (Just component) = return component
+handleMissing :: Text -> Value -> Maybe a -> Appian a
+handleMissing label v Nothing = throwM $ BadUpdateException label (Just v)
+handleMissing label _ (Just component) = return component
 
 makeSelection :: Value -> Text -> Int -> Maybe DropdownField
 makeSelection v label n = v ^? hasKeyValue "label" label . _JSON . to (dfValue .~ n)
@@ -272,13 +285,27 @@ textFieldCid :: (Applicative f, Contravariant f) => Text -> (TextField -> f Text
 textFieldCid cid = hasKeyValue "_cId" cid . _JSON
 
 getReportId :: Text -> Value -> Appian ReportId
-getReportId label = handleMissing label . (getReportLink label >=> parseReportId)
+getReportId label v = handleMissing label v $ (getReportLink label >=> parseReportId) v
 
 getTaskId :: Value -> Appian TaskId
-getTaskId v = handleMissing "taskId" $ v ^? key "taskId" . _String . to TaskId
+getTaskId v = handleMissing "taskId" v $ v ^? key "taskId" . _String . to TaskId
 
 landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
 landingPageLink label = deep (filtered $ has $ key "values" . key "values" . _Array . traverse . key "#v" . _String . only label) . key "link" . key "uri" . _String
+
+gridFieldUpdate :: Int -> Value -> Either Text Update
+gridFieldUpdate index v = update
+  where
+    gf = v ^. getGridFieldCell
+    ident = bindGet gf $ gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i == index)
+    bindGet mx g = mx >>= \x -> x ^. g . to return
+    rUpdate = do
+      g <- gf
+      ident' <- ident
+      return $ toUpdate (gfSelection . gslSelected %~ (ident' :) $ g)
+    update = case rUpdate of
+      Error msg -> Left $ "gridFieldUpdate: " <> pack msg
+      Success upd -> Right upd
 
 -- uiUpdateList :: ReifiedFold Value Update -> Value -> Appian (UiConfig (SaveRequestList Update))
 -- uiUpdateList f v = do

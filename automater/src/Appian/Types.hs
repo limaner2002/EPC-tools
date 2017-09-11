@@ -244,6 +244,22 @@ data DynamicLink = DynamicLink
   , _dylLabel :: Text
   } deriving Show
 
+data GridSelection = GridSelection
+  { _gslSelected :: [AppianInt]
+  , _gslPagingInfo :: PagingInfo
+  } deriving Show
+
+data PagingInfo = PagingInfo
+  { _pgIBatchSize :: Int
+  , _pgISort :: [SortField]
+  , _pgIStartIndex :: Int
+  } deriving Show
+
+data SortField = SortField
+  { _sfdField :: Text
+  , _sfdAscending :: Bool
+  } deriving Show
+
 newtype AppianDate = AppianDate { _appianDate :: Maybe Day }
   deriving Show
 
@@ -251,8 +267,13 @@ newtype GridWidget a = GridWidget
   { _gwVal :: [(Maybe CheckboxGroup, HashMap Text a)]
   } deriving Show
 
-newtype GridField a = GridField
-  { _gfVal :: HashMap Text a
+data GridField a = GridField
+  { _gfColumns :: HashMap Text a
+  , _gfIdentifiers :: Maybe [AppianInt]
+  , _gfSelection :: GridSelection
+  , _gfModel :: Value
+  , _gfSaveInto :: [Text]
+  , _gfCid :: Text
   } deriving Show
 
 data GridFieldCell
@@ -307,6 +328,9 @@ makeLenses ''LinkRecordRef
 makeLenses ''DatePicker
 makeLenses ''AppianDate
 makeLenses ''DynamicLink
+makeLenses ''PagingInfo
+makeLenses ''SortField
+makeLenses ''GridSelection
 
 makePrisms ''GridFieldCell
 
@@ -496,6 +520,26 @@ instance ToJSON AppianDate where
     , "#v" .= (apd ^. appianDate)
     ]
 
+instance ToJSON GridSelection where
+  toJSON gsl = object
+    [ "selected" .= (gsl ^. gslSelected)
+    , ("#t", "GridSelection")
+    , "pagingInfo" .= (gsl ^. gslPagingInfo)
+    ]
+
+instance ToJSON PagingInfo where
+  toJSON pgI = object
+    [ "batchSize" .= (pgI ^. pgIBatchSize)
+    , "sort" .= (pgI ^. pgISort)
+    , "startIndex" .= (pgI ^. pgIStartIndex)
+    ]
+
+instance ToJSON SortField where
+  toJSON sfd = object
+    [ "field" .= (sfd ^. sfdField)
+    , "ascending" .= (sfd ^. sfdAscending)
+    ]
+
 instance FromJSON a => FromJSON (SaveRequestList a) where
   parseJSON val@(Object o) = parseAppianType "SaveRequest?list" mkSaveRequestList val
     where
@@ -624,6 +668,24 @@ instance FromJSON AppianDate where
               Nothing -> fail $ "Decoding AppianDate: Invalid date format " <> show dateString
               Just d -> AppianDate <$> parseJSON (String d)
 
+instance FromJSON GridSelection where
+  parseJSON val@(Object o) = parseAppianType "GridSelection" mkField val
+    where
+      mkField = GridSelection
+        <$> o .: "selected"
+        <*> o .: "pagingInfo"
+
+instance FromJSON PagingInfo where
+  parseJSON (Object o) = PagingInfo
+    <$> o .: "batchSize"
+    <*> o .: "sort"
+    <*> o .: "startIndex"
+
+instance FromJSON SortField where
+  parseJSON (Object o) = SortField
+    <$> o .: "field"
+    <*> o .: "ascending"
+
       -- Util Functions
 capitalize :: Textual a => a -> a
 capitalize = (toUpper . take 1 &&& drop 1 >>> arr (uncurry mappend))
@@ -717,4 +779,13 @@ instance ToUpdate DynamicLink where
     , "_cId" .= (dyl ^. dylCid)
     , "model" .= dyl
     , "label" .= (dyl ^. dylLabel)
+    ]
+
+instance ToUpdate (GridField a) where
+  toUpdate gf = Update $ object
+    [ "saveInto" .= (gf ^. gfSaveInto)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (gf ^. gfCid)
+    , "model" .= (gf ^. gfModel)
+    , "value" .= (gf ^. gfSelection)
     ]

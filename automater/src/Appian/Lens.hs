@@ -52,6 +52,15 @@ getGridWidgetRecordRefs column = getGridWidgetValue . gwVal . traverse . _2 . at
 getGridWidgetDynLink :: (Contravariant f, Applicative f) => Text -> (DynamicLink -> f DynamicLink) -> Value -> f Value
 getGridWidgetDynLink column = getGridWidgetValue . gwVal . traverse . _2 . at column . traverse . key "links" . plate . _JSON
 
+getGridField :: (FromJSON a, Contravariant f, Applicative f) => (Result (GridField a) -> f (Result (GridField a))) -> Value -> f Value
+getGridField = hasType "GridField" . to fromJSON
+
+getGridFieldCell :: (Contravariant f, Applicative f) => (Result (GridField GridFieldCell) -> f (Result (GridField GridFieldCell))) -> Value -> f Value
+getGridFieldCell = getGridField
+
+getGridFieldRecordRefs :: (Applicative f, Contravariant f) => Text -> (Vector RecordRef -> f (Vector RecordRef)) -> Value -> f Value
+getGridFieldRecordRefs column = getGridFieldCell . traverse . gfColumns . at column . traverse . _TextCellLink . _2
+
 getTabButtonGroup :: (FromJSON a, Contravariant f, Applicative f) =>
                  (TabButtonGroup a -> f (TabButtonGroup a)) -> Value -> f Value
 getTabButtonGroup = hasType "TabButtonGroup" . to fromJSON . traverse
@@ -90,7 +99,7 @@ gridWidgetRows :: (Contravariant f, Applicative f, AsValue t, FromJSON a) => ([a
 gridWidgetRows = key "contents" . plate . key "contents" . to fromJSON . traverse
 
 gridFieldColumns :: (FromJSON a, Contravariant f, Applicative f, AsValue t) => ((Text, Result a) -> f (Text, Result a)) -> t -> f t
-gridFieldColumns = key "columns" . plate . runFold ((,) <$> Fold (key "label" . _String) <*> Fold (key "data" . plate . to fromJSON))
+gridFieldColumns = key "columns" . plate . runFold ((,) <$> Fold (key "label" . _String) <*> Fold (to fromJSON))
 
 toDict :: (Eq a, Hashable a) => [a] -> [b] -> HashMap a b
 toDict headers row = mapFromList $ zip headers row
@@ -126,8 +135,13 @@ instance FromJSON a => FromJSON (GridWidget a) where
       checkBoxes = val ^.. deep (filtered $ has $ key "accessibilityLabel" . _String . prefixed "Select row") . _JSON . to (id :: CheckboxGroup -> CheckboxGroup)
 
 instance FromJSON a => FromJSON (GridField a) where
-  parseJSON val = case errors of
-                    [] -> return $ GridField dict
+  parseJSON val@(Object o) = case errors of
+                    [] -> GridField dict
+                      <$> o .:? "identifiers"
+                      <*> o .: "value"
+                      <*> pure val
+                      <*> o .: "saveInto"
+                      <*> o .: "_cId"
                     l -> fail $ intercalate "\n" l
     where
       results = val ^.. gridFieldColumns
@@ -138,15 +152,21 @@ instance FromJSON GridFieldCell where
   parseJSON (Object o) =
     (TextCellLink <$> ((,) <$> o .: "data" <*> o .: "links"))
     <|> (TextCell <$> o .: "data")
+  parseJSON _ = fail "Could not parse GridFieldCell: Expecting JSON Object but got something else."
 
 instance FromJSON a => FromJSON (TabButtonGroup a) where
   parseJSON (Object o) = TabButtonGroup <$> o .: "tabs"
   parseJSON _ = fail "Could not parse TabButton Group. Expecting JSON Object but got something else."
 
 instance FromJSON LinkRecordRef where
-  parseJSON val = case val ^? key "link" . key "_recordRef" . _String of
-    Nothing -> fail "Cannot find a recordRef link."
-    Just ref -> return $ LinkRecordRef ref
+  parseJSON val = do
+    let res = val ^. to pure . keyRes "link" . keyRes "_recordRef"
+    case res of
+      Error msg -> fail $ "Could not parse LinkRecordRef: " <> msg
+      Success v -> LinkRecordRef <$> parseJSON v
+
+keyRes :: (Contravariant f, Applicative f) => Text -> Over (->) f (Result Value) (Result Value) (Result Value) (Result Value)
+keyRes i = failing (_Success . failing (_Object . ix i . to Success) (to (const $ Error $ "Missing key " <> show i))) (to id)
 
 _Error :: (Choice p, Applicative f) =>
      p String (f String) -> p (Result t) (f (Result t))

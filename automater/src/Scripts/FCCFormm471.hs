@@ -12,7 +12,7 @@ import Appian.Types
 import Appian.Instances
 import Appian.Lens
 import Appian.Client
-import Data.Attoparsec.Text
+import Data.Attoparsec.Text hiding (Result)
 import Data.Time (addDays)
 
 form471Intake :: Appian Value
@@ -20,8 +20,8 @@ form471Intake = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
   v' <- editReport (PathPiece rid)
-  form471Link <- handleMissing "FCC Form 471" $ v' ^? landingPageLink "FCC Form 471"
-  aid <- handleMissing "Action ID" $ parseActionId form471Link
+  form471Link <- handleMissing "FCC Form 471" v' $ v' ^? landingPageLink "FCC Form 471"
+  aid <- handleMissing "Action ID" v' $ parseActionId form471Link
   pid <- landingPageAction $ PathPiece aid
   v'' <- ( do
              v <- landingPageActionEx $ PathPiece pid
@@ -45,7 +45,7 @@ form471Intake = do
 
   entityInformation <- selectMembers membersPage
 
-  listOf470s <- sendUpdates (Fold (to (buttonUpdate "Save & Continue"))) entityInformation
+  searchResult <- sendUpdates (Fold (to (buttonUpdate "Save & Continue"))) entityInformation
             >>= sendUpdates (Fold (to (buttonUpdate "Save & Continue")))
             >>= sendUpdates (Fold $ to (buttonUpdate "Add FRN"))
             >>= sendUpdates (    Fold (to (textUpdate "Please enter a Funding Request Nickname here" "PerfTest"))
@@ -60,26 +60,33 @@ form471Intake = do
                                      <|> Fold (to (buttonUpdate "Yes"))
                                    )
             >>= sendUpdates (Fold $ to (buttonUpdate "Search"))
+            >>= sendUpdates (Fold (to (gridFieldUpdate 0))
+                             <|> Fold (to (buttonUpdate "Continue"))
+                            )
+            >>= sendUpdates (    Fold (to (textUpdate "Search by SPIN" "143000661"))
+                             <|> Fold (to (buttonUpdate "Search"))
+                            )
 
-  checkbox <- handleMissing "Form 470 Grid" $ listOf470s ^? getGridWidgetValue . gwVal . traverse . _1 . traverse
+  -- form470Grid <- listOf470s ^? getGridWidgetCell . gwVal . traverse
+  -- checkbox <- handleMissing "Form 470 Grid" listOf470s $ listOf470s ^? getGridWidgetValue . gwVal . traverse . _1 . traverse
 
-  taskId <- getTaskId listOf470s
-  let tid = PathPiece taskId
-      updates = listOf470s ^.. runFold (Fold (to (buttonUpdate "Continue") . traverse))
-  spinSearch <- sendUpdate (taskUpdate tid) $ mkUiUpdate (toUpdate checkbox : updates) listOf470s
+  -- taskId <- getTaskId listOf470s
+  -- let tid = PathPiece taskId
+  --     updates = listOf470s ^.. runFold (Fold (to (buttonUpdate "Continue") . traverse))
+  -- spinSearch <- sendUpdate (taskUpdate tid) $ mkUiUpdate (toUpdate checkbox : updates) listOf470s
 
-  searchResult <- sendUpdates (    Fold (to (textUpdate "Search by SPIN" "143000661"))
-                               <|> Fold (to (buttonUpdate "Search"))
-                              ) spinSearch
+  -- searchResult <- sendUpdates (    Fold (to (textUpdate "Search by SPIN" "143000661"))
+  --                              <|> Fold (to (buttonUpdate "Search"))
+  --                             ) spinSearch
 
   return searchResult
-  checkbox <- handleMissing "SPIN Grid" $ searchResult ^? getGridWidgetValue . gwVal . traverse . _1 . traverse
+  checkbox <- handleMissing "SPIN Grid" searchResult $ searchResult ^? getGridWidgetValue . gwVal . traverse . _1 . traverse
 
   taskId <- getTaskId searchResult
   let tid = PathPiece taskId
       updates = searchResult ^.. runFold (Fold (to (buttonUpdate "Continue") . traverse))
   dates <- sendUpdate (taskUpdate tid) $ mkUiUpdate (toUpdate checkbox : updates) searchResult
-  startDate <- handleMissing "Start Date" $ dates ^? hasLabel "What is the service start date?" . dpwValue . appianDate . traverse
+  startDate <- handleMissing "Start Date" dates $ dates ^? hasLabel "What is the service start date?" . dpwValue . appianDate . traverse
 
   pricing <- sendUpdates (Fold (to (datePickerUpdate "When will the services end? " (AppianDate $ Just $ addDays 360 startDate)))
               <|> Fold (to (buttonUpdate "Continue"))
@@ -120,35 +127,41 @@ form471Intake = do
 
 selectMembers :: Value -> Appian Value
 selectMembers v = do
-  (v', checkboxes) <- validMemberCheckboxes v
-  case checkboxes of
-    [] -> throwM $ MissingComponentException ("No member checkboxes to select!", v)
-    l -> do
+  (v', rGridField) <- validMemberCheckboxes v
+  case rGridField of
+    Error msg -> throwM $ MissingComponentException ("selectMembers: " <> pack msg, v')
+    Success gridField -> do
       taskId <- getTaskId v'
       let tid = PathPiece taskId
-          updates = fmap toUpdate checkboxes
-      checked <- sendUpdate (taskUpdate tid) $ mkUiUpdate updates v'
+          updates = toUpdate gridField
+      checked <- sendUpdate (taskUpdate tid) $ mkUiUpdate [updates] v'
 
       sendUpdates (Fold (to (buttonUpdate "Add"))) checked
         >>= sendUpdates (Fold (to (buttonUpdate "Save & Continue")))
 
-validMemberCheckboxes :: Value -> Appian (Value, [CheckboxGroup])
+validMemberCheckboxes :: Value -> Appian (Value, Result (GridField GridFieldCell))
 validMemberCheckboxes v = do
   liftIO $ putStrLn "Getting valid member checkboxes."
-  let refs = v ^.. taking 1 (hasType "GridWidget") . getGridWidgetRecordRefs "BEN Name" . to (PathPiece . RecordRef)
+  -- let refs = v ^.. taking 1 (hasType "GridWidget") . getGridWidgetRecordRefs "BEN Name" . to (PathPiece . RecordRef)
+  let refs = v ^.. getGridFieldRecordRefs "BEN Name" . traverse . to PathPiece
   discountRates <- mapM (\r -> (,) <$> pure r <*> viewDiscountRates r) refs
   taskId <- getTaskId v
   let validRefs = discountRates ^.. traverse . filtered (has $ _2 . to insufficientDiscountRate . only False) . _1
       tid = PathPiece taskId
       updates = v ^.. to (buttonUpdate "No") . traverse
   v' <- sendUpdate (taskUpdate tid) $ mkUiUpdate updates v
-  let checkBoxes = v' ^.. taking 1 getGridWidgetValue . gwVal . traverse . filtered (has $ _2 . at "BEN Name" . traverse . deep (key "_recordRef") . _String . to (PathPiece . RecordRef) . filtered (flip elem validRefs)) . _1 . traverse
-  return (v', checkBoxes)
+  let gf = v' ^. getGridField
+      refs' = gf ^.. traverse . gfColumns . at "BEN Name" . traverse . _TextCellLink . _2 . traverse . to PathPiece
+      idents = gf ^.. traverse . gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i `elem` indices)
+      indices = refs ^.. ifolded . filtered (\r -> r `elem` validRefs) . withIndex . _1
+  return (v', _Success . gfSelection . gslSelected .~ (trace (show idents) idents) $ gf)
+  -- let checkBoxes = v' ^.. taking 1 getGridWidgetValue. gwVal . traverse . filtered (has $ _2 . at "BEN Name" . traverse . deep (key "_recordRef") . _String . to (PathPiece . RecordRef) . filtered (flip elem validRefs)) . _1 . traverse
+  -- return (v', checkBoxes)
 
 viewDiscountRates :: PathPiece RecordRef -> Appian Value
 viewDiscountRates rid = do
   v <- viewRecordDashboard rid (PathPiece $ Dashboard "summary")
-  dashboard <- handleMissing "Discount Rate" $ v ^? getRecordDashboard "Discount Rate"
+  dashboard <- handleMissing "Discount Rate" v $ v ^? getRecordDashboard "Discount Rate"
   viewRecordDashboard rid $ PathPiece dashboard
 
 insufficientDiscountRate :: Value -> Bool
