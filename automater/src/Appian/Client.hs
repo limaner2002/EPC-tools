@@ -251,6 +251,10 @@ datePickerUpdate label date v = toUpdate <$> (_Right . dpwValue .~ date $ dpw)
 dynLinksUpdate :: Text -> Int -> Value -> Either Text Update
 dynLinksUpdate column idx v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? dropping idx (getGridWidgetDynLink column))
 
+-- gridFieldDynLinkUpdate :: (Applicative f, Contravariant f) => Text -> (Update -> f Update) -> Value -> f Value
+gridFieldDynLinkUpdate :: Text -> Value -> Either Text Update
+gridFieldDynLinkUpdate column v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? getGridFieldCell . traverse . gfColumns . at column . traverse . _TextCellDynLink . _2 . traverse)
+
 sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian Value
 sendUpdate _ (Left msg) = throwM $ BadUpdateException msg Nothing
 sendUpdate f (Right x) = do
@@ -322,15 +326,30 @@ componentUpdate fold v = update
 --       updates = v ^.. runFold f
 --   handleMissing "UpdateList" $ mkUiUpdate (SaveRequestList updates) v
 
-sendUpdates :: ReifiedFold Value (Either Text Update) -> Value -> Appian Value
-sendUpdates f v = do
+sendUpdates :: Text -> ReifiedFold Value (Either Text Update) -> Value -> Appian Value
+sendUpdates label f v = do
   taskId <- getTaskId v
   let tid = PathPiece taskId
       updates = v ^.. runFold f
       errors = lefts updates
   case errors of
-    [] -> sendUpdate (taskUpdate tid) $ mkUiUpdate (rights updates) v
+    [] -> do
+      putStrLn label
+      sendUpdate (taskUpdate tid) $ mkUiUpdate (rights updates) v
     l -> throwM $ MissingComponentException (intercalate "\n" l, v)
 
 maybeToEither :: a -> Maybe b -> Either a b
 maybeToEither c = maybe (Left c) Right
+
+runAppian :: Appian a -> ClientEnv -> Login -> IO (Either ServantError a)
+runAppian f env creds = bracket (runClientM login' env) (\cj -> runClientM (logout' cj) env) runF
+  where
+    login' = do
+      cj <- navigateSite
+      login (Just ("tempo" :: Text)) creds $ LoginCj cj
+    logout' (Left exc) = return $ Left exc
+    logout' (Right session) = do
+      _ <- logout session
+      return $ Right ()
+    runF (Left exc) = return $ Left exc
+    runF (Right session) = runClientM (unAppian f session) env

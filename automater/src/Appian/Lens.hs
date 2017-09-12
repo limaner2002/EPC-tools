@@ -17,6 +17,9 @@ hasKey label = deep (filtered $ has $ key label)
 hasKeyValue :: (AsValue s, Plated s, Applicative f) => Text -> Text -> Over (->) f s s s s
 hasKeyValue label val = deep (filtered $ has $ key label . _String . only val)
 
+hasKeyValueRes :: (Applicative f, AsValue a, Plated a, Contravariant f) => Text -> Text -> Over (->) f (Result a) (Result a) (Result a) (Result a)
+hasKeyValueRes label val = failing (_Success . hasKeyValue label val . to Success) id
+
 hasLabel :: (AsJSON s, AsValue s, Plated s, Applicative f, FromJSON a, ToJSON a) => Text -> (a -> f a) -> s -> f s
 hasLabel val = hasKeyValue "label" val . _JSON
 
@@ -151,7 +154,8 @@ instance FromJSON a => FromJSON (GridField a) where
 
 instance FromJSON GridFieldCell where
   parseJSON (Object o) =
-    (TextCellLink <$> ((,) <$> o .: "data" <*> o .: "links"))
+        (TextCellLink <$> ((,) <$> o .: "data" <*> o .: "links"))
+    <|> (TextCellDynLink <$> ((,) <$> o .: "data" <*> o .: "links"))
     <|> (TextCell <$> o .: "data")
   parseJSON _ = fail "Could not parse GridFieldCell: Expecting JSON Object but got something else."
 

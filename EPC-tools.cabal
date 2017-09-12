@@ -104,6 +104,9 @@ executable automator
                      , aeson
                      , lens-aeson
                      , automater
+                     , time
+                     , attoparsec
+                     , optparse-applicative
   default-language:    Haskell2010
 
 test-suite EPC-tools-test

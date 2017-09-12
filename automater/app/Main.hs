@@ -28,6 +28,9 @@ import Appian.Lens
 import Appian.Client
 import Data.Attoparsec.Text
 import Data.Time (addDays)
+import Scripts.FCCForm471
+import Scripts.Opts
+import Options.Applicative (execParser)
 
 test3ClientEnv = do
   mgr <- newManager tlsManagerSettings
@@ -55,19 +58,6 @@ preprodClientEnv = do
   mgr <- newManager tlsManagerSettings
   return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
 
-runAppian :: Appian a -> ClientEnv -> Login -> IO (Either ServantError a)
-runAppian f env creds = bracket (runClientM login' env) (\cj -> runClientM (logout' cj) env) runF
-  where
-    login' = do
-      cj <- navigateSite
-      login (Just ("tempo" :: Text)) creds $ LoginCj cj
-    logout' (Left exc) = return $ Left exc
-    logout' (Right session) = do
-      _ <- logout session
-      return $ Right ()
-    runF (Left exc) = return $ Left exc
-    runF (Right session) = runClientM (unAppian f session) env
-
 testCreds = Login "app.full.right@testmail.usac.org" "Usac123$"
 
 initialReviewer = Login "initial.reviewer@testmail.usac.org" "USACuser123$1"
@@ -79,6 +69,7 @@ test3Library = Login "libraryuser@testmail.usac.org" "Usac123$"
 preprodMaria = Login "maria.carrillo@lausd.net" "EPCPassword123!"
 preprodMonica = Login "monica.mayer@k12.sd.us" "EPCPassword123!"
 preprodPalmer = Login "apalmer@moric.org" "EPCPassword123!"
+preprodMeridith = Login "meredith.bickell@wyo.gov" "EPCPassword123!"
 
 view486 :: IO ()
 view486 = do
@@ -107,6 +98,12 @@ viewAttrs creds = do
             ) env creds
   print res
 
+viewRecordEntries :: Text -> Appian Value
+viewRecordEntries recordName = do
+  v <- recordsTab
+  recordId <- handleMissing ("Record Id for " <> recordName) v $ v ^? hasKeyValue "label" recordName . key "value" . key "urlstub" . _String . to (RecordId . unpack)
+  viewRecord recordId
+
 getEditNotesIds :: Maybe UTCTime -> Appian ([(Text, Text)], Maybe UTCTime)
 getEditNotesIds mTime = do
   v <- tasksTab mTime
@@ -122,15 +119,26 @@ toQueryMap l = mapFromList $ l ^.. traverse . traverse . filtered (\l' -> length
   where
     mkPair [x, y] = (x, y)
 
+-- main :: IO ()
+-- main = do
+--   env <- test3ClientEnv
+--   res <- runAppian cancelThem env testCreds
+--   -- res <- runAppian (do
+--   --               v <- assignedPostCommit
+--   --               mapM_ putStrLn $ v ^.. hasKeyValue "dashboard" "summary" . key "_recordRef" . _String
+--   --           ) env initialReviewer
+--   print res
+
 main :: IO ()
-main = do
-  env <- test3ClientEnv
-  res <- runAppian cancelThem env testCreds
-  -- res <- runAppian (do
-  --               v <- assignedPostCommit
-  --               mapM_ putStrLn $ v ^.. hasKeyValue "dashboard" "summary" . key "_recordRef" . _String
-  --           ) env initialReviewer
-  print res
+main = join $ execParser scriptsInfo
+
+-- main :: IO ()
+-- main = do
+--   env <- preprodClientEnv
+--   res <- tryAny $ runAppian form471Intake env preprodPalmer
+--   case res of
+--     Left exc -> print exc
+--     Right _ -> putStrLn "FCC Form 471 successfully created!"
 
 assignedPostCommit :: Appian Value
 assignedPostCommit =

@@ -19,6 +19,7 @@ library
                      , Appian.Lens
                      , Appian.Client
                      , Scripts.FCCForm471
+                     , Scripts.Opts
   build-depends:       base
                      , lens
                      , aeson
@@ -32,6 +33,9 @@ library
                      , servant
                      , exceptions
                      , http-client-tls
+                     , time
+                     , attoparsec
+                     , optparse-applicative
   default-language:    Haskell2010
 
 test-suite automater-test

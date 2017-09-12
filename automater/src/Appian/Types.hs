@@ -251,7 +251,7 @@ data GridSelection = GridSelection
 
 data PagingInfo = PagingInfo
   { _pgIBatchSize :: Int
-  , _pgISort :: [SortField]
+  , _pgISort :: Maybe [SortField]
   , _pgIStartIndex :: Int
   } deriving Show
 
@@ -279,6 +279,7 @@ data GridField a = GridField
 data GridFieldCell
   = TextCell (Vector Text)
   | TextCellLink (Vector Text, Vector RecordRef)
+  | TextCellDynLink (Vector Text, Vector DynamicLink)
   deriving Show
 
 newtype RecordRef = RecordRef Text
@@ -678,7 +679,7 @@ instance FromJSON GridSelection where
 instance FromJSON PagingInfo where
   parseJSON (Object o) = PagingInfo
     <$> o .: "batchSize"
-    <*> o .: "sort"
+    <*> o .:? "sort"
     <*> o .: "startIndex"
 
 instance FromJSON SortField where
