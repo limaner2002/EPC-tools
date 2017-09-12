@@ -9,6 +9,7 @@ import Control.Lens
 import Data.Aeson.Lens
 import Appian.Types
 import Data.Aeson
+import Data.Monoid (Endo)
 
 hasKey :: (AsValue s, Plated s, Applicative f) => Text -> Over (->) f s s s s
 hasKey label = deep (filtered $ has $ key label) 
@@ -168,6 +169,9 @@ instance FromJSON LinkRecordRef where
 keyRes :: (Contravariant f, Applicative f) => Text -> Over (->) f (Result Value) (Result Value) (Result Value) (Result Value)
 keyRes i = failing (_Success . failing (_Object . ix i . to Success) (to (const $ Error $ "Missing key " <> show i))) (to id)
 
+plateRes :: (Contravariant f, Plated a, Applicative f) => Over (->) f (Result a) (Result a) (Result a) (Result a)
+plateRes = failing (_Success . plate . to Success) id
+
 _Error :: (Choice p, Applicative f) =>
      p String (f String) -> p (Result t) (f (Result t))
 _Error = prism' Error fromResult
@@ -183,3 +187,21 @@ _Success = prism' Success fromResult
 
 instance FromJSON RecordRef where
   parseJSON (Object o) = RecordRef <$> o .: "_recordRef"
+
+checkResult :: Result a -> Result [a] -> Result [a]
+checkResult _ (Error msg) = Error msg
+checkResult (Error msg) _ = Error msg
+checkResult (Success x) (Success l) = Success (x : l)
+
+parsed :: a -> Either Text [a] -> Either Text [a]
+parsed _ (Left msg) = Left msg
+parsed x (Right l) = Right (x : l)
+
+                     -- It's possible to mix the old functions with this as long as there is a 'to pure' somewhere.
+                     -- ex: x ^&.. _JSON . asValue . hasType "GridField" . to pure . keyRes "columns" . plateRes . keyRes "label"
+(^&..) :: s -> Getting (Endo (Result [a])) s (Result a) -> Result [a]
+s ^&.. l = f l s
+  where
+    f x = foldrOf x checkResult (Success mempty)
+
+infixl 8 ^&..

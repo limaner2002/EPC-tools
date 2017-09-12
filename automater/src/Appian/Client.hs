@@ -307,6 +307,14 @@ gridFieldUpdate index v = update
       Error msg -> Left $ "gridFieldUpdate: " <> pack msg
       Success upd -> Right upd
 
+componentUpdate :: ReifiedFold Value (Result Update) -> Value -> Either Text Update
+componentUpdate fold v = update
+  where
+    update = case component of
+      Error msg -> Left $ pack msg
+      Success comp -> Right $ comp
+    component = v ^. runFold fold
+
 -- uiUpdateList :: ReifiedFold Value Update -> Value -> Appian (UiConfig (SaveRequestList Update))
 -- uiUpdateList f v = do
 --   taskId <- getTaskId v

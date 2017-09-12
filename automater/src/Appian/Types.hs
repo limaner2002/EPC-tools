@@ -789,3 +789,6 @@ instance ToUpdate (GridField a) where
     , "model" .= (gf ^. gfModel)
     , "value" .= (gf ^. gfSelection)
     ]
+
+-- instance ToUpdate a => ToUpdate [a] where
+--   toUpdate = fmap toUpdate
