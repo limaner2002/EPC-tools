@@ -36,6 +36,9 @@ library
                      , time
                      , attoparsec
                      , optparse-applicative
+                     , monad-logger
+                     , streaming
+                     , resourcet
   default-language:    Haskell2010
 
 test-suite automater-test

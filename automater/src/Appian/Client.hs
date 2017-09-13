@@ -27,6 +27,19 @@ import Appian
 import Appian.Types
 import Appian.Instances
 import Appian.Lens
+import Data.Time (diffUTCTime, NominalDiffTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import System.IO.Unsafe (unsafePerformIO)
+
+       -- Horrible hack that will be removed once generalization of
+       -- ClientM is included in servant-client which will allow me to
+       -- replace this with monad-logger
+logChan :: TChan LogMessage
+logChan = unsafePerformIO newTChanIO
+
+data LogMessage
+  = Msg Text
+  | Done
 
 type TestAPI = Get '[HTML] CookieJar
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> Login :> LoginCj :> Post '[HTML] CookieJar
@@ -61,7 +74,6 @@ type API = TestAPI
   :<|> TaskStatus
   :<|> ReportsTab
   :<|> EditReport
---   :<|> RecordActions
   :<|> RelatedActionEx
   :<|> AvailableActions
   :<|> LandingPageAction
@@ -82,36 +94,35 @@ navigateSite
   :<|> taskStatus_
   :<|> reportsTab_
   :<|> editReport_
---  :<|> recordActions_
   :<|> relatedActionEx_
   :<|> actionsTab_
   :<|> landingPageAction_
   :<|> landingPageActionEx_
   = client api
 
-recordsTab = Appian recordsTab_
-viewRecordDashboard e dashboard = liftIO (putStrLn $ "View Record Dashboard" <> tshow dashboard) >> Appian (viewRecordEntry_ e dashboard)
-viewRecord r = Appian (viewRecord_ r)
-viewRecordEntry e = Appian (viewRecordEntry_ e (PathPiece $ Dashboard "summary"))
-tasksTab mUtcTime = Appian (tasksTab_ mUtcTime)
-taskAttributes tid = Appian (taskAttributes_ tid)
-acceptTask tid = Appian (acceptTask_ tid)
-taskStatus tid = Appian (taskStatus_ (Just ("ceebc" :: Text)) (Just "stateful") (Just "TEMPO") tid ("accepted" :: Text))
-reportsTab = Appian reportsTab_
-editReport rid = Appian (editReport_ rid)
-recordActions rid = Appian (viewRecordEntry_ rid (PathPiece $ Dashboard "actions"))
-relatedActionEx url = Appian (relatedActionEx_ (Just "ceebc") url)
-actionsTab = Appian (actionsTab_ (Just "e4bc"))
-landingPageAction aid = Appian (landingPageAction_ aid)
-landingPageActionEx pid = Appian (landingPageActionEx_ pid (Just "ceebc") (Just "stateful") (Just "TEMPO"))
+recordsTab = AppianT recordsTab_
+viewRecordDashboard e dashboard = liftIO (putStrLn $ "View Record Dashboard" <> tshow dashboard) >> AppianT (viewRecordEntry_ e dashboard)
+viewRecord r = AppianT (viewRecord_ r)
+viewRecordEntry e = AppianT (viewRecordEntry_ e (PathPiece $ Dashboard "summary"))
+tasksTab mUtcTime = AppianT (tasksTab_ mUtcTime)
+taskAttributes tid = AppianT (taskAttributes_ tid)
+acceptTask tid = AppianT (acceptTask_ tid)
+taskStatus tid = AppianT (taskStatus_ (Just ("ceebc" :: Text)) (Just "stateful") (Just "TEMPO") tid ("accepted" :: Text))
+reportsTab = AppianT reportsTab_
+editReport rid = AppianT (editReport_ rid)
+recordActions rid = AppianT (viewRecordEntry_ rid (PathPiece $ Dashboard "actions"))
+relatedActionEx url = AppianT (relatedActionEx_ (Just "ceebc") url)
+actionsTab = AppianT (actionsTab_ (Just "e4bc"))
+landingPageAction aid = AppianT (landingPageAction_ aid)
+landingPageActionEx pid = AppianT (landingPageActionEx_ pid (Just "ceebc") (Just "stateful") (Just "TEMPO"))
 
 taskUpdate :: ToJSON update => PathPiece TaskId -> UiConfig update -> Appian Value
-taskUpdate tid ui = Appian (taskUpdate_ tid ui)
+taskUpdate tid ui = AppianT (taskUpdate_ tid ui)
   where
     taskUpdate_ = client (Proxy :: ToJSON update => Proxy (TaskUpdate update)) (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO")
 
 uiUpdate :: ToJSON update => PathPiece ReportId -> UiConfig update -> Appian Value
-uiUpdate rid ui = Appian (uiUpdate_ rid ui)
+uiUpdate rid ui = AppianT (uiUpdate_ rid ui)
   where
     uiUpdate_ = client (Proxy :: ToJSON update => Proxy (UIUpdate update))
 
@@ -334,9 +345,21 @@ sendUpdates label f v = do
       errors = lefts updates
   case errors of
     [] -> do
-      putStrLn label
-      sendUpdate (taskUpdate tid) $ mkUiUpdate (rights updates) v
+      start <- liftIO $ getCurrentTime
+      res <- sendUpdate (taskUpdate tid) $ mkUiUpdate (rights updates) v
+      end <- liftIO $ getCurrentTime
+      let elapsed = diffUTCTime end start
+      atomically $ writeTChan logChan $ Msg $ intercalate ","
+        [ toUrlPiece (utcTimeToPOSIXSeconds start)
+        , tshow (diffToMS elapsed)
+        , label
+        , "200"
+        ]
+      return res
     l -> throwM $ MissingComponentException (intercalate "\n" l, v)
+
+diffToMS :: NominalDiffTime -> Int
+diffToMS elapsed = fromEnum elapsed `div` 1000000000
 
 maybeToEither :: a -> Maybe b -> Either a b
 maybeToEither c = maybe (Left c) Right
@@ -353,3 +376,4 @@ runAppian f env creds = bracket (runClientM login' env) (\cj -> runClientM (logo
       return $ Right ()
     runF (Left exc) = return $ Left exc
     runF (Right session) = runClientM (unAppian f session) env
+
