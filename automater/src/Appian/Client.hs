@@ -101,7 +101,7 @@ navigateSite
   = client api
 
 recordsTab = AppianT recordsTab_
-viewRecordDashboard e dashboard = liftIO (putStrLn $ "View Record Dashboard" <> tshow dashboard) >> AppianT (viewRecordEntry_ e dashboard)
+viewRecordDashboard e dashboard = AppianT (viewRecordEntry_ e dashboard)
 viewRecord r = AppianT (viewRecord_ r)
 viewRecordEntry e = AppianT (viewRecordEntry_ e (PathPiece $ Dashboard "summary"))
 tasksTab mUtcTime = AppianT (tasksTab_ mUtcTime)
@@ -350,7 +350,7 @@ sendUpdates label f v = do
       end <- liftIO $ getCurrentTime
       let elapsed = diffUTCTime end start
       atomically $ writeTChan logChan $ Msg $ intercalate ","
-        [ toUrlPiece (utcTimeToPOSIXSeconds start)
+        [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
         , tshow (diffToMS elapsed)
         , label
         , "200"

@@ -136,7 +136,7 @@ validMemberCheckboxes v = do
       refs' = gf ^.. traverse . gfColumns . at "BEN Name" . traverse . _TextCellLink . _2 . traverse . to PathPiece
       idents = gf ^.. traverse . gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i `elem` indices)
       indices = refs ^.. ifolded . filtered (\r -> r `elem` validRefs) . withIndex . _1
-  return (v', _Success . gfSelection . gslSelected .~ (trace (show idents) idents) $ gf)
+  return (v', _Success . gfSelection . gslSelected .~ idents $ gf)
   -- let checkBoxes = v' ^.. taking 1 getGridWidgetValue. gwVal . traverse . filtered (has $ _2 . at "BEN Name" . traverse . deep (key "_recordRef") . _String . to (PathPiece . RecordRef) . filtered (flip elem validRefs)) . _1 . traverse
   -- return (v', checkBoxes)
 

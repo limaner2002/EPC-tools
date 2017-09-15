@@ -20,33 +20,40 @@ import qualified Streaming.Prelude as S
 import Control.Monad.Trans.Resource
 import Data.Aeson (Value)
 import Control.Lens
+import Network.HTTP.Client
+
+-- getPassword :: IO String
+-- getPassword = do
+--   putStr "Password: "
+--   hFlush stdout
+--   pass <- withEcho False getLine
+--   putChar '\n'
+--   return pass
+
+-- withEcho :: Bool -> IO a -> IO a
+-- withEcho echo action = do
+--   old <- hGetEcho stdin
+--   bracket_ (hSetEcho stdin echo) (hSetEcho stdin old) action
 
 getPassword :: IO String
-getPassword = do
-  putStr "Password: "
-  hFlush stdout
-  pass <- withEcho False getLine
-  putChar '\n'
-  return pass
-
-withEcho :: Bool -> IO a -> IO a
-withEcho echo action = do
-  old <- hGetEcho stdin
-  bracket_ (hSetEcho stdin echo) (hSetEcho stdin old) action
+getPassword = pure "EPCPassword123!"
 
 runScript :: BaseUrl -> String -> FilePath -> Int -> IO ()
 runScript baseUrl username fp nThreads = do
-  mgr <- newManager tlsManagerSettings
+  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
   let login = Login (pack username) (pack password)
   (_, res) <- concurrently (loggingFunc fp)
               ( do
-                  atomically $ writeTChan logChan $ Msg $ "timestamp,elapsed,label,responseCode"
+                  atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
                   results <- mapConcurrently (const $ tryAny $ runAppian form471Intake (ClientEnv mgr baseUrl) login) $ [1..nThreads]
                   atomically $ writeTChan logChan Done
                   return results
               )
   dispResults res
+
+setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
+setTimeout timeout settings = settings { managerResponseTimeout = timeout }
 
 dispResults :: [Either SomeException (Either ServantError Value)] -> IO ()
 dispResults results = do
