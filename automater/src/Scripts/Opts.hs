@@ -7,46 +7,47 @@ module Scripts.Opts
 
 import ClassyPrelude
 import Options.Applicative
+import Options.Applicative.Types
 
 import Scripts.FCCForm471
+import Scripts.CreateCSCase
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
 import Servant.Client
 import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
-import System.IO (hFlush, putChar, getLine, hGetEcho, hSetEcho)
 import Control.Arrow
 import qualified Streaming.Prelude as S
 import Control.Monad.Trans.Resource
 import Data.Aeson (Value)
 import Control.Lens
 import Network.HTTP.Client
-
--- getPassword :: IO String
--- getPassword = do
---   putStr "Password: "
---   hFlush stdout
---   pass <- withEcho False getLine
---   putChar '\n'
---   return pass
-
--- withEcho :: Bool -> IO a -> IO a
--- withEcho echo action = do
---   old <- hGetEcho stdin
---   bracket_ (hSetEcho stdin echo) (hSetEcho stdin old) action
+import Appian
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
 
-runScript :: BaseUrl -> String -> FilePath -> Int -> IO ()
-runScript baseUrl username fp nThreads = do
+runScript :: Script -> BaseUrl -> String -> FilePath -> Int -> IO ()
+runScript (CSScript script) baseUrl username fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
   let login = Login (pack username) (pack password)
   (_, res) <- concurrently (loggingFunc fp)
               ( do
                   atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (const $ tryAny $ runAppian form471Intake (ClientEnv mgr baseUrl) login) $ [1..nThreads]
+                  results <- mapConcurrently (const $ tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
+                  atomically $ writeTChan logChan Done
+                  return results
+              )
+  dispResults res
+runScript (Form471 script) baseUrl username fp nThreads = do
+  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+  password <- getPassword
+  let login = Login (pack username) (pack password)
+  (_, res) <- concurrently (loggingFunc fp)
+              ( do
+                  atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
+                  results <- mapConcurrently (const $ tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
                   atomically $ writeTChan logChan Done
                   return results
               )
@@ -55,14 +56,14 @@ runScript baseUrl username fp nThreads = do
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
 setTimeout timeout settings = settings { managerResponseTimeout = timeout }
 
-dispResults :: [Either SomeException (Either ServantError Value)] -> IO ()
+dispResults :: [Either SomeException (Either ServantError a)] -> IO ()
 dispResults results = do
   let appianErrors = results ^.. traverse . _Left
       clientErrors = results ^.. traverse . _Right . _Left
       successes = results ^.. traverse . _Right . _Right
   mapM_ print appianErrors
   mapM_ print clientErrors
-  putStrLn $ "Successfully created 471s: " <> tshow (length successes)
+  putStrLn $ "Successfully executed: " <> tshow (length successes)
   putStrLn $ "Appian Errors: " <> tshow (length appianErrors)
   putStrLn $ "Client Errors: " <> tshow (length clientErrors)
   -- case res of
@@ -82,6 +83,7 @@ loggingFunc fp = S.takeWhile isMsg
     isMsg (Msg _) = True
     isMsg _ = False
     unpackMsg (Msg t) = unpack t
+    unpackMsg _ = error "The impossible happened unpacking the log Message!"
 
 scriptsInfo :: ParserInfo (IO ())
 scriptsInfo = info (helper <*> scriptsParser)
@@ -91,7 +93,11 @@ scriptsInfo = info (helper <*> scriptsParser)
 
 scriptsParser :: Parser (IO ())
 scriptsParser = runScript
-  <$> urlParser
+  <$> option scriptParser
+  (  long "run-script"
+  <> short 'r'
+  )
+  <*> urlParser
   <*> strOption
   (  long "username"
   <> short 'u'
@@ -115,8 +121,8 @@ urlParser = BaseUrl
   <> help "If set uses https."
   )
   <*> strOption
-  (  long "host"
-  <> short 'h'
+  (  long "host-name"
+  <> short 'n'
   <> help "The hostname of the server to use."
   )
   <*> option auto
@@ -126,17 +132,14 @@ urlParser = BaseUrl
   )
   <*> pure ""
 
--- loginParser :: Parser Login
--- loginParser = Login
---   <$> ( pack <$>
---           strOption
---             (  long "username"
---             <> short 'u'
---             )
---       )
---   <*> ( pack <$>
---           strOption
---             (  long "password"
---             <> short 'p'
---             )
---       )
+data Script
+  = CSScript (Appian Text)
+  | Form471 (Appian Value)
+
+scriptParser :: ReadM Script
+scriptParser = do
+  name <- readerAsk
+  case name of
+    "cscase" -> return $ CSScript createCSCase
+    "form471" -> return $ Form471 form471Intake
+    _ -> fail $ show name <> " is not a valid script name!"

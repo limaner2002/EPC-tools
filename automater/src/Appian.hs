@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
 
 module Appian where
 
@@ -47,3 +48,6 @@ instance MonadTrans AppianT where
   lift = AppianT . const
 
 instance MonadLogger m => MonadLogger (AppianT m)
+
+-- instance Monad m => MonadBase ClientM (AppianT m) where
+--   liftBase b = _
