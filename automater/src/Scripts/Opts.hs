@@ -23,6 +23,8 @@ import Data.Aeson (Value)
 import Control.Lens
 import Network.HTTP.Client
 import Appian
+import Stats.CsvStream
+import Control.Monad.Logger
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -43,11 +45,12 @@ runScript (CSScript script) baseUrl username fp nThreads = do
 runScript (Form471 script) baseUrl username fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
+  logins <- csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv"
   let login = Login (pack username) (pack password)
   (_, res) <- concurrently (loggingFunc fp)
               ( do
                   atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (const $ tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
+                  results <- mapConcurrently (\login -> tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ take nThreads $ S.fst' logins
                   atomically $ writeTChan logChan Done
                   return results
               )

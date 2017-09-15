@@ -27,6 +27,7 @@ import Servant.Common.Req (Req (..), performRequest, performRequestNoBody)
 import Data.Aeson
 import Network.HTTP.Media ((//), (/:))
 import Appian.Types
+import qualified Data.Csv as Csv
 
 data Login = Login
   { _username :: Text
@@ -34,6 +35,11 @@ data Login = Login
   } deriving (Eq, Show)
 
 makeLenses ''Login
+
+instance Csv.FromNamedRecord Login where
+  parseNamedRecord r = Login
+    <$> r Csv..: "username"
+    <*> r Csv..: "password"
 
 newtype LoginCj = LoginCj CookieJar
   deriving (Show, Eq, Read, Monoid)

@@ -16,6 +16,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Stats.Opts
+                     , Stats.CsvStream
   build-depends:       base >= 4.7 && < 5
                      , plots
                      , classy-prelude
@@ -41,7 +42,6 @@ library
   other-modules:       Stats
                      , Stats.Types
                      , Stats.Fold
-                     , Stats.CsvStream
   default-language:    Haskell2010
 
 test-suite stats-test

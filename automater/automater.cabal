@@ -41,6 +41,8 @@ library
                      , streaming
                      , resourcet
                      , MonadRandom
+                     , cassava
+                     , stats
   default-language:    Haskell2010
 
 test-suite automater-test
