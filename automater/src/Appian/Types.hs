@@ -37,18 +37,18 @@ data AppianPickerData
   | Identifiers [AppianUsername]
   deriving (Show, Eq)
 
-parseAppianTypeWith :: Monad m => (Text -> Bool) -> m a -> Value -> m a
-parseAppianTypeWith pred f (Object o) =
+parseAppianTypeWith :: Monad m => Text -> (Text -> Bool) -> m a -> Value -> m a
+parseAppianTypeWith typ pred f (Object o) =
   case lookup "#t" o of
     Nothing -> fail "This Appian Type does not have an associated type with it."
     Just (String s) ->
       case pred s of
-        False -> fail $ "Wrong Appian type: received " <> show s
+        False -> fail $ "Wrong Appian type: received " <> show s <> " expecting " <> show typ
         True -> f
     Just _ -> fail "Expected string"
 
 parseAppianType :: Monad m => Text -> m a -> Value -> m a
-parseAppianType t = parseAppianTypeWith (isSuffixOf t)
+parseAppianType t = parseAppianTypeWith t (isSuffixOf t)
 
 instance FromJSON AppianInt where
   parseJSON val@(Object o) = parseAppianType "int" mkAppianInt val
@@ -336,7 +336,7 @@ makeLenses ''GridSelection
 makePrisms ''GridFieldCell
 
 instance FromJSON DropdownField where
-  parseJSON val@(Object o) = parseAppianTypeWith (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
+  parseJSON val@(Object o) = parseAppianTypeWith "DropdownField" (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
     where
       mkField = DropdownField
         <$> o .: "clearIconLabel"
@@ -572,7 +572,7 @@ instance FromJSON a => FromJSON (UiConfig a) where
   parseJSON _ = fail "Could not parse UiConfig"
 
 instance FromJSON TextField where
-  parseJSON val@(Object o) = parseAppianTypeWith (\t -> t == "TextField" || t == "TextWidget") mkField val
+  parseJSON val@(Object o) = parseAppianTypeWith "TextField" (\t -> t == "TextField" || t == "TextWidget") mkField val
     where
       mkField = TextField
         <$> o .: "saveInto"
@@ -585,7 +585,7 @@ instance FromJSON TextField where
         <*> o .: "refreshAfter"
 
 instance FromJSON PickerWidget where
-  parseJSON val@(Object o) = parseAppianTypeWith (\t -> t == "PickerWidget") mkWidget val
+  parseJSON val@(Object o) = parseAppianTypeWith "PickerWidget" (\t -> t == "PickerWidget") mkWidget val
     where
       mkWidget = PickerWidget
         <$> o .: "maxSelections"
@@ -605,7 +605,7 @@ instance FromJSON PickerWidget where
         <*> o .: "placeholder"
 
 instance FromJSON ParagraphField where
-  parseJSON val@(Object o) = parseAppianTypeWith (== "ParagraphField") mkWidget val
+  parseJSON val@(Object o) = parseAppianTypeWith "ParagraphField" (== "ParagraphField") mkWidget val
     where
       mkWidget = ParagraphField
         <$> o .: "height"

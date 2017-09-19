@@ -17,14 +17,23 @@ hasKey label = deep (filtered $ has $ key label)
 hasKeyValue :: (AsValue s, Plated s, Applicative f) => Text -> Text -> Over (->) f s s s s
 hasKeyValue label val = deep (filtered $ has $ key label . _String . only val)
 
+hasKeyValueWith :: (AsValue s, Plated s, Applicative f) => (Text -> Bool) -> Text -> Over (->) f s s s s
+hasKeyValueWith f label = deep (filtered $ anyOf (key label . _String) f)
+
 hasKeyValueRes :: (Applicative f, AsValue a, Plated a, Contravariant f) => Text -> Text -> Over (->) f (Result a) (Result a) (Result a) (Result a)
 hasKeyValueRes label val = failing (_Success . hasKeyValue label val . to Success) id
 
 hasLabel :: (AsJSON s, AsValue s, Plated s, Applicative f, FromJSON a, ToJSON a) => Text -> (a -> f a) -> s -> f s
 hasLabel val = hasKeyValue "label" val . _JSON
 
+hasLabelWith :: (AsJSON s, AsValue s, Plated s, Applicative f, FromJSON a, ToJSON a) => (Text -> Bool) -> (a -> f a) -> s -> f s
+hasLabelWith f = hasKeyValueWith f "label" . _JSON
+
 getButton :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (ButtonWidget -> f ButtonWidget) -> s -> f s
-getButton = hasLabel
+getButton label = deep (filtered (has $ runFold ((,) <$> Fold (key "confirmButtonStyle" . to (const ())) <*> Fold (key "label" . _String . only label)))) . _JSON
+
+getButtonWith :: (AsJSON s, AsValue s, Plated s, Applicative f) => (Text -> Bool) -> (ButtonWidget -> f ButtonWidget) -> s -> f s
+getButtonWith f = deep (filtered (has $ runFold ((,) <$> Fold (key "confirmButtonStyle" . to (const ())) <*> Fold (filtered $ anyOf (key "label" . _String) f)))) . _JSON
 
 getDropdown :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (DropdownField -> f DropdownField) -> s -> f s
 getDropdown = hasLabel
@@ -209,3 +218,6 @@ s ^&.. l = f l s
     f x = foldrOf x checkResult (Success mempty)
 
 infixl 8 ^&..
+
+testF :: (Applicative f, Choice p) => t -> (t -> t -> Bool) -> p () (f ()) -> p t (f t)
+testF a f = prism' (\() -> a) $ guard . (f a)

@@ -3,6 +3,8 @@
 
 module Scripts.Opts
   ( scriptsInfo
+  , runScript
+  , Script (..)
   ) where
 
 import ClassyPrelude
@@ -45,12 +47,13 @@ runScript (CSScript script) baseUrl username fp nThreads = do
 runScript (Form471 script) baseUrl username fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
-  logins <- csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv"
+  -- logins <- S.fst' <$> (csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv")
   let login = Login (pack username) (pack password)
+      logins = [login]
   (_, res) <- concurrently (loggingFunc fp)
               ( do
                   atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (\login -> tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ take nThreads $ S.fst' logins
+                  results <- mapConcurrently (\login -> tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ take nThreads logins
                   atomically $ writeTChan logChan Done
                   return results
               )

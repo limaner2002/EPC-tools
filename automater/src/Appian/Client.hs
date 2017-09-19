@@ -19,6 +19,8 @@ import Network.HTTP.Client ( newManager, defaultManagerSettings, managerModifyRe
                            , responseCookieJar, CookieJar
                            )
 import Control.Lens
+import Control.Lens.Action
+import Control.Lens.Action.Reified
 import qualified Web.Cookie as WC
 import Network.HTTP.Media ((//), (/:))
 import Data.Aeson
@@ -40,6 +42,7 @@ logChan = unsafePerformIO newTChanIO
 data LogMessage
   = Msg Text
   | Done
+  deriving Show
 
 type TestAPI = Get '[HTML] CookieJar
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> Login :> LoginCj :> Post '[HTML] CookieJar
@@ -330,6 +333,10 @@ componentUpdate fold v = update
       Success comp -> Right $ comp
     component = v ^. runFold fold
 
+resultToEither :: Result a -> Either Text a
+resultToEither (Error msg) = Left $ pack msg
+resultToEither (Success a) = Right a
+
 -- uiUpdateList :: ReifiedFold Value Update -> Value -> Appian (UiConfig (SaveRequestList Update))
 -- uiUpdateList f v = do
 --   taskId <- getTaskId v
@@ -337,11 +344,12 @@ componentUpdate fold v = update
 --       updates = v ^.. runFold f
 --   handleMissing "UpdateList" $ mkUiUpdate (SaveRequestList updates) v
 
-sendUpdates :: Text -> ReifiedFold Value (Either Text Update) -> Value -> Appian Value
+sendUpdates :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value
 sendUpdates label f v = do
   taskId <- getTaskId v
+  updates <- liftIO $ v ^!! runMonadicFold f
   let tid = PathPiece taskId
-      updates = v ^.. runFold f
+      -- updates = v ^.. runFold f
       errors = lefts updates
   case errors of
     [] -> do

@@ -5,6 +5,7 @@ module Scripts.CreateCSCase where
 
 import ClassyPrelude
 import Control.Lens
+import Control.Lens.Action.Reified
 import Data.Aeson
 import Data.Aeson.Lens
 import Appian
@@ -19,18 +20,18 @@ createCSCase = do
   v <- actionsTab
     >>= (\v -> handleResult $ v ^. getTaskProcId "Create a Customer Service Case")
     >>= landingPageActionEx . PathPiece
-    >>= sendUpdates "Title, Description, and Topic" (Fold (to (textUpdate "Title" "PerfTest2"))
-                    <|> Fold (to (paragraphUpdate "Description" "A description goes in here."))
-                    <|> Fold (to (dropdownUpdate "Topic" 11))
+    >>= sendUpdates "Title, Description, and Topic" (MonadicFold (to (textUpdate "Title" "PerfTest2"))
+                    <|> MonadicFold (to (paragraphUpdate "Description" "A description goes in here."))
+                    <|> MonadicFold (to (dropdownUpdate "Topic" 11))
                     )
-    >>= sendUpdates "Rest" (Fold (to (dropdownUpdate "Subtopic" 2))
-                    <|> Fold (to (dropdownUpdate "Priority" 3))
-                    <|> Fold (to (dropdownUpdate "Inquiry Type" 2))
-                    <|> Fold (to (textUpdate "First Name" "This is my first name!"))
-                    <|> Fold (to (textUpdate "Last Name" "This is my last name!"))
-                    <|> Fold (to (textUpdate "Email" "somename@someplace.com"))
-                    <|> Fold (to (textUpdate "Phone" "0123456789"))
-                    <|> Fold (to (buttonUpdate "Submit"))
+    >>= sendUpdates "Rest" (MonadicFold (to (dropdownUpdate "Subtopic" 2))
+                    <|> MonadicFold (to (dropdownUpdate "Priority" 3))
+                    <|> MonadicFold (to (dropdownUpdate "Inquiry Type" 2))
+                    <|> MonadicFold (to (textUpdate "First Name" "This is my first name!"))
+                    <|> MonadicFold (to (textUpdate "Last Name" "This is my last name!"))
+                    <|> MonadicFold (to (textUpdate "Email" "somename@someplace.com"))
+                    <|> MonadicFold (to (textUpdate "Phone" "0123456789"))
+                    <|> MonadicFold (to (buttonUpdate "Submit"))
                     )
   case v ^? deep (filtered $ has $ key "#v" . _String . suffixed "has been created") . key "#v" . _String of
     Nothing -> fail "The case was not created!"

@@ -21,6 +21,7 @@ library
                      , Scripts.FCCForm471
                      , Scripts.Opts
                      , Scripts.CreateCSCase
+                     , Scripts.Test
   build-depends:       base
                      , lens
                      , aeson
@@ -43,6 +44,8 @@ library
                      , MonadRandom
                      , cassava
                      , stats
+                     , lens-action
+                     , QuickCheck
   default-language:    Haskell2010
 
 test-suite automater-test
