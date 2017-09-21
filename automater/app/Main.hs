@@ -192,21 +192,21 @@ cancelThem = go Nothing
           return ()
         Just time -> go $ Just time
 
-form486Intake :: Appian Value
-form486Intake = do
-  v <- reportsTab
-  rid <- getReportId "My Landing Page" v
-  v' <- editReport (PathPiece rid)
-  form486Link <- handleMissing "FCC Form 486" v' $ v' ^? landingPageLink "FCC Form 486"
-  aid <- handleMissing "Action ID" v' $ parseActionId form486Link
-  pid <- landingPageAction $ PathPiece aid
-  v'' <- landingPageActionEx $ PathPiece pid
-  taskId <- getTaskId v''
-  let tid = PathPiece taskId
-      typed = TypedText "app.full.right@testmail.usac.org"
-      un = Identifiers [AppianUsername "app.full.right@testmail.usac.org"]
-      updates = v'' ^.. runFold (Fold (to (dropdownUpdate "Funding Year" 2) . traverse) <|> Fold (to (textUpdate "Nickname" "PerfTest") . traverse) <|> Fold (to (pickerUpdate "Main Contact Person" un) . traverse) <|> Fold (to (buttonUpdate "Continue") . traverse))
-  sendUpdate (taskUpdate tid) $ mkUiUpdate (updates) v''
+-- form486Intake :: Appian Value
+-- form486Intake = do
+--   v <- reportsTab
+--   rid <- getReportId "My Landing Page" v
+--   v' <- editReport (PathPiece rid)
+--   form486Link <- handleMissing "FCC Form 486" v' $ v' ^? landingPageLink "FCC Form 486"
+--   aid <- handleMissing "Action ID" v' $ parseActionId form486Link
+--   pid <- landingPageAction $ PathPiece aid
+--   v'' <- landingPageActionEx $ PathPiece pid
+--   taskId <- getTaskId v''
+--   let tid = PathPiece taskId
+--       typed = TypedText "app.full.right@testmail.usac.org"
+--       un = Identifiers [AppianUsername "app.full.right@testmail.usac.org"]
+--       updates = v'' ^.. runFold (Fold (to (dropdownUpdate "Funding Year" 2) . traverse) <|> Fold (to (textUpdate "Nickname" "PerfTest") . traverse) <|> Fold (to (pickerUpdate "Main Contact Person" un) . traverse) <|> Fold (to (buttonUpdate "Continue") . traverse))
+--   sendUpdate (taskUpdate tid) $ mkUiUpdate (updates) v''
 
 -- form471Intake :: Appian Value
 -- form471Intake = do

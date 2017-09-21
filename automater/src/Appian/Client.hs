@@ -185,6 +185,10 @@ instance Exception MissingComponentException
 
 newtype ValidationsException = ValidationsException { _validationsExc :: ([Text], Value, UiConfig (SaveRequestList Update)) }
 
+validationsExc :: Functor f => (([Text], Value, UiConfig (SaveRequestList Update))-> f (([Text], Value, UiConfig (SaveRequestList Update)))) -> ValidationsException -> f (ValidationsException)
+validationsExc = lens _validationsExc f
+  where
+    f exc tpl = exc { _validationsExc = tpl }
 -- makeLenses ''ValidationsException
 
 instance Show ValidationsException where
@@ -247,10 +251,10 @@ sendPicker f pathPiece label uname v = handleMissing label v =<< (sequence $ f p
     up = join $ mkUpdate <$> (_Just . pwValue . _JSON .~ uname $ apd) <*> pure v
     apd = v ^? getPickerWidget label
 
-pickerUpdate :: Text -> AppianPickerData -> Value -> Maybe Update
-pickerUpdate label uname v = toUpdate <$> (_Just . pwValue .~ toJSON uname $ apd)
+pickerUpdate :: Text -> AppianPickerData -> Value -> Either Text Update
+pickerUpdate label uname v = toUpdate <$> (_Right . pwValue .~ toJSON uname $ apd)
   where
-    apd = v ^? getPickerWidget label
+    apd = maybeToEither ("Could not find PickerField " <> tshow label) $ v ^? getPickerWidget label
 
 paragraphUpdate :: Text -> Text -> Value -> Either Text Update
 paragraphUpdate label txt v = toUpdate <$> (_Right . pgfValue .~ txt $ pgf)
@@ -270,15 +274,22 @@ gridFieldDynLinkUpdate :: Text -> Value -> Either Text Update
 gridFieldDynLinkUpdate column v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? getGridFieldCell . traverse . gfColumns . at column . traverse . _TextCellDynLink . _2 . traverse)
 
 sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian Value
-sendUpdate _ (Left msg) = throwM $ BadUpdateException msg Nothing
-sendUpdate f (Right x) = do
+sendUpdate f update = do
+  eRes <- sendUpdate' f update
+  case eRes of
+    Left v -> throwM v
+    Right res -> return res
+
+sendUpdate' :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian (Either ValidationsException Value)
+sendUpdate' _ (Left msg) = throwM $ BadUpdateException msg Nothing
+sendUpdate' f (Right x) = do
   eV <- tryAny $ f x
   case eV of
     Left exc -> throwM $ ServerException (exc, x)
     Right v ->
       case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
-        [] -> return v
-        l -> throwM $ ValidationsException (l, v, x)
+        [] -> return $ Right v
+        l -> return $ Left $ ValidationsException (l, v, x)
 
 handleMissing :: Text -> Value -> Maybe a -> Appian a
 handleMissing label v Nothing = throwM $ BadUpdateException label (Just v)
@@ -344,8 +355,16 @@ resultToEither (Success a) = Right a
 --       updates = v ^.. runFold f
 --   handleMissing "UpdateList" $ mkUiUpdate (SaveRequestList updates) v
 
+                             -- This is a horrible hack until I can figure out a better way to handle this.
 sendUpdates :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value
 sendUpdates label f v = do
+  eRes <- sendUpdates' label f v
+  case eRes of
+    Left v -> throwM v
+    Right res -> return res
+
+sendUpdates' :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian (Either ValidationsException Value)
+sendUpdates' label f v = do
   taskId <- getTaskId v
   updates <- liftIO $ v ^!! runMonadicFold f
   let tid = PathPiece taskId
@@ -354,7 +373,7 @@ sendUpdates label f v = do
   case errors of
     [] -> do
       start <- liftIO $ getCurrentTime
-      res <- sendUpdate (taskUpdate tid) $ mkUiUpdate (rights updates) v
+      res <- sendUpdate' (taskUpdate tid) $ mkUiUpdate (rights updates) v
       end <- liftIO $ getCurrentTime
       let elapsed = diffUTCTime end start
       atomically $ writeTChan logChan $ Msg $ intercalate ","

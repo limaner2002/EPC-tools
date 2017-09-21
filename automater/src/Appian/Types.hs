@@ -146,13 +146,23 @@ data DropdownField = DropdownField
 
 data CheckboxGroup = CheckboxGroup
   { _cbgSaveInto :: [Text]
-  , _cbgDisabled :: Bool
-  , _cbgAccessibilityLabel :: Text
+  , _cbgDisabled :: Maybe Bool
+  , _cbgAccessibilityLabel :: Maybe Text
   , _cbgCid :: Text
   , _cbgKeyboard :: Maybe Text
   , _cbgAlign :: Text
   , _cbgChoices :: [Text]
   , _cbgChoiceLayout :: Text
+  , _cbgValue :: Maybe [Int]
+  } deriving Show
+
+data RadioButtonField = RadioButtonField
+  { _rdgSaveInto :: [Text]
+  , _rdgCid :: Text
+  , _rdgRequired :: Maybe Bool
+  , _rdgChoices :: [Text]
+  , _rdgChoiceLayout :: Text
+  , _rdgValue :: Maybe AppianInt
   } deriving Show
 
 data ButtonWidget = ButtonWidget
@@ -332,6 +342,7 @@ makeLenses ''DynamicLink
 makeLenses ''PagingInfo
 makeLenses ''SortField
 makeLenses ''GridSelection
+makeLenses ''RadioButtonField
 
 makePrisms ''GridFieldCell
 
@@ -367,14 +378,36 @@ instance FromJSON CheckboxGroup where
     where
       mkField = CheckboxGroup
         <$> o .: "saveInto"
-        <*> o .: "disabled"
-        <*> o .: "accessibilityLabel"
+        <*> o .:? "disabled"
+        <*> o .:? "accessibilityLabel"
         <*> o .: "_cId"
         <*> o .:? "keyboard"
         <*> o .: "align"
         <*> o .: "choices"
         <*> o .: "choiceLayout"
+        <*> o .:? "value"
   parseJSON _ = fail "Could not parse CheckboxGroup"
+
+instance FromJSON RadioButtonField where
+  parseJSON val@(Object o) = parseAppianType "RadioButtonField" mkField val
+    where
+      mkField = RadioButtonField
+        <$> o .: "saveInto"
+        <*> o .: "_cId"
+        <*> o .:? "required"
+        <*> o .: "choices"
+        <*> o .: "choiceLayout"
+        <*> o .:? "value"
+
+instance ToJSON RadioButtonField where
+  toJSON rdg = object
+    [ "saveInto" .= (rdg ^. rdgSaveInto)
+    , "_cId" .= (rdg ^. rdgCid)
+    , "required" .= (rdg ^. rdgRequired)
+    , ("#t", "RadioButtonGroup")
+    , "choices" .= (rdg ^. rdgChoices)
+    , "choiceLayout" .= (rdg ^. rdgChoiceLayout)
+    ]
 
 instance ToJSON CheckboxGroup where
   toJSON cbg = object
@@ -386,6 +419,7 @@ instance ToJSON CheckboxGroup where
     , "choices" .= (cbg ^. cbgChoices)
     , "choiceLayout" .= (cbg ^. cbgChoiceLayout)
     , ("#t", "CheckboxGroup")
+    , "value" .= (cbg ^. cbgValue)
     ]
 
 instance FromJSON ButtonWidget where
@@ -732,7 +766,7 @@ instance ToUpdate CheckboxGroup where
   toUpdate cbg = Update $ object
     [ "_cId" .= (cbg ^. cbgCid)
     , "saveInto" .= (cbg ^. cbgSaveInto)
-    , "value" .= (AppianList [1 :: Int])
+    , "value" .= (AppianList <$> cbg ^. cbgValue)
     , ("saveType", "PRIMARY")
     , "model" .= cbg
     ]
@@ -791,5 +825,11 @@ instance ToUpdate (GridField a) where
     , "value" .= (gf ^. gfSelection)
     ]
 
--- instance ToUpdate a => ToUpdate [a] where
---   toUpdate = fmap toUpdate
+instance ToUpdate RadioButtonField where
+  toUpdate rdg = Update $ object
+    [ "saveInto" .= (rdg ^. rdgSaveInto)
+    , "value" .= (rdg ^. rdgValue)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (rdg ^. rdgCid)
+    , "model" .= rdg
+    ]

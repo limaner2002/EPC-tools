@@ -177,48 +177,6 @@ selectFirst :: Applicative f =>
      (AppianInt -> f AppianInt) -> GridField a0 -> f (GridField a0)
 selectFirst = gfIdentifiers . traverse . taking 1 traverse
 
-paragraphArbitraryUpdate :: (MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> Int -> ReifiedMonadicFold m s (Either Text Update)
-paragraphArbitraryUpdate label size = MonadicFold (paragraphArbitrary label size)
-
-paragraphArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> Int -> (Either a Update -> f (Either a Update)) -> s -> f s
-paragraphArbitrary label size = getParagraphField label . act (fillParagraph size) . to toUpdate . to Right
-
-fillParagraph :: MonadIO m => Int -> ParagraphField -> m ParagraphField
-fillParagraph size pgf = do
-  txt <- generate $ arbitraryTextFixedPrintable size
-  return $ pgfValue .~ txt $ pgf
-
-gridFieldArbitrarySelect :: MonadIO m => ReifiedMonadicFold m Value (Either Text Update)
-gridFieldArbitrarySelect = MonadicFold ( getGridFieldCell
-                                       . act (sequence . fmap gfSelect)
-                                       . to (fmap toUpdate)
-                                       . to resultToEither
-                                       )
-
-gfSelect :: MonadIO m => GridField a -> m (GridField a)
-gfSelect gf = do
-  case gf ^. gfIdentifiers of
-    Nothing -> fail "This grid is not selectable!"
-    Just idents -> do
-      ident <- generate $ QC.elements idents
-      return $ gfSelection . gslSelected .~ [ident] $ gf
-
-textFieldArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> Int -> (Either a Update -> f (Either a Update)) -> s -> f s
-textFieldArbitrary label size = getTextField label . act (fillTextField size) . to toUpdate . to Right
-
-fillTextField :: MonadIO m => Int -> TextField -> m TextField
-fillTextField size tf = do
-  txt <- generate $ arbitraryTextFixedPrintable size
-  return $ tfValue .~ txt $ tf
-
-intFieldArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> (Either a Update -> f (Either a Update)) -> s -> f s
-intFieldArbitrary label = getTextField label . act fillIntField . to toUpdate . to Right
-
-fillIntField :: MonadIO m => TextField -> m TextField
-fillIntField tf = do
-  int <- generate (QC.arbitrarySizedNatural :: Gen Int)
-  return $ tfValue .~ (tshow int) $ tf
-
 logIt :: MonadIO m => Text -> (a -> ByteString) -> a -> m a
 logIt label f x = do
   let fp = "/tmp/" <> unpack label <> ".log"
