@@ -157,7 +157,7 @@ instance FromJSON a => FromJSON (GridField a) where
   parseJSON val@(Object o) = case errors of
                     [] -> GridField dict
                       <$> o .:? "identifiers"
-                      <*> o .: "value"
+                      <*> o .:? "value"
                       <*> pure val
                       <*> o .: "saveInto"
                       <*> o .: "_cId"

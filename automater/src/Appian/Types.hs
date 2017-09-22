@@ -280,7 +280,7 @@ newtype GridWidget a = GridWidget
 data GridField a = GridField
   { _gfColumns :: HashMap Text a
   , _gfIdentifiers :: Maybe [AppianInt]
-  , _gfSelection :: GridSelection
+  , _gfSelection :: Maybe GridSelection
   , _gfModel :: Value
   , _gfSaveInto :: [Text]
   , _gfCid :: Text

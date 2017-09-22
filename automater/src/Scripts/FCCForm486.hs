@@ -15,8 +15,9 @@ import Appian.Client
 import Control.Lens.Action.Reified
 import Scripts.Test
 import Scripts.Common
+import Data.Attoparsec.Text
 
-form486Intake :: Appian Value
+form486Intake :: Appian (Maybe Text)
 form486Intake = do
   let un = Identifiers [AppianUsername "maguilar@orlandodiocese.org"]
   v <- myLandingPageAction "FCC Form 486"
@@ -45,6 +46,7 @@ form486Intake = do
                                               <|> MonadicFold (to (buttonUpdate "Preview"))
                                               )
    >>= sendUpdates "Click Certify" (MonadicFold (to (buttonUpdate "Certify")))
+   >>= \res -> return (res ^? deep (filtered $ has $ key "label" . _String . prefixed "You have successfully") . key "label" . _String . to (parseOnly getNumber) . traverse)
 
 checkboxGroupUpdate :: Text -> [Int] -> Value -> Either Text Update
 checkboxGroupUpdate label selection v = toUpdate <$> (_Right . cbgValue .~ Just selection $ cbg)
@@ -55,3 +57,6 @@ radioButtonFieldUpdate :: Text -> Int -> Value -> Either Text Update
 radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Just (AppianInt selection) $ rdg)
   where
     rdg = maybeToEither ("Could not locate RadioButtonField " <> tshow label) $ v ^? getRadioButtonField label
+
+getNumber :: Parser Text
+getNumber = takeTill (== '#') *> Data.Attoparsec.Text.take 1 *> takeTill (== ' ')

@@ -72,7 +72,7 @@ paragraphArbitrary label size = getParagraphField label . act (fillParagraph siz
 
 fillParagraph :: MonadIO m => Int -> ParagraphField -> m ParagraphField
 fillParagraph size pgf = do
-  txt <- generate $ arbitraryTextFixedPrintable size
+  txt <- generate $ arbitraryTextFixed size
   return $ pgfValue .~ txt $ pgf
 
 gridFieldArbitrarySelect :: MonadIO m => ReifiedMonadicFold m Value (Either Text Update)
@@ -87,7 +87,7 @@ textFieldArbitrary label size = getTextField label . act (fillTextField size) . 
 
 fillTextField :: MonadIO m => Int -> TextField -> m TextField
 fillTextField size tf = do
-  txt <- generate $ arbitraryTextFixedPrintable size
+  txt <- generate $ arbitraryTextFixed size
   return $ tfValue .~ txt $ tf
 
 intFieldArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> (Either a Update -> f (Either a Update)) -> s -> f s
@@ -104,4 +104,4 @@ gfSelect gf = do
     Nothing -> fail "This grid is not selectable!"
     Just idents -> do
       ident <- generate $ QC.elements idents
-      return $ gfSelection . gslSelected .~ [ident] $ gf
+      return $ gfSelection . _Just . gslSelected .~ [ident] $ gf

@@ -151,7 +151,7 @@ validMemberCheckboxes v = do
           refs' = gf ^.. traverse . gfColumns . at "BEN Name" . traverse . _TextCellLink . _2 . traverse . to PathPiece
           idents = gf ^.. traverse . gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i `elem` indices)
           indices = refs ^.. ifolded . filtered (\r -> r `elem` validRefs) . withIndex . _1
-      return (v', _Success . gfSelection . gslSelected .~ idents $ gf)
+      return (v', _Success . gfSelection . _Just . gslSelected .~ idents $ gf)
 
 viewDiscountRates :: PathPiece RecordRef -> Appian Value
 viewDiscountRates rid = do
