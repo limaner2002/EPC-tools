@@ -17,9 +17,9 @@ import Scripts.Test
 import Scripts.Common
 import Data.Attoparsec.Text
 
-form486Intake :: Appian (Maybe Text)
-form486Intake = do
-  let un = Identifiers [AppianUsername "maguilar@orlandodiocese.org"]
+form486Intake :: AppianUsername -> Appian (Maybe Text)
+form486Intake appianUN = do
+  let un = Identifiers [appianUN]
   v <- myLandingPageAction "FCC Form 486"
 
   v' <- case v ^? hasKeyValue "label" "Existing Organizations" of

@@ -17,6 +17,7 @@ import Scripts.CreateCSCase
 import Scripts.FCCForm486
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
+import Appian.Types (AppianUsername (..))
 import Servant.Client
 import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
@@ -71,7 +72,8 @@ runScript (Form486 script userFile) baseUrl _ fp nThreads = do
   (_, res) <- concurrently (loggingFunc fp)
               (do
                   atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (\login -> tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ take nThreads logins
+                  results <- mapConcurrently (\login -> tryAny $ runAppian (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
+                  atomically $ writeTChan logChan Done
                   return results
               )
   dispResults res
@@ -174,7 +176,7 @@ urlParser = BaseUrl
 data Script
   = CSScript (Appian Text)
   | Form471 (Appian Value)
-  | Form486 (Appian (Maybe Text)) FilePath
+  | Form486 (AppianUsername -> Appian (Maybe Text)) FilePath
 
 scriptParser :: ReadM Script
 scriptParser = do
