@@ -32,7 +32,7 @@ import qualified Data.Csv as Csv
 data Login = Login
   { _username :: Text
   , _password :: Text
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Read)
 
 makeLenses ''Login
 
@@ -40,6 +40,12 @@ instance Csv.FromNamedRecord Login where
   parseNamedRecord r = Login
     <$> r Csv..: "username"
     <*> r Csv..: "password"
+
+instance Csv.ToRecord Login where
+  toRecord login = Csv.record
+    [ Csv.toField $ login ^. username
+    , Csv.toField $ login ^. password
+    ]
 
 newtype LoginCj = LoginCj CookieJar
   deriving (Show, Eq, Read, Monoid)
