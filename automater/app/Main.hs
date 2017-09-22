@@ -131,7 +131,7 @@ toQueryMap l = mapFromList $ l ^.. traverse . traverse . filtered (\l' -> length
 --   print res
 
 main :: IO ()
-main = join $ execParser scriptsInfo
+main = join $ execParser commandsInfo
 
 -- main :: IO ()
 -- main = do

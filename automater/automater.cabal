@@ -22,6 +22,8 @@ library
                      , Scripts.Opts
                      , Scripts.CreateCSCase
                      , Scripts.Test
+                     , Scripts.Common
+                     , Scripts.FCCForm486
   build-depends:       base
                      , lens
                      , aeson

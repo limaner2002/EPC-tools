@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE GADTs #-}
 
-module Scripts.Opts
-  ( scriptsInfo
+module Scripts.Opts -- where
+  ( commandsInfo
   , runScript
   , Script (..)
   ) where
@@ -13,6 +14,7 @@ import Options.Applicative.Types
 
 import Scripts.FCCForm471
 import Scripts.CreateCSCase
+import Scripts.FCCForm486
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
 import Servant.Client
@@ -58,6 +60,30 @@ runScript (Form471 script) baseUrl username fp nThreads = do
                   return results
               )
   dispResults res
+runScript (Form486 script userFile) baseUrl _ fp nThreads = do
+  putStrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
+  putStrLn "\n********************************************************************************\n"
+  putStrLn "Waiting for 2 mins. Does the above look correct?"
+  threadDelay (120000000)
+  putStrLn "Starting 486 intake now!"
+  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+  logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
+  (_, res) <- concurrently (loggingFunc fp)
+              (do
+                  atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
+                  results <- mapConcurrently (\login -> tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ take nThreads logins
+                  return results
+              )
+  dispResults res
+
+run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
+run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
+  where
+    run486Intake (run, nUsers) = runScript (Form486 form486Intake userFp) baseUrl mempty logFp nUsers
+      where
+        userFp = fpPrefix <> suffix
+        logFp = logFilePrefix <> suffix
+        suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
 setTimeout timeout settings = settings { managerResponseTimeout = timeout }
@@ -72,11 +98,6 @@ dispResults results = do
   putStrLn $ "Successfully executed: " <> tshow (length successes)
   putStrLn $ "Appian Errors: " <> tshow (length appianErrors)
   putStrLn $ "Client Errors: " <> tshow (length clientErrors)
-  -- case res of
-  --   Left exc -> print exc
-  --   Right res' -> case res' of
-  --     Left exc -> print exc
-  --     Right _ -> putStrLn "FCC Form 471 created successfully!"
 
     -- This needs to be replaced as soon as ClientM is generalized in servant-client
 loggingFunc :: FilePath -> IO ()
@@ -90,6 +111,18 @@ loggingFunc fp = S.takeWhile isMsg
     isMsg _ = False
     unpackMsg (Msg t) = unpack t
     unpackMsg _ = error "The impossible happened unpacking the log Message!"
+
+commandsInfo :: ParserInfo (IO ())
+commandsInfo = info (helper <*> parseCommands)
+  (  fullDesc
+  <> progDesc "Various scripts written for the EPC system."
+  )
+
+parseCommands :: Parser (IO ())
+parseCommands = subparser
+  (  command "scripts" scriptsInfo
+  <> command "form486Intake" form486Info
+  )
 
 scriptsInfo :: ParserInfo (IO ())
 scriptsInfo = info (helper <*> scriptsParser)
@@ -115,7 +148,7 @@ scriptsParser = runScript
   )
   <*> option auto
   (  long "nThreads"
-  <> short 't'
+  <> short 'n'
   <> help "The number of threads to execute with."
   )
 
@@ -141,6 +174,7 @@ urlParser = BaseUrl
 data Script
   = CSScript (Appian Text)
   | Form471 (Appian Value)
+  | Form486 (Appian (Maybe Text)) FilePath
 
 scriptParser :: ReadM Script
 scriptParser = do
@@ -149,3 +183,44 @@ scriptParser = do
     "cscase" -> return $ CSScript createCSCase
     "form471" -> return $ Form471 form471Intake
     _ -> fail $ show name <> " is not a valid script name!"
+
+form486Info :: ParserInfo (IO ())
+form486Info = info (helper <*> form486Parser)
+  (  fullDesc
+  <> progDesc "Runs the FCC Form 486 intake performance script"
+  )
+
+form486Parser :: Parser (IO ())
+form486Parser = run486Intake
+  <$> urlParser
+  <*> strOption
+  (  long "user-csv-prefix"
+  <> short 'i'
+  )
+  <*> option auto
+  (  long "num-runs"
+  <> short 'n'
+  )
+  <*> option parseManyR
+  (  long "num-users-list"
+  <> short 'u'
+  )
+  <*> logFileParser
+
+parseMany :: ReadM [String]
+parseMany = readerAsk >>= pure . words
+  
+parseManyR :: Read a => ReadM [a]
+parseManyR = parseMany >>= readMany
+  where
+    readMany l = traverse readIt l
+    readIt x = case readMay x of
+      Just y -> return y
+      Nothing -> fail $ "Could not read " <> show x
+
+logFileParser :: Parser String
+logFileParser = strOption
+  (  long "log-file-path"
+  <> short 'l'
+  <> help "The path of the file to write the logs to."
+  )
