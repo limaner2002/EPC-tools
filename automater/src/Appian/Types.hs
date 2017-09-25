@@ -284,6 +284,7 @@ data GridField a = GridField
   , _gfModel :: Value
   , _gfSaveInto :: [Text]
   , _gfCid :: Text
+  , _gfTotalCount :: Int
   } deriving Show
 
 data GridFieldCell

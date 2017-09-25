@@ -38,3 +38,18 @@ addAllFRNsButtonUpdate = MonadicFold (failing (getButtonWith addAllFRNsButton . 
 
 addAllFRNsButton :: Text -> Bool
 addAllFRNsButton label = isPrefixOf "Add all " label && isSuffixOf " FRNs" label
+
+-- foldGridField :: (b -> GridField a -> m b) -> m b -> FoldM m (GridField a) b
+-- foldGridField = 
+
+getNextPage :: GridField a -> Value -> Appian Value
+getNextPage gf = sendUpdates "Next Page" (MonadicFold $ to $ const gf')
+  where
+    gf' = toUpdate <$> (maybeToEither "This is the last page!" $ nextPage gf)
+
+nextPage :: GridField a -> Maybe (GridField a)
+nextPage gf = do
+  pi <- gf ^? gfSelection . traverse .gslPagingInfo
+  let pi' = pgIStartIndex %~ (+batchSize) $ pi
+      batchSize = pi ^. pgIBatchSize
+  return $ gfSelection . traverse . gslPagingInfo .~ pi' $ gf

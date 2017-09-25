@@ -161,6 +161,7 @@ instance FromJSON a => FromJSON (GridField a) where
                       <*> pure val
                       <*> o .: "saveInto"
                       <*> o .: "_cId"
+                      <*> o .: "totalCount"
                     l -> fail $ intercalate "\n" l
     where
       results = val ^.. gridFieldColumns

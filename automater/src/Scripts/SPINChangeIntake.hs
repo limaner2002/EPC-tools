@@ -35,7 +35,7 @@ spinChangeIntake = do
     >>= sendUpdates "Add All FRNs Button & Continue" (addAllFRNsButtonUpdate
                                                       <|> MonadicFold (to (buttonUpdate "Continue"))
                                                      )
-    >>= sendUpdates "Select Reason" (MonadicFold (to (dropdownUpdate "Please select the reason why you would like to change the service provider on the FRN(s)" 2))
-                                    <|> MonadicFold (to (pickerUpdate "New Service Provider Information Number (SPIN)" "143000824"))
-                                    )
+    -- >>= sendUpdates "Select Reason" (MonadicFold (to (dropdownUpdate "Please select the reason why you would like to change the service provider on the FRN(s)" 2))
+    --                                 <|> MonadicFold (to (pickerUpdate "New Service Provider Information Number (SPIN)" "143000824"))
+    --                                 )
 
