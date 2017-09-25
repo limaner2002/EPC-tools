@@ -10,6 +10,7 @@ module Appian.Types where
 
 import ClassyPrelude
 import Data.Aeson
+import Data.Aeson.Lens
 import Data.Aeson.Types
 import Control.Lens hiding ((.=))
 import Control.Arrow ((>>>), arr)
@@ -254,6 +255,11 @@ data DynamicLink = DynamicLink
   , _dylLabel :: Text
   } deriving Show
 
+data GridValue
+  = Selectable GridSelection
+  | NonSelectable PagingInfo
+  deriving Show
+
 data GridSelection = GridSelection
   { _gslSelected :: [AppianInt]
   , _gslPagingInfo :: PagingInfo
@@ -280,17 +286,28 @@ newtype GridWidget a = GridWidget
 data GridField a = GridField
   { _gfColumns :: HashMap Text a
   , _gfIdentifiers :: Maybe [AppianInt]
-  , _gfSelection :: Maybe GridSelection
+  , _gfSelection :: Maybe GridValue
   , _gfModel :: Value
   , _gfSaveInto :: [Text]
   , _gfCid :: Text
   , _gfTotalCount :: Int
   } deriving Show
 
+-- This needs to be updated to better reflect the actual SAIL component.
 data GridFieldCell
   = TextCell (Vector Text)
   | TextCellLink (Vector Text, Vector RecordRef)
   | TextCellDynLink (Vector Text, Vector DynamicLink)
+  | ImageColumn (Vector ImageCell)
+  deriving Show
+
+data ImageCell = ImageCell
+  { _imgDocument :: CollaborationDocument
+  , _imgOpaqueId :: Text
+  , _imgCid :: Text
+  } deriving Show
+
+newtype CollaborationDocument = CollaborationDocument { _docId :: Int }
   deriving Show
 
 newtype RecordRef = RecordRef Text
@@ -344,8 +361,11 @@ makeLenses ''PagingInfo
 makeLenses ''SortField
 makeLenses ''GridSelection
 makeLenses ''RadioButtonField
+makeLenses ''ImageCell
+makeLenses ''CollaborationDocument
 
 makePrisms ''GridFieldCell
+makePrisms ''GridValue
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith "DropdownField" (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -556,12 +576,13 @@ instance ToJSON AppianDate where
     , "#v" .= (apd ^. appianDate)
     ]
 
-instance ToJSON GridSelection where
-  toJSON gsl = object
+instance ToJSON GridValue where
+  toJSON (Selectable gsl) = object
     [ "selected" .= (gsl ^. gslSelected)
     , ("#t", "GridSelection")
     , "pagingInfo" .= (gsl ^. gslPagingInfo)
     ]
+  toJSON (NonSelectable pi) = _Object . at "#t" .~ (Just $ String "PagingInfo") $ toJSON pi
 
 instance ToJSON PagingInfo where
   toJSON pgI = object
@@ -596,6 +617,33 @@ instance ToJSON a => ToJSON (UiConfig a) where
     , ("#t", "UiConfig")
     , "updates" .= (ui ^. uiUpdates)
     ]
+
+instance ToJSON ImageCell where
+  toJSON img = object
+    [ "_opaqueId" .= (img ^. imgOpaqueId)
+    , "_cId" .= (img ^. imgCid)
+    , "document" .= (img ^. imgDocument)
+    ]
+
+instance ToJSON CollaborationDocument where
+  toJSON doc = object
+    [ "id" .= (doc ^. docId)
+    , ("#t", "DocumentImage")
+    ]
+
+instance FromJSON CollaborationDocument where
+  parseJSON val@(Object o) = parseAppianType "CollaborationDocument" mkDoc val
+    where
+      mkDoc = CollaborationDocument <$> o .: "id"
+
+instance FromJSON ImageCell where
+  parseJSON val@(Object o) = parseAppianType "DocumentImage" mkCell val
+    where
+      mkCell = ImageCell
+        <$> o .: "document"
+        <*> o .: "_opaqueId"
+        <*> o .: "_cId"
+  parseJSON _ = fail "Could not parse DocumentImage"
 
 instance FromJSON a => FromJSON (UiConfig a) where
   parseJSON val@(Object o) = parseAppianType "UiConfig" mkConfig val
@@ -704,12 +752,19 @@ instance FromJSON AppianDate where
               Nothing -> fail $ "Decoding AppianDate: Invalid date format " <> show dateString
               Just d -> AppianDate <$> parseJSON (String d)
 
-instance FromJSON GridSelection where
-  parseJSON val@(Object o) = parseAppianType "GridSelection" mkField val
+instance FromJSON GridValue where
+  parseJSON val@(Object o) = parseSelection <|> parsePaging
     where
-      mkField = GridSelection
-        <$> o .: "selected"
-        <*> o .: "pagingInfo"
+      parseSelection = parseAppianType "GridSelection" mkField val
+        where
+          mkField = Selectable
+            <$> (GridSelection
+                 <$> o .: "selected"
+                 <*> o .: "pagingInfo"
+                )
+      parsePaging = parseAppianType "PagingInfo" mkField val
+        where
+          mkField = NonSelectable <$> parseJSON val
 
 instance FromJSON PagingInfo where
   parseJSON (Object o) = PagingInfo

@@ -77,6 +77,9 @@ getGridField = hasType "GridField" . to fromJSON
 getGridFieldCell :: (Contravariant f, Applicative f) => (Result (GridField GridFieldCell) -> f (Result (GridField GridFieldCell))) -> Value -> f Value
 getGridFieldCell = getGridField
 
+getGridFieldValue :: (Contravariant f, Applicative f) => (Result (GridField Value) -> f (Result (GridField Value))) -> Value -> f Value
+getGridFieldValue = getGridField
+
 getGridFieldRecordRefs :: (Applicative f, Contravariant f) => Text -> (Vector RecordRef -> f (Vector RecordRef)) -> Value -> f Value
 getGridFieldRecordRefs column = getGridFieldCell . traverse . gfColumns . at column . traverse . _TextCellLink . _2
 
@@ -173,6 +176,7 @@ instance FromJSON GridFieldCell where
         (TextCellLink <$> ((,) <$> o .: "data" <*> o .: "links"))
     <|> (TextCellDynLink <$> ((,) <$> o .: "data" <*> o .: "links"))
     <|> (TextCell <$> o .: "data")
+    <|> (ImageColumn <$> o .: "data")
   parseJSON _ = fail "Could not parse GridFieldCell: Expecting JSON Object but got something else."
 
 instance FromJSON a => FromJSON (TabButtonGroup a) where

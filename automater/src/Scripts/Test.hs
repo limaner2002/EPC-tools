@@ -104,4 +104,4 @@ gfSelect gf = do
     Nothing -> fail "This grid is not selectable!"
     Just idents -> do
       ident <- generate $ QC.elements idents
-      return $ gfSelection . _Just . gslSelected .~ [ident] $ gf
+      return $ gfSelection . _Just . _Selectable . gslSelected .~ [ident] $ gf

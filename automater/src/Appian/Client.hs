@@ -331,7 +331,7 @@ gridFieldUpdate index v = update
     rUpdate = do
       g <- gf
       ident' <- ident
-      return $ toUpdate (gfSelection . _Just . gslSelected %~ (ident' :) $ g)
+      return $ toUpdate (gfSelection . _Just . _Selectable . gslSelected %~ (ident' :) $ g)
     update = case rUpdate of
       Error msg -> Left $ "gridFieldUpdate: " <> pack msg
       Success upd -> Right upd

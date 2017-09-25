@@ -45,6 +45,7 @@ form486Intake appianUN = do
                                               <|> MonadicFold (to (radioButtonFieldUpdate "" 1))
                                               <|> MonadicFold (to (buttonUpdate "Preview"))
                                               )
+   >>= handleWaiver
    >>= sendUpdates "Click Certify" (MonadicFold (to (buttonUpdate "Certify")))
    >>= \res -> return (res ^? deep (filtered $ has $ key "label" . _String . prefixed "You have successfully") . key "label" . _String . to (parseOnly getNumber) . traverse)
 
@@ -60,3 +61,11 @@ radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Ju
 
 getNumber :: Parser Text
 getNumber = takeTill (== '#') *> Data.Attoparsec.Text.take 1 *> takeTill (== ' ')
+
+handleWaiver :: Value -> Appian Value
+handleWaiver v = do
+  case v ^? getRadioButtonField "Waiver Clarification" of
+    Nothing -> return v
+    Just _ -> sendUpdates "Waiver Clarification" (MonadicFold (to $ radioButtonFieldUpdate "Waiver Clarification" 1)
+                                                 <|> MonadicFold (to (buttonUpdate "Preview"))
+                                                 ) v

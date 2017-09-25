@@ -16,7 +16,7 @@ import Control.Lens.Action.Reified
 import Scripts.Test
 import Scripts.Common
 
-spinChangeIntake :: Appian Value
+spinChangeIntake :: Appian ()
 spinChangeIntake = do
   let un = Identifiers [AppianUsername "kyle.davie@fwisd.org"]
 
@@ -35,6 +35,11 @@ spinChangeIntake = do
     >>= sendUpdates "Add All FRNs Button & Continue" (addAllFRNsButtonUpdate
                                                       <|> MonadicFold (to (buttonUpdate "Continue"))
                                                      )
+    >>= foldGridField (MonadicFold (getGridFieldCell . traverse)) (\_ gf -> liftIO $ print $ gf ^? gfSelection . traverse) ()
+    -- >>= (\v -> do
+    --         gf <- handleMissing "GridField" v $ v ^? getGridFieldValue . traverse
+    --         getNextPage gf v
+    --     )
     -- >>= sendUpdates "Select Reason" (MonadicFold (to (dropdownUpdate "Please select the reason why you would like to change the service provider on the FRN(s)" 2))
     --                                 <|> MonadicFold (to (pickerUpdate "New Service Provider Information Number (SPIN)" "143000824"))
     --                                 )

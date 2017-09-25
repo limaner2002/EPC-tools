@@ -12,6 +12,7 @@ import Appian.Types
 import Appian.Instances
 import Appian.Lens
 import Appian.Client
+import Control.Lens.Action
 import Control.Lens.Action.Reified
 import Scripts.Test
 
@@ -19,7 +20,6 @@ handleValidations :: Either ValidationsException Value -> Appian Value
 handleValidations (Right v) = return v
 handleValidations (Left ve) = case ve ^. validationsExc . _1 of
   ["You must associate at least one Funding Request"] -> do
-    liftIO $ writeFile "/tmp/update.json" $ ve ^. validationsExc . _3 . to (toStrict . encode)
     return $ ve ^. validationsExc . _2
   _ -> throwM ve
 
@@ -42,6 +42,27 @@ addAllFRNsButton label = isPrefixOf "Add all " label && isSuffixOf " FRNs" label
 -- foldGridField :: (b -> GridField a -> m b) -> m b -> FoldM m (GridField a) b
 -- foldGridField = 
 
+-- getAllPages :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> b) -> b -> Value -> Appian b
+-- getAllPages fold f b v = loop accum
+--   where
+--     loop accum = do
+--       gf <- v ^!! runMonadicFold fold
+--       case nextPage gf of
+--         Nothing -> return $ f accum v
+--         Just gf' -> do
+          
+foldGridField :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian b) -> b -> Value -> Appian b
+foldGridField fold f b v = loop b v
+  where
+    loop accum val = do
+      gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
+      case nextPage gf of
+        Nothing -> f accum gf
+        Just _ -> do
+          liftIO $ putStrLn $ "Getting the next page!"
+          accum' <- f accum gf
+          loop accum' =<< getNextPage gf val
+
 getNextPage :: GridField a -> Value -> Appian Value
 getNextPage gf = sendUpdates "Next Page" (MonadicFold $ to $ const gf')
   where
@@ -49,7 +70,9 @@ getNextPage gf = sendUpdates "Next Page" (MonadicFold $ to $ const gf')
 
 nextPage :: GridField a -> Maybe (GridField a)
 nextPage gf = do
-  pi <- gf ^? gfSelection . traverse .gslPagingInfo
+  pi <- gf ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable
   let pi' = pgIStartIndex %~ (+batchSize) $ pi
       batchSize = pi ^. pgIBatchSize
-  return $ gfSelection . traverse . gslPagingInfo .~ pi' $ gf
+  case pi' ^. pgIStartIndex > gf ^. gfTotalCount of
+    True -> Nothing
+    False -> return $ gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable .~ pi' $ gf
