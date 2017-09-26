@@ -310,7 +310,7 @@ data GridField a = GridField
 
 -- This needs to be updated to better reflect the actual SAIL component.
 data GridFieldCell
-  = TextCell (Vector Text)
+  = TextCell (Vector (Maybe Text))
   | TextCellLink (Vector Text, Vector RecordRef)
   | TextCellDynLink (Vector Text, Vector DynamicLink)
   | ImageColumn (Vector ImageCell)
@@ -658,7 +658,7 @@ instance FromJSON ImageCell where
         <$> o .: "document"
         <*> o .: "_opaqueId"
         <*> o .: "_cId"
-  parseJSON _ = fail "Could not parse DocumentImage"
+  parseJSON _ = fail $ "Could not parse DocumentImage"
 
 instance FromJSON a => FromJSON (UiConfig a) where
   parseJSON val@(Object o) = parseAppianType "UiConfig" mkConfig val
@@ -821,7 +821,6 @@ instance ToUpdate ButtonWidget where
     , "value" .= (bw ^. bwValue)
     , "saveInto" .= (bw ^. bwSaveInto)
     , ("saveType", "PRIMARY")
-    , ("blocking", Bool False)
     ]
 
 instance ToUpdate DropdownField where

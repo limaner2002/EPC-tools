@@ -41,26 +41,8 @@ addAllFRNsButtonUpdate = MonadicFold (failing (getButtonWith addAllFRNsButton . 
 addAllFRNsButton :: Text -> Bool
 addAllFRNsButton label = isPrefixOf "Add all " label && isSuffixOf " FRNs" label
 
--- foldGridField :: (b -> GridField a -> m b) -> m b -> FoldM m (GridField a) b
--- foldGridField = 
-
--- getAllPages :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> b) -> b -> Value -> Appian b
--- getAllPages fold f b v = loop accum
---   where
---     loop accum = do
---       gf <- v ^!! runMonadicFold fold
---       case nextPage gf of
---         Nothing -> return $ f accum v
---         Just gf' -> do
-          
--- foldGridField :: Foldable f => ReifiedMonadicFold Appian Value (GridField (f a)) -> (b -> a -> Appian b) -> b -> Text -> Value -> Appian b
--- foldGridField fold f b column val = do
---   gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
---   col <- handleMissing ("GridField column " <> tshow column) val $ gf ^. gfColumns . at column
---   F.foldlM f b col
-
-foldGridField :: (b -> a -> Appian b) -> Text -> Value -> b -> GridField a -> Appian b
-foldGridField f column val b gf = do
+foldGridField :: (b -> a -> Appian b) -> Text -> b -> GridField a -> Appian b
+foldGridField f column b gf = do
   let col = gf ^.. gfColumns . at column . traverse
   F.foldlM f b col
 
@@ -72,8 +54,8 @@ foldGridFieldPages fold f b v = loop b v
       case nextPage gf of
         Nothing -> f accum gf
         Just _ -> do
-          liftIO $ putStrLn $ "Getting the next page!"
           accum' <- f accum gf
+          liftIO $ putStrLn $ "Getting the next page!"
           loop accum' =<< getNextPage gf val
 
 getNextPage :: GridField a -> Value -> Appian Value

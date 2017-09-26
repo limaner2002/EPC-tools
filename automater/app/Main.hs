@@ -151,11 +151,11 @@ assignedPostCommit =
   where
     rid = PathPiece $ ReportId "yMOz4g"
 
-executeRelatedAction :: Text -> PathPiece RecordRef -> Appian (Maybe Value)
-executeRelatedAction action rid = do
-  v <- recordActions rid
-  let url = v ^? hasKeyValue "title" action . deep (hasKeyValue "title" "Execute related action") . key "href" . _String . to (stripPrefix "https://portal-test3.appiancloud.com") . traverse
-  sequence $ relatedActionEx <$> url
+-- executeRelatedAction :: Text -> PathPiece RecordRef -> Appian (Maybe Value)
+-- executeRelatedAction action rid = do
+--   v <- recordActions rid
+--   let url = v ^? hasKeyValue "title" action . deep (hasKeyValue "title" "Execute related action") . key "href" . _String . to (stripPrefix "https://portal-test3.appiancloud.com") . traverse
+--   sequence $ relatedActionEx <$> url
 
 cancelTask :: TaskId -> Appian Value
 cancelTask tid = do

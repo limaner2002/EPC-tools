@@ -59,11 +59,14 @@ type TaskUpdate update = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Heade
   :> PathPiece TaskId :> "form" :> ReqBody '[AppianTV] (UiConfig update) :> AppianCsrfToken :> Post '[AppianTVUI] Value
 type ReportsTab = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> "reports" :> AppianCsrfToken :> Get '[AtomApplication, JSON] Value
 type EditReport = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> PathPiece ReportId :> "view" :> AppianCsrfToken :> Get '[AppianTVUI] Value
-type UIUpdate update = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> PathPiece ReportId :> "view" :> ReqBody '[AppianTV] (UiConfig update) :> AppianCsrfToken :> Post '[AppianTVUI] Value
-type RelatedActionEx = Header "X-Appian-Features" Text :> Url :> EmptyAppianTV :> AppianCsrfToken :> Post '[AppianTVUI] Value
+type UIUpdate update = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
+  :> PathPiece ReportId :> "view" :> ReqBody '[AppianTV] (UiConfig update) :> AppianCsrfToken :> Post '[AppianTVUI] Value
+-- type RelatedActionEx = Header "X-Appian-Features" Text :> Url :> EmptyAppianTV :> AppianCsrfToken :> Post '[AppianTVUI] Value
 type AvailableActions = "suite" :> "api" :> "tempo" :> "open-a-case" :> "available-actions" :> Header "X-Appian-Features" Text :> AppianCsrfToken :> Get '[JSON] Value
 type LandingPageAction = "suite" :> "api" :> "tempo" :> "open-a-case" :> "action" :> PathPiece ActionId :> AppianCsrfToken :> Get '[JSON] ProcessModelId
 type LandingPageActionEx = "suite" :> "rest" :> "a" :> "model" :> "latest" :> PathPiece ProcessModelId :> EmptyAppianTV :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> AppianCsrfToken :> Post '[AppianTVUI] Value
+type RelatedActionEx = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "action" :> PathPiece ActionId :> EmptyAppianTV
+   :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> AppianCsrfToken :> Post '[AppianTVUI] Value
 
 type API = TestAPI
   :<|> LoginAPI
@@ -114,7 +117,7 @@ taskStatus tid = AppianT (taskStatus_ (Just ("ceebc" :: Text)) (Just "stateful")
 reportsTab = AppianT reportsTab_
 editReport rid = AppianT (editReport_ rid)
 recordActions rid = AppianT (viewRecordEntry_ rid (PathPiece $ Dashboard "actions"))
-relatedActionEx url = AppianT (relatedActionEx_ (Just "ceebc") url)
+relatedActionEx rid aid = AppianT (relatedActionEx_ rid aid (Just "ceebc") (Just "stateful") (Just "TEMPO"))
 actionsTab = AppianT (actionsTab_ (Just "e4bc"))
 landingPageAction aid = AppianT (landingPageAction_ aid)
 landingPageActionEx pid = AppianT (landingPageActionEx_ pid (Just "ceebc") (Just "stateful") (Just "TEMPO"))
@@ -127,7 +130,7 @@ taskUpdate tid ui = AppianT (taskUpdate_ tid ui)
 uiUpdate :: ToJSON update => PathPiece ReportId -> UiConfig update -> Appian Value
 uiUpdate rid ui = AppianT (uiUpdate_ rid ui)
   where
-    uiUpdate_ = client (Proxy :: ToJSON update => Proxy (UIUpdate update))
+    uiUpdate_ = client (Proxy :: ToJSON update => Proxy (UIUpdate update)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO")
 
 getCurrentTaskIds :: Appian [Text]
 getCurrentTaskIds = do
@@ -136,6 +139,9 @@ getCurrentTaskIds = do
 
 getTaskIds :: (Contravariant f, AsValue s, Plated s, Applicative f) => (Text -> f Text) -> s -> f s
 getTaskIds = deep (key "entries") . _Array . traverse . key "id" . _String . to (stripPrefix "t-") . _Just
+
+getRelatedActionId :: (Contravariant f, Applicative f, Plated s, AsValue s) => Text -> (ActionId -> f ActionId) -> s -> f s
+getRelatedActionId action = hasKeyValue "title" action . deep (hasKeyValue "title" "Execute related action") . key "href" . _String . to (lastMay . splitElem '/') . traverse . to ActionId
 
 getCloseButton :: (Contravariant f, AsJSON s, AsValue s, Plated s, Applicative f) => (ButtonWidget -> f ButtonWidget) -> s -> f s
 getCloseButton = deep (filtered $ has $ key "label" . _String . filtered (\label -> label == "Close" || label == "Cancel" || label == "Reject" || label == "Discard Form" || label == "Discard Request" || label == "Delete Form")) . _JSON
@@ -283,6 +289,7 @@ sendUpdate f update = do
 sendUpdate' :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian (Either ValidationsException Value)
 sendUpdate' _ (Left msg) = throwM $ BadUpdateException msg Nothing
 sendUpdate' f (Right x) = do
+  writeFile "/tmp/request.json" $ toStrict $ encode $ x
   eV <- tryAny $ f x
   case eV of
     Left exc -> throwM $ ServerException (exc, x)
@@ -363,17 +370,33 @@ sendUpdates label f v = do
     Left v -> throwM v
     Right res -> return res
 
-sendUpdates' :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian (Either ValidationsException Value)
+sendUpdates' :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT ClientM (Either ValidationsException Value)
 sendUpdates' label f v = do
   taskId <- getTaskId v
-  updates <- liftIO $ v ^!! runMonadicFold f
   let tid = PathPiece taskId
+  sendUpdates_ (taskUpdate tid) label f v
+
+sendReportUpdates :: ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value
+sendReportUpdates reportId label f v = do
+  eRes <- sendReportUpdates' reportId label f v
+  case eRes of
+    Left v -> throwM v
+    Right res -> return res
+
+sendReportUpdates' :: ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT ClientM (Either ValidationsException Value)
+sendReportUpdates' reportId label f v = sendUpdates_ (uiUpdate rid) label f v
+  where
+    rid = PathPiece reportId
+
+sendUpdates_ :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian (Either ValidationsException Value)
+sendUpdates_ updateFcn label f v = do
+  updates <- liftIO $ v ^!! runMonadicFold f
+  let errors = lefts updates
       -- updates = v ^.. runFold f
-      errors = lefts updates
   case errors of
     [] -> do
       start <- liftIO $ getCurrentTime
-      res <- sendUpdate' (taskUpdate tid) $ mkUiUpdate (rights updates) v
+      res <- sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
       end <- liftIO $ getCurrentTime
       let elapsed = diffUTCTime end start
       atomically $ writeTChan logChan $ Msg $ intercalate ","

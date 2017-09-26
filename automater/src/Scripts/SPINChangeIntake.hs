@@ -40,7 +40,7 @@ spinChangeIntake = do
     >>= sendUpdates "Add All FRNs Button & Continue" (addAllFRNsButtonUpdate
                                                       <|> MonadicFold (to (buttonUpdate "Continue"))
                                                      )
-    >>= \v -> foldGridFieldPages (MonadicFold (getGridFieldCell . traverse)) (printFRNs v) Null v
+    >>= \v -> foldGridFieldPages (MonadicFold (getGridFieldCell . traverse)) printFRNs Null v
     >>= selectNewSPIN 143000824
     >>= sendUpdates "Click Preview" (MonadicFold (to (dropdownUpdate "Please select the reason why you would like to change the service provider on the FRN(s)" 2))
                                       <|> MonadicFold (to (buttonUpdate "Preview"))
@@ -48,7 +48,7 @@ spinChangeIntake = do
     >>= sendUpdates "Click Submit" (MonadicFold (to (buttonUpdate "Submit")))
     >>= \res -> return (res ^? deep (filtered $ has $ key "#v" . _String . suffixed "has been successfully created") . key "#v" . _String . to parseNumber . traverse)
 
-printFRNs :: Value -> Value -> GridField GridFieldCell -> Appian Value
+printFRNs :: Value -> GridField GridFieldCell -> Appian Value
 printFRNs val = foldGridField (printFRN val) "FRN" val
 
 printFRN :: Value -> Value -> GridFieldCell -> Appian Value
@@ -67,7 +67,7 @@ selectNewSPIN spin val = do
 
 selectOldSPIN :: Value -> Appian Value
 selectOldSPIN v = do
-  spin <- handleMissing "SPIN Column" v $ v ^? getGridFieldCell . traverse . gfColumns . at "SPIN" . traverse . _TextCell . traverse
+  spin <- handleMissing "SPIN Column" v $ v ^? getGridFieldCell . traverse . gfColumns . at "SPIN" . traverse . _TextCell . traverse . _Just
   sendUpdates "Search for FRNs with SPIN" (MonadicFold (to (textUpdate "SPIN" spin))
                                    <|> MonadicFold (to (buttonUpdate "Search"))
                                    ) v

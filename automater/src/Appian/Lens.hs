@@ -29,6 +29,13 @@ hasLabel val = hasKeyValue "label" val . _JSON
 hasLabelWith :: (AsJSON s, AsValue s, Plated s, Applicative f, FromJSON a, ToJSON a) => (Text -> Bool) -> (a -> f a) -> s -> f s
 hasLabelWith f = hasKeyValueWith f "label" . _JSON
 
+hasType :: (Applicative f, Plated s, AsValue s) =>
+     Text -> Over (->) f s s s s
+hasType = hasKeyValue "#t"
+
+hasTypeWith :: (Contravariant f, Applicative f, FromJSON a) => (Text -> Bool) -> (Result a -> f (Result a)) -> Value -> f Value
+hasTypeWith f = hasKeyValueWith f "#t" . to fromJSON
+
 getButton :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (ButtonWidget -> f ButtonWidget) -> s -> f s
 getButton label = deep (filtered (has $ runFold ((,) <$> Fold (key "confirmButtonStyle" . to (const ())) <*> Fold (key "label" . _String . only label)))) . _JSON
 
@@ -72,7 +79,7 @@ getGridWidgetDynLink :: (Contravariant f, Applicative f) => Text -> (DynamicLink
 getGridWidgetDynLink column = getGridWidgetValue . gwVal . traverse . _2 . at column . traverse . key "links" . plate . _JSON
 
 getGridField :: (FromJSON a, Contravariant f, Applicative f) => (Result (GridField a) -> f (Result (GridField a))) -> Value -> f Value
-getGridField = hasType "GridField" . to fromJSON
+getGridField = hasTypeWith (isSuffixOf "GridField")
 
 getGridFieldCell :: (Contravariant f, Applicative f) => (Result (GridField GridFieldCell) -> f (Result (GridField GridFieldCell))) -> Value -> f Value
 getGridFieldCell = getGridField
@@ -109,10 +116,6 @@ prefixed
   :: (Eq (Element a), IsSequence a, Choice p, Applicative f) =>
      a -> p () (f ()) -> p a (f a)
 prefixed a = prism' (\() -> a) $ guard . (isPrefixOf a)
-
-hasType :: (Applicative f, Plated s, AsValue s) =>
-     Text -> Over (->) f s s s s
-hasType = hasKeyValue "#t"
 
 gridWidgetHeaders :: (Applicative f, AsValue t) => (Text -> f Text) -> t -> f t
 gridWidgetHeaders = key "columnHeaders" . plate . key "contents" . plate . key "label" . _String
