@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Scripts.SPINChange where
+module Scripts.SPINChangeIntake where
 
 import ClassyPrelude
 import Control.Lens
@@ -36,11 +36,6 @@ spinChangeIntake = do
                                 <|> MonadicFold (to (buttonUpdate "Continue"))
                                ) v'
     >>= handleValidations
-    -- >>= (\v -> sendUpdates "Search for FRNs with SPIN" (MonadicFold (to (textUpdate "SPIN" "143008158"))
-    --                                <|> MonadicFold (to (buttonUpdate "Search"))
-    --                                ) v
-    --            >> return v
-    --     )
     >>= selectOldSPIN
     >>= sendUpdates "Add All FRNs Button & Continue" (addAllFRNsButtonUpdate
                                                       <|> MonadicFold (to (buttonUpdate "Continue"))

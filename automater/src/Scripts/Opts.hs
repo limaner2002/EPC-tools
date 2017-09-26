@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.Opts -- where
   ( commandsInfo
@@ -15,6 +16,7 @@ import Options.Applicative.Types
 import Scripts.FCCForm471
 import Scripts.CreateCSCase
 import Scripts.FCCForm486
+import Scripts.SPINChangeIntake
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -62,11 +64,11 @@ runScript (Form471 script) baseUrl username fp nThreads = do
               )
   dispResults res
 runScript (Form486 script userFile) baseUrl _ fp nThreads = do
-  putStrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
-  putStrLn "\n********************************************************************************\n"
-  putStrLn "Waiting for 2 mins. Does the above look correct?"
+  stderrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
+  stderrLn "\n********************************************************************************\n"
+  stderrLn "Waiting for 2 mins. Does the above look correct?"
   threadDelay (120000000)
-  putStrLn "Starting 486 intake now!"
+  stderrLn "Starting 486 intake now!"
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
   (_, res) <- concurrently (loggingFunc fp)
@@ -77,6 +79,50 @@ runScript (Form486 script userFile) baseUrl _ fp nThreads = do
                   return results
               )
   dispResults res
+
+data ThreadControl a
+  = Item a
+  | Finished
+
+runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> FilePath -> IO ()
+runSPINIntake script userFile nThreads baseUrl fp = do
+  stderrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
+  stderrLn "\n********************************************************************************\n"
+  stderrLn "Waiting for 2 mins. Does the above look correct?"
+  threadDelay (120000000)
+  stderrLn "Starting SPIN Change intake now!"
+  runSPINIntake script userFile nThreads baseUrl fp
+  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+  chan <- newTChanIO
+  -- logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
+  (_, _) <- concurrently (concurrently
+                            (loggingFunc fp)
+                            (loginProducer userFile chan)
+                           )
+              (do
+                  atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
+                  results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
+                  atomically $ writeTChan logChan Done
+                  return results
+              )
+  putStrLn "Finished with SPIN Change Intake!"
+    where
+      runIt mgr login = do
+        res <- tryAny $ runAppian script (ClientEnv mgr baseUrl) login
+        print res
+
+loginConsumer :: MonadIO m => TChan (ThreadControl a) -> (a -> m ()) -> m ()
+loginConsumer chan f = S.mapM_ f $ S.map tcItem $ S.takeWhile notFinished $ S.repeatM (atomically $ readTChan chan)
+  where
+    notFinished Finished = False
+    notFinished _ = True
+    tcItem (Item a) = a
+    tcItem _ = error "This should have already terminated!"
+
+loginProducer :: (MonadIO m, MonadBaseControl IO m, MonadThrow m) => FilePath -> TChan (ThreadControl Login) -> m ()
+loginProducer fp chan = do
+  csvStreamByName >>> S.map Item >>> S.mapM_ (atomically . writeTChan chan) >>> runResourceT >>> runNoLoggingT $ fp
+  atomically $ writeTChan chan Finished
 
 run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
 run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
@@ -124,6 +170,7 @@ parseCommands :: Parser (IO ())
 parseCommands = subparser
   (  command "scripts" scriptsInfo
   <> command "form486Intake" form486Info
+  <> command "spinChangeIntake" spinChangeInfo
   )
 
 scriptsInfo :: ParserInfo (IO ())
@@ -177,6 +224,7 @@ data Script
   = CSScript (Appian Text)
   | Form471 (Appian Value)
   | Form486 (AppianUsername -> Appian (Maybe Text)) FilePath
+  | SPINChange (Appian Value) FilePath
 
 scriptParser :: ReadM Script
 scriptParser = do
@@ -195,18 +243,28 @@ form486Info = info (helper <*> form486Parser)
 form486Parser :: Parser (IO ())
 form486Parser = run486Intake
   <$> urlParser
-  <*> strOption
-  (  long "user-csv-prefix"
-  <> short 'i'
-  )
+  <*> userParser
   <*> option auto
   (  long "num-runs"
   <> short 'n'
   )
-  <*> option parseManyR
-  (  long "num-users-list"
-  <> short 'u'
+  <*> threadsParser
+  <*> logFileParser
+
+spinChangeInfo :: ParserInfo (IO ())
+spinChangeInfo = info (helper <*> spinChangeParser)
+  (  fullDesc
+  <> progDesc "Runs the SPIN Change intake script."
   )
+
+spinChangeParser :: Parser (IO ())
+spinChangeParser = runSPINIntake spinChangeIntake
+  <$> userParser
+  <*> option auto
+  (  long "num-threads"
+  <> short 't'
+  )
+  <*> urlParser
   <*> logFileParser
 
 parseMany :: ReadM [String]
@@ -226,3 +284,18 @@ logFileParser = strOption
   <> short 'l'
   <> help "The path of the file to write the logs to."
   )
+
+userParser :: Parser FilePath
+userParser = strOption
+  (  long "user-csv-prefix"
+  <> short 'i'
+  )
+
+threadsParser :: Parser [Int]
+threadsParser = option parseManyR
+  (  long "num-users-list"
+  <> short 'u'
+  )
+
+stderrLn :: MonadIO m => Text -> m ()
+stderrLn txt = hPut stderr $ encodeUtf8 txt

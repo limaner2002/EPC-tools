@@ -24,6 +24,7 @@ library
                      , Scripts.Test
                      , Scripts.Common
                      , Scripts.FCCForm486
+                     , Scripts.SPINChangeIntake
   build-depends:       base
                      , lens
                      , aeson
