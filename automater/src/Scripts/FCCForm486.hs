@@ -15,7 +15,6 @@ import Appian.Client
 import Control.Lens.Action.Reified
 import Scripts.Test
 import Scripts.Common
-import Data.Attoparsec.Text
 
 form486Intake :: AppianUsername -> Appian (Maybe Text)
 form486Intake appianUN = do
@@ -47,7 +46,7 @@ form486Intake appianUN = do
                                               )
    >>= handleWaiver
    >>= sendUpdates "Click Certify" (MonadicFold (to (buttonUpdate "Certify")))
-   >>= \res -> return (res ^? deep (filtered $ has $ key "label" . _String . prefixed "You have successfully") . key "label" . _String . to (parseOnly getNumber) . traverse)
+   >>= \res -> return (res ^? deep (filtered $ has $ key "label" . _String . prefixed "You have successfully") . key "label" . _String . to parseNumber . traverse)
 
 checkboxGroupUpdate :: Text -> [Int] -> Value -> Either Text Update
 checkboxGroupUpdate label selection v = toUpdate <$> (_Right . cbgValue .~ Just selection $ cbg)
@@ -55,12 +54,9 @@ checkboxGroupUpdate label selection v = toUpdate <$> (_Right . cbgValue .~ Just 
     cbg = maybeToEither ("Could not locate checkbox group " <> tshow label) $ v ^? getCheckboxGroup label
 
 radioButtonFieldUpdate :: Text -> Int -> Value -> Either Text Update
-radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Just (AppianInt selection) $ rdg)
+radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Just (AppianInteger selection) $ rdg)
   where
     rdg = maybeToEither ("Could not locate RadioButtonField " <> tshow label) $ v ^? getRadioButtonField label
-
-getNumber :: Parser Text
-getNumber = takeTill (== '#') *> Data.Attoparsec.Text.take 1 *> takeTill (== ' ')
 
 handleWaiver :: Value -> Appian Value
 handleWaiver v = do

@@ -183,7 +183,7 @@ scriptParser = do
   name <- readerAsk
   case name of
     "cscase" -> return $ CSScript createCSCase
-    "form471" -> return $ Form471 form471Intake
+    "form471" -> return $ Form471 (form471Intake "143000618")
     _ -> fail $ show name <> " is not a valid script name!"
 
 form486Info :: ParserInfo (IO ())

@@ -15,6 +15,9 @@ import Data.Aeson.Types
 import Control.Lens hiding ((.=))
 import Control.Arrow ((>>>), arr)
 
+newtype AppianInteger = AppianInteger Int
+  deriving (Show, Eq, Num)
+
 newtype AppianInt = AppianInt Int
   deriving (Show, Eq, Num)
 
@@ -33,9 +36,9 @@ newtype AppianBoolean = AppianBoolean Bool
 newtype AppianUsername = AppianUsername Text
   deriving (Show, Eq)
 
-data AppianPickerData
+data AppianPickerData a
   = TypedText Text
-  | Identifiers [AppianUsername]
+  | Identifiers a
   deriving (Show, Eq)
 
 parseAppianTypeWith :: Monad m => Text -> (Text -> Bool) -> m a -> Value -> m a
@@ -51,22 +54,28 @@ parseAppianTypeWith typ pred f (Object o) =
 parseAppianType :: Monad m => Text -> m a -> Value -> m a
 parseAppianType t = parseAppianTypeWith t (isSuffixOf t)
 
-instance FromJSON AppianInt where
-  parseJSON val@(Object o) = parseAppianType "int" mkAppianInt val
+instance FromJSON AppianInteger where
+  parseJSON val@(Object o) = parseAppianType "Integer" mkAppianInteger val
     where
-      mkAppianInt = AppianInt <$> o .: "#v"
+      mkAppianInteger = AppianInteger <$> o .: "#v"
+  parseJSON _ = fail "Could not parse AppianInteger"
+
+instance FromJSON AppianInt where
+  parseJSON val@(Object o) = parseAppianType "int" mkAppianInteger val
+    where
+      mkAppianInteger = AppianInt <$> o .: "#v"
   parseJSON _ = fail "Could not parse AppianInt"
 
 instance FromJSON AppianString where
-  parseJSON val@(Object o) = parseAppianType "string" mkAppianInt val
+  parseJSON val@(Object o) = parseAppianType "string" mkAppianInteger val
     where
-      mkAppianInt = AppianString <$> o .: "#v"
+      mkAppianInteger = AppianString <$> o .: "#v"
   parseJSON _ = fail "Could not parse AppianString"
 
 instance FromJSON AppianText where
-  parseJSON val@(Object o) = parseAppianType "Text" mkAppianInt val
+  parseJSON val@(Object o) = parseAppianType "Text" mkAppianInteger val
     where
-      mkAppianInt = AppianText <$> o .: "#v"
+      mkAppianInteger = AppianText <$> o .: "#v"
   parseJSON _ = fail "Could not parse AppianText"
 
 instance FromJSON AppianUsername where
@@ -75,16 +84,22 @@ instance FromJSON AppianUsername where
       mkUser = AppianUsername <$> o .: "id"
   parseJSON _ = fail "Could not parse AppianUsername"
 
-instance FromJSON AppianPickerData where
+instance FromJSON a => FromJSON (AppianPickerData a) where
   parseJSON val@(Object o) = parseAppianType "PickerData" mkPicker val
     where
       mkPicker = (TypedText <$> o .: "typedText") <|> (Identifiers <$> o .: "identifiers")
   parseJSON _ = fail "Could not parse AppianPickerData"
 
+instance ToJSON AppianInteger where
+  toJSON (AppianInteger n) = object
+    [ "#v" .= n
+    , ("#t", "Integer")
+    ]
+
 instance ToJSON AppianInt where
   toJSON (AppianInt n) = object
     [ "#v" .= n
-    , ("#t", "Integer")
+    , ("#t", "int")
     ]
 
 instance ToJSON (AppianList Int) where
@@ -111,7 +126,7 @@ instance ToJSON AppianUsername where
     , ("#t", "User")
     ]
 
-instance ToJSON AppianPickerData where
+instance ToJSON a => ToJSON (AppianPickerData a) where
   toJSON (TypedText txt) = object
     [ "typedText" .= txt
     , "identifiers" .= Array mempty
@@ -129,9 +144,9 @@ instance ToJSON AppianPickerData where
   --   ]
 
 instance FromJSON AppianBoolean where
-  parseJSON val@(Object o) = parseAppianType "boolean" mkAppianInt val
+  parseJSON val@(Object o) = parseAppianType "boolean" mkAppianInteger val
     where
-      mkAppianInt = AppianBoolean <$> o .: "#v"
+      mkAppianInteger = AppianBoolean <$> o .: "#v"
   parseJSON _ = fail "Could not parse AppianBoolean"
 
 data DropdownField = DropdownField
@@ -163,7 +178,7 @@ data RadioButtonField = RadioButtonField
   , _rdgRequired :: Maybe Bool
   , _rdgChoices :: [Text]
   , _rdgChoiceLayout :: Text
-  , _rdgValue :: Maybe AppianInt
+  , _rdgValue :: Maybe AppianInteger
   } deriving Show
 
 data ButtonWidget = ButtonWidget
@@ -247,11 +262,11 @@ data DatePicker = DatePicker
 data DynamicLink = DynamicLink
   { _dylSaveInto :: [Text]
   , _dylValue :: AppianString
-  , _dylAction :: Text
+  , _dylAction :: Maybe Text
   , _dylCid :: Text
   , _dylTooltip :: Text
-  , _dylConfirmButtonStyle :: Text
-  , _dylValidate :: Text
+  , _dylConfirmButtonStyle :: Maybe Text
+  , _dylValidate :: Maybe Text
   , _dylLabel :: Text
   } deriving Show
 
@@ -733,11 +748,11 @@ instance FromJSON DynamicLink where
       mkDynLink = DynamicLink
         <$> o .: "saveInto"
         <*> o .: "value"
-        <*> o .: "action"
+        <*> o .:? "action"
         <*> o .: "_cId"
         <*> o .: "tooltip"
-        <*> o .: "confirmButtonStyle"
-        <*> o .: "validate"
+        <*> o .:? "confirmButtonStyle"
+        <*> o .:? "validate"
         <*> o .: "label"
 
 instance FromJSON AppianDate where
@@ -813,7 +828,7 @@ instance ToUpdate DropdownField where
   toUpdate df = Update $ object
     [ "_cId" .= (df ^. dfCid)
     , "model" .= df
-    , "value" .= (AppianInt $ df ^. dfValue)
+    , "value" .= (AppianInteger $ df ^. dfValue)
     , "saveInto" .= (df ^. dfSaveInto)
     , ("saveType", "PRIMARY")
     ]

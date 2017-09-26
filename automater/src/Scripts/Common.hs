@@ -15,6 +15,8 @@ import Appian.Client
 import Control.Lens.Action
 import Control.Lens.Action.Reified
 import Scripts.Test
+import qualified Data.Foldable as F
+import Data.Attoparsec.Text
 
 handleValidations :: Either ValidationsException Value -> Appian Value
 handleValidations (Right v) = return v
@@ -51,8 +53,19 @@ addAllFRNsButton label = isPrefixOf "Add all " label && isSuffixOf " FRNs" label
 --         Nothing -> return $ f accum v
 --         Just gf' -> do
           
-foldGridField :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian b) -> b -> Value -> Appian b
-foldGridField fold f b v = loop b v
+-- foldGridField :: Foldable f => ReifiedMonadicFold Appian Value (GridField (f a)) -> (b -> a -> Appian b) -> b -> Text -> Value -> Appian b
+-- foldGridField fold f b column val = do
+--   gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
+--   col <- handleMissing ("GridField column " <> tshow column) val $ gf ^. gfColumns . at column
+--   F.foldlM f b col
+
+foldGridField :: (b -> a -> Appian b) -> Text -> Value -> b -> GridField a -> Appian b
+foldGridField f column val b gf = do
+  let col = gf ^.. gfColumns . at column . traverse
+  F.foldlM f b col
+
+foldGridFieldPages :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian b) -> b -> Value -> Appian b
+foldGridFieldPages fold f b v = loop b v
   where
     loop accum val = do
       gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
@@ -76,3 +89,9 @@ nextPage gf = do
   case pi' ^. pgIStartIndex > gf ^. gfTotalCount of
     True -> Nothing
     False -> return $ gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable .~ pi' $ gf
+
+getNumber :: Parser Text
+getNumber = takeTill (== '#') *> Data.Attoparsec.Text.take 1 *> takeTill (== ' ')
+
+parseNumber :: Text -> Either String Text
+parseNumber = parseOnly getNumber

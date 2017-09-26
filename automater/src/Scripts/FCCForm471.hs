@@ -19,8 +19,8 @@ import qualified Test.QuickCheck as QC
 import Control.Lens.Action
 import Control.Lens.Action.Reified
 
-form471Intake :: Appian Value
-form471Intake = do
+form471Intake :: Text -> Appian Value
+form471Intake spin = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
   v' <- editReport (PathPiece rid)
@@ -77,7 +77,7 @@ form471Intake = do
             -- >>= sendUpdates "Select 470 and Continue" (MonadicFold (to (gridFieldUpdate 0))
             --                  <|> MonadicFold (to (buttonUpdate "Continue"))
             --                 )
-            >>= sendUpdates "SPIN Search" (    MonadicFold (to (textUpdate "Search by SPIN" "143000618"))
+            >>= sendUpdates "SPIN Search" (    MonadicFold (to (textUpdate "Search by SPIN" spin))
                              <|> MonadicFold (to (buttonUpdate "Search"))
                             )
             >>= sendUpdates "Select SPIN and Continue" ( MonadicFold (to (gridFieldUpdate 0))
