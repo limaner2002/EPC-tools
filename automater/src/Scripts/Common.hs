@@ -17,6 +17,9 @@ import Control.Lens.Action.Reified
 import Scripts.Test
 import qualified Data.Foldable as F
 import Data.Attoparsec.Text
+import qualified Streaming.Prelude as S
+import Control.Monad.Logger
+import Control.Arrow
 
 handleValidations :: Either ValidationsException Value -> Appian Value
 handleValidations (Right v) = return v
@@ -46,13 +49,21 @@ foldGridField f column b gf = do
   let col = gf ^.. gfColumns . at column . traverse
   F.foldlM f b col
 
+type Updater = (Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value)
+
     -- Make this use state as soon as the new servant can be used. 
+foldGridFieldPagesReport :: ReportId -> ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian (b, Value)) -> b -> Value -> Appian b
+foldGridFieldPagesReport rid = foldGridFieldPages_ (sendReportUpdates rid)
+
 foldGridFieldPages :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian (b, Value)) -> b -> Value -> Appian b
-foldGridFieldPages fold f b v = loop b v
+foldGridFieldPages = foldGridFieldPages_ sendUpdates
+
+foldGridFieldPages_ :: Updater -> ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian (b, Value)) -> b -> Value -> Appian b
+foldGridFieldPages_ updateFcn fold f b v = loop b v
   where
     loop accum val = do
       gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
-      atomically $ writeTChan logChan $ Msg $ tshow $ gf ^? gfSelection . traverse . _Selectable . gslPagingInfo
+      atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable)
       case nextPage gf gf of
         Nothing -> do
           (accum, _) <- f accum gf
@@ -60,11 +71,12 @@ foldGridFieldPages fold f b v = loop b v
         Just _ -> do
           (accum', val') <- f accum gf
           gf' <- handleMissing "GridField" val' =<< (val' ^!? runMonadicFold fold)
-          atomically $ writeTChan logChan $ Msg $ tshow $ gf' ^? gfSelection . traverse . _Selectable . gslPagingInfo
-          loop accum' =<< getNextPage gf gf' val'
+          atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf' ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable)
+          loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
-getNextPage :: GridField a -> GridField a -> Value -> Appian Value
-getNextPage gf gf' = sendUpdates "Next Page" (MonadicFold $ to $ const gf'')
+getNextPage_ :: Updater
+             -> GridField a -> GridField a -> Value -> Appian Value
+getNextPage_ updateFcn gf gf' = updateFcn "Next Page" (MonadicFold $ to $ const gf'')
   where
     gf'' = toUpdate <$> (maybeToEither "This is the last page!" $ nextPage gf gf')
 
@@ -82,3 +94,40 @@ getNumber = takeTill (== '#') *> Data.Attoparsec.Text.take 1 *> takeTill (== ' '
 
 parseNumber :: Text -> Either String Text
 parseNumber = parseOnly getNumber
+
+data DistributeTask
+  = Produce
+  | Consume
+  deriving Show
+
+distributeTasks :: MonadIO m => TVar DistributeTask -> TChan (ThreadControl a) -> S.Stream (S.Of (ThreadControl a)) m () -> (a -> m b) -> m (Maybe b)
+distributeTasks taskVar chan producer f = do
+  task <- g
+  case task of
+    Produce -> do
+      S.mapM_ (atomically . writeTChan chan) $ producer
+      consumer
+    Consume -> consumer
+  where
+    g = atomically $ do
+      task <- readTVar taskVar
+      case task of
+        Produce -> do
+          writeTVar taskVar Consume
+          return task
+        _ -> return Consume
+    consumer = do
+      tc <- atomically $ readTChan chan
+      case tc of
+        Finished -> return Nothing
+        Item a -> f a >>= pure . Just
+
+data ThreadControl a
+  = Item a
+  | Finished
+
+notFinished Finished = False
+notFinished _ = True
+
+tcItem (Item a) = a
+tcItem _ = error "This should have already terminated!"

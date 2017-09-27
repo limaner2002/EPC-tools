@@ -15,9 +15,11 @@ import Control.Lens.Action.Reified
 import qualified Data.Foldable as F
 import Scripts.Common
 import Scripts.Test
+import qualified Streaming.Prelude as S
 
-initialReview :: Appian Value
-initialReview = do
+-- initialReview :: TVar DistributeTask -> TChan (ThreadControl RecordRef) -> Appian Value
+initialReview :: ReviewConf -> Appian Value
+initialReview conf = do
   v <- reportsTab
   rid <- getReportId "My Assigned Post-Commit Assignments" v
   editReport (PathPiece rid)
@@ -26,9 +28,10 @@ initialReview = do
     >>= sendReportUpdates rid "Select Funding Year" (MonadicFold (to (dropdownUpdate "Funding Year" 2)))
     >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
     >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
-    >>= viewRelatedActions
-    >>= uncurry (executeRelatedAction "Review Request Decision")
---     >>= addDecisions
+    >>= distributeIdentifiers rid conf
+--     >>= viewRelatedActions
+--     >>= uncurry (executeRelatedAction "Review Request Decision")
+    >>= addDecisions
     >>= sendUpdates "Continue to Add Notes" (MonadicFold $ to (buttonUpdate "Continue"))
     >>= addNotes
     >>= sendUpdates "Send to Next Reviewer" (MonadicFold $ to (buttonUpdate "Send to Next Reviewer"))
@@ -36,9 +39,9 @@ initialReview = do
 setAgeSort :: GridField a -> GridField a
 setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortField "secondsSinceRequest" True]
 
-viewRelatedActions :: Value -> Appian (RecordRef, Value)
-viewRelatedActions v = do
-  recordRef <- handleMissing "RecordRef" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
+viewRelatedActions :: Value -> RecordRef -> Appian (RecordRef, Value)
+viewRelatedActions v recordRef = do
+  -- recordRef <- handleMissing "RecordRef" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
   let ref = PathPiece recordRef
   v' <- viewRecordDashboard ref (PathPiece $ Dashboard "summary")
   dashboard <- handleMissing "Related Actions Dashboard" v' $ v' ^? getRecordDashboard "Related Actions"
@@ -106,3 +109,30 @@ makeNote val ident = do
       >>= sendUpdates "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000
                                          <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
                                         )
+
+getAllIdentifiers :: ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) Appian ()
+getAllIdentifiers rid v = do
+  mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumIdentifiers v) (Just mempty) v
+  case mIdents of
+    Nothing -> error "There are no identifiers!"
+    Just idents -> S.each $ fmap Item idents <> pure Finished
+
+accumIdentifiers :: Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> Appian (Maybe (Vector RecordRef), Value)
+accumIdentifiers val l gf = return (l', val)
+  where
+    l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
+
+distributeIdentifiers :: ReportId -> ReviewConf -> Value -> Appian Value
+distributeIdentifiers rid conf v = do
+  gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
+  let execReview = viewRelatedActions v >=> uncurry (executeRelatedAction "Review Request Decision")
+  mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllIdentifiers rid v) execReview
+  handleMissing "Could not select FRN!" v mVal
+
+data ReviewConf = ReviewConf
+  { revTaskVar :: TVar DistributeTask
+  , revChan :: TChan (ThreadControl RecordRef)
+  }
+
+newReviewConf :: IO ReviewConf
+newReviewConf = ReviewConf <$> newTVarIO Produce <*> newTChanIO

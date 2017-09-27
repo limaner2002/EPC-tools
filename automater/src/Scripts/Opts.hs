@@ -18,6 +18,7 @@ import Scripts.FCCForm471
 import Scripts.CreateCSCase
 import Scripts.FCCForm486
 import Scripts.SPINChangeIntake
+import Scripts.InitialReview
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -33,6 +34,7 @@ import Network.HTTP.Client
 import Appian
 import Stats.CsvStream
 import Control.Monad.Logger
+import Scripts.Common
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -54,8 +56,6 @@ runScript (Form471 script) baseUrl username fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
   logins <- S.fst' <$> (csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv")
-  -- let login = Login (pack username) (pack password)
-  --     logins = [login]
   (_, res) <- concurrently (loggingFunc fp)
               ( do
                   atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
@@ -81,10 +81,6 @@ runScript (Form486 script userFile) baseUrl _ fp nThreads = do
               )
   dispResults res
 
-data ThreadControl a
-  = Item a
-  | Finished
-
 runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> FilePath -> IO ()
 runSPINIntake script userFile nThreads baseUrl fp = do
   stderrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
@@ -92,10 +88,8 @@ runSPINIntake script userFile nThreads baseUrl fp = do
   stderrLn "Waiting for 2 mins. Does the above look correct?"
   threadDelay (120000000)
   stderrLn "Starting SPIN Change intake now!"
-  runSPINIntake script userFile nThreads baseUrl fp
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   chan <- newTChanIO
-  -- logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
   (_, _) <- concurrently (concurrently
                             (loggingFunc fp)
                             (loginProducer userFile chan)
@@ -112,13 +106,37 @@ runSPINIntake script userFile nThreads baseUrl fp = do
         res <- tryAny $ runAppian script (ClientEnv mgr baseUrl) login
         print res
 
+runMultiple :: (FilePath -> Int -> IO ()) -> FilePath -> Int -> [Int] -> IO ()
+runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip [1..nRuns] . repeat) nUserList
+  where
+    runScript (run, nUsers) = script logFp nUsers
+      where
+        logFp = logFilePrefix <> suffix
+        suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
+
+runInitialReview :: BaseUrl -> String -> FilePath -> Int -> IO ()
+runInitialReview baseUrl username fp nThreads = do
+  stderrLn $ intercalate " " [tshow baseUrl, pack fp, tshow nThreads]
+  stderrLn "\n********************************************************************************\n"
+  stderrLn "Waiting for 2 mins. Does the above look correct?"
+  threadDelay (120000000)
+  stderrLn "Starting SPIN Change initial review now!"
+  password <- getPassword
+  conf <- newReviewConf
+  let actions = take nThreads $ repeat (initialReview conf)
+      login = Login (pack username) $ pack password
+  atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
+  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+
+  results <- runConcurrently
+    $  Concurrently (loggingFunc fp)
+    *> Concurrently (mapConcurrently (\f -> tryAny $ runAppian f (ClientEnv mgr baseUrl) login) actions)
+  atomically $ writeTChan logChan Done
+
+  dispResults results
+
 loginConsumer :: MonadIO m => TChan (ThreadControl a) -> (a -> m ()) -> m ()
 loginConsumer chan f = S.mapM_ f $ S.map tcItem $ S.takeWhile notFinished $ S.repeatM (atomically $ readTChan chan)
-  where
-    notFinished Finished = False
-    notFinished _ = True
-    tcItem (Item a) = a
-    tcItem _ = error "This should have already terminated!"
 
 loginProducer :: (MonadIO m, MonadBaseControl IO m, MonadThrow m) => FilePath -> TChan (ThreadControl Login) -> m ()
 loginProducer fp chan = do
@@ -173,6 +191,7 @@ parseCommands = subparser
   (  command "scripts" scriptsInfo
   <> command "form486Intake" form486Info
   <> command "spinChangeIntake" spinChangeInfo
+  <> command "initialReview" initialReviewInfo
   )
 
 scriptsInfo :: ParserInfo (IO ())
@@ -269,6 +288,25 @@ spinChangeParser = runSPINIntake spinChangeIntake
   <*> urlParser
   <*> logFileParser
 
+initialReviewInfo :: ParserInfo (IO ())
+initialReviewInfo = info (helper <*> initialReviewParser)
+  (  fullDesc
+  <> progDesc "Runs the Initial Review script."
+  )
+
+initialReviewParser :: Parser (IO ())
+initialReviewParser = runMultiple
+  <$> (runInitialReview
+   <$> urlParser
+   <*> userParser
+  )
+  <*> logFileParser
+  <*> option auto
+  (  long "num-runs"
+  <> short 'n'
+  )
+  <*> threadsParser
+
 parseMany :: ReadM [String]
 parseMany = readerAsk >>= pure . words
   
@@ -300,4 +338,4 @@ threadsParser = option parseManyR
   )
 
 stderrLn :: MonadIO m => Text -> m ()
-stderrLn txt = hPut stderr $ encodeUtf8 txt
+stderrLn txt = hPut stderr $ encodeUtf8 txt <> "\n"
