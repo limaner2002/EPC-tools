@@ -7,6 +7,7 @@ module Scripts.Opts -- where
   ( commandsInfo
   , runScript
   , Script (..)
+  , loggingFunc
   ) where
 
 import ClassyPrelude
@@ -151,7 +152,8 @@ dispResults results = do
 loggingFunc :: FilePath -> IO ()
 loggingFunc fp = S.takeWhile isMsg
   >>> S.map unpackMsg
-  >>> S.writeFile fp
+--   >>> S.writeFile fp
+  >>> S.print
   >>> runResourceT
     $ S.repeatM (atomically $ readTChan logChan)
   where

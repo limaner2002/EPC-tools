@@ -270,7 +270,12 @@ paragraphUpdate label txt v = toUpdate <$> (_Right . pgfValue .~ txt $ pgf)
 datePickerUpdate :: Text -> AppianDate -> Value -> Either Text Update
 datePickerUpdate label date v = toUpdate <$> (_Right . dpwValue .~ date $ dpw)
   where
-    dpw = maybeToEither ("Could not locate DatePicker" <> tshow label) $ v ^? getDatePicker label
+    dpw = maybeToEither ("Could not locate DatePicker " <> tshow label) $ v ^? getDatePicker label
+
+dynamicLinkUpdate :: Text -> Value -> Either Text Update
+dynamicLinkUpdate label v = toUpdate <$> dyl
+  where
+    dyl = maybeToEither ("Could not locate DynamicLinc " <> tshow label) $ v ^? getDynamicLink label
 
 dynLinksUpdate :: Text -> Int -> Value -> Either Text Update
 dynLinksUpdate column idx v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? dropping idx (getGridWidgetDynLink column))
@@ -289,7 +294,6 @@ sendUpdate f update = do
 sendUpdate' :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian (Either ValidationsException Value)
 sendUpdate' _ (Left msg) = throwM $ BadUpdateException msg Nothing
 sendUpdate' f (Right x) = do
-  writeFile "/tmp/request.json" $ toStrict $ encode $ x
   eV <- tryAny $ f x
   case eV of
     Left exc -> throwM $ ServerException (exc, x)

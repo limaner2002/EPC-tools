@@ -46,31 +46,36 @@ foldGridField f column b gf = do
   let col = gf ^.. gfColumns . at column . traverse
   F.foldlM f b col
 
-foldGridFieldPages :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian b) -> b -> Value -> Appian b
+    -- Make this use state as soon as the new servant can be used. 
+foldGridFieldPages :: ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Appian (b, Value)) -> b -> Value -> Appian b
 foldGridFieldPages fold f b v = loop b v
   where
     loop accum val = do
       gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
-      case nextPage gf of
-        Nothing -> f accum gf
+      atomically $ writeTChan logChan $ Msg $ tshow $ gf ^? gfSelection . traverse . _Selectable . gslPagingInfo
+      case nextPage gf gf of
+        Nothing -> do
+          (accum, _) <- f accum gf
+          return accum
         Just _ -> do
-          accum' <- f accum gf
-          liftIO $ putStrLn $ "Getting the next page!"
-          loop accum' =<< getNextPage gf val
+          (accum', val') <- f accum gf
+          gf' <- handleMissing "GridField" val' =<< (val' ^!? runMonadicFold fold)
+          atomically $ writeTChan logChan $ Msg $ tshow $ gf' ^? gfSelection . traverse . _Selectable . gslPagingInfo
+          loop accum' =<< getNextPage gf gf' val'
 
-getNextPage :: GridField a -> Value -> Appian Value
-getNextPage gf = sendUpdates "Next Page" (MonadicFold $ to $ const gf')
+getNextPage :: GridField a -> GridField a -> Value -> Appian Value
+getNextPage gf gf' = sendUpdates "Next Page" (MonadicFold $ to $ const gf'')
   where
-    gf' = toUpdate <$> (maybeToEither "This is the last page!" $ nextPage gf)
+    gf'' = toUpdate <$> (maybeToEither "This is the last page!" $ nextPage gf gf')
 
-nextPage :: GridField a -> Maybe (GridField a)
-nextPage gf = do
+nextPage :: GridField a -> GridField a -> Maybe (GridField a)
+nextPage gf gf' = do
   pi <- gf ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable
   let pi' = pgIStartIndex %~ (+batchSize) $ pi
       batchSize = pi ^. pgIBatchSize
   case pi' ^. pgIStartIndex > gf ^. gfTotalCount of
     True -> Nothing
-    False -> return $ gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable .~ pi' $ gf
+    False -> return $ gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable .~ pi' $ gf'
 
 getNumber :: Parser Text
 getNumber = takeTill (== '#') *> Data.Attoparsec.Text.take 1 *> takeTill (== ' ')

@@ -48,8 +48,10 @@ spinChangeIntake = do
     >>= sendUpdates "Click Submit" (MonadicFold (to (buttonUpdate "Submit")))
     >>= \res -> return (res ^? deep (filtered $ has $ key "#v" . _String . suffixed "has been successfully created") . key "#v" . _String . to parseNumber . traverse)
 
-printFRNs :: Value -> GridField GridFieldCell -> Appian Value
-printFRNs val = foldGridField (printFRN val) "FRN" val
+printFRNs :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+printFRNs val gf = do
+  v <- foldGridField (printFRN val) "FRN" val gf
+  return (v, v)
 
 printFRN :: Value -> Value -> GridFieldCell -> Appian Value
 printFRN val _ gf = (F.foldlM . F.foldlM) f val $ gf ^.. _TextCellDynLink . _2

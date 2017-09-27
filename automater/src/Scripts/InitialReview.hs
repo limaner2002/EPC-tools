@@ -14,6 +14,7 @@ import Control.Lens
 import Control.Lens.Action.Reified
 import qualified Data.Foldable as F
 import Scripts.Common
+import Scripts.Test
 
 initialReview :: Appian Value
 initialReview = do
@@ -27,7 +28,10 @@ initialReview = do
     >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
     >>= viewRelatedActions
     >>= uncurry (executeRelatedAction "Review Request Decision")
-    >>= addDecisions
+--     >>= addDecisions
+    >>= sendUpdates "Continue to Add Notes" (MonadicFold $ to (buttonUpdate "Continue"))
+    >>= addNotes
+    >>= sendUpdates "Send to Next Reviewer" (MonadicFold $ to (buttonUpdate "Send to Next Reviewer"))
 
 setAgeSort :: GridField a -> GridField a
 setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortField "secondsSinceRequest" True]
@@ -51,8 +55,18 @@ executeRelatedAction action recordId val = do
 addDecisions :: Value -> Appian Value
 addDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeDecisions val val
 
-makeDecisions :: Value -> GridField GridFieldCell -> Appian Value
-makeDecisions val gf = foldGridField' (makeDecision gf) val gf
+makeDecisions :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+makeDecisions val gf = do
+  v <- foldGridField' makeDecision val gf
+  return (v, v)
+
+addNotes :: Value -> Appian Value
+addNotes val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeNotes val val
+
+makeNotes :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+makeNotes val gf = do
+  v <- foldGridField' makeNote val gf
+  return (v, v)
 
 foldGridField' :: (b -> AppianInt -> Appian b) -> b -> GridField a -> Appian b
 foldGridField' f b gf = do
@@ -62,14 +76,33 @@ foldGridField' f b gf = do
 selectCheckbox :: AppianInt -> GridField a -> GridField a
 selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]
 
-makeDecision :: GridField a -> Value -> AppianInt -> Appian Value
-makeDecision gf val ident =
-  sendUpdates "Decision: Select FRN Checkbox & Review Decisions" (MonadicFold (failing (to (const (trace (show $ gf' ^. gfSelection) gf')) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
-                                                                  <|> MonadicFold (to $ buttonUpdate "Review FRN Decision(s)")
+makeDecision :: Value -> AppianInt -> Appian Value
+makeDecision val ident = do
+  gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse
+  _ <- sendUpdates "Decision: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
                                                                  ) val
+  sendUpdates "Review FRN Decisions" (MonadicFold (to $ buttonUpdate "Review FRN Decision(s)")) val
     >>= sendUpdates "Click Add Decision" (MonadicFold $ to $ buttonUpdate "Add Decision")
     >>= sendUpdates "Select Decision" (MonadicFold $ to $ dropdownUpdate "Select Decision" 2)
     >>= sendUpdates "Select Reason" (MonadicFold $ to $ dropdownUpdate "Select Reason" 2)
-    >>= sendUpdates "Save Decision (Should fail!)" (MonadicFold $ to $ buttonUpdate "Save Decision")
-    where
-      gf' = selectCheckbox ident gf
+    >>= sendUpdates "Add Rationale" (MonadicFold $ to $ dynamicLinkUpdate "Add Rationale")
+    >>= sendUpdates "Select Rationale" (MonadicFold (to $ dropdownUpdate "Rationale_1_Dropdown" 2)
+                                        <|> MonadicFold (to $ buttonUpdate "No")
+                                       )
+    >>= sendUpdates "Save Decision" (MonadicFold $ to $ buttonUpdate "Save Decision")
+
+makeNote :: Value -> AppianInt -> Appian Value
+makeNote val ident = do
+  gf <- handleMissing "FRN Note Grid" val $ val ^? getGridFieldCell . traverse
+  val' <- sendUpdates "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
+                                           ) val
+  case val' ^? getButton "Edit Note" of
+    Nothing ->
+          sendUpdates "Click Add Note" (MonadicFold (to $ buttonUpdate "Add Note")) val'
+      >>= sendUpdates "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000
+                                      <|> MonadicFold (to $ buttonUpdate "Submit New Note")
+                                      )
+    Just _ -> sendUpdates "Edit Note" (MonadicFold (to $ buttonUpdate "Edit Note")) val'
+      >>= sendUpdates "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000
+                                         <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
+                                        )
