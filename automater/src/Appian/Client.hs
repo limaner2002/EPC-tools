@@ -44,6 +44,7 @@ data LogMessage
   | Done
   deriving Show
 
+type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type TestAPI = Get '[HTML] CookieJar
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> Login :> LoginCj :> Post '[HTML] CookieJar
 type LogoutAPI = "suite" :> "logout" :> CookieJar :> Get '[HTML] ByteString
@@ -346,6 +347,9 @@ gridFieldUpdate index v = update
     update = case rUpdate of
       Error msg -> Left $ "gridFieldUpdate: " <> pack msg
       Success upd -> Right upd
+
+checkboxGroupUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> [Int] -> Over (->) f s s (Either Text Update) (Either Text Update)
+checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find CheckboxField " <> tshow label)
 
 componentUpdate :: ReifiedFold Value (Result Update) -> Value -> Either Text Update
 componentUpdate fold v = update

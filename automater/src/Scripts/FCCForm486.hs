@@ -37,10 +37,10 @@ form486Intake appianUN = do
                                               <|> MonadicFold (to (buttonUpdate "Continue"))
                                               )
     >>= sendUpdates "Service Information" (MonadicFold (to (buttonUpdate "Continue")))
-    >>= sendUpdates "Check Early Filing, CIPA Waiver & Continue" (MonadicFold (to (checkboxGroupUpdate "CHECK THE BOX BELOW IF THE FRNS ON THIS FCC FORM 486 ARE FOR SERVICES STARTING ON OR BEFORE JULY 31 OF THE FUNDING YEAR." [1]))
+    >>= sendUpdates "Check Early Filing, CIPA Waiver & Continue" (MonadicFold (checkboxGroupUpdate "CHECK THE BOX BELOW IF THE FRNS ON THIS FCC FORM 486 ARE FOR SERVICES STARTING ON OR BEFORE JULY 31 OF THE FUNDING YEAR." [1])
                                                                  <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                  )
-   >>= sendUpdates "Certifications & Preview" (MonadicFold (to (checkboxGroupUpdate "Certifications" [1,2]))
+   >>= sendUpdates "Certifications & Preview" (MonadicFold (checkboxGroupUpdate "Certifications" [1,2])
                                               <|> MonadicFold (to (radioButtonFieldUpdate "" 1))
                                               <|> MonadicFold (to (buttonUpdate "Preview"))
                                               )
@@ -48,10 +48,10 @@ form486Intake appianUN = do
    >>= sendUpdates "Click Certify" (MonadicFold (to (buttonUpdate "Certify")))
    >>= \res -> return (res ^? deep (filtered $ has $ key "label" . _String . prefixed "You have successfully") . key "label" . _String . to parseNumber . traverse)
 
-checkboxGroupUpdate :: Text -> [Int] -> Value -> Either Text Update
-checkboxGroupUpdate label selection v = toUpdate <$> (_Right . cbgValue .~ Just selection $ cbg)
-  where
-    cbg = maybeToEither ("Could not locate checkbox group " <> tshow label) $ v ^? getCheckboxGroup label
+-- checkboxGroupUpdate :: Text -> [Int] -> Value -> Either Text Update
+-- checkboxGroupUpdate label selection v = toUpdate <$> (_Right . cbgValue .~ Just selection $ cbg)
+--   where
+--     cbg = maybeToEither ("Could not locate checkbox group " <> tshow label) $ v ^? getCheckboxGroup label
 
 radioButtonFieldUpdate :: Text -> Int -> Value -> Either Text Update
 radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Just (AppianInteger selection) $ rdg)

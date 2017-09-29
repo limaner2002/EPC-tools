@@ -172,6 +172,15 @@ data CheckboxGroup = CheckboxGroup
   , _cbgValue :: Maybe [Int]
   } deriving Show
 
+data CheckboxField = CheckboxField
+  { _cbfSaveInto :: [Text]
+  , _cbfCid :: Text
+  , _cbfAlign :: Text
+  , _cbfChoices :: [Text]
+  , _cbfChoiceLayout :: Text
+  , _cbfValue :: Maybe [Int]
+  } deriving Show
+
 data RadioButtonField = RadioButtonField
   { _rdgSaveInto :: [Text]
   , _rdgCid :: Text
@@ -378,6 +387,7 @@ makeLenses ''GridSelection
 makeLenses ''RadioButtonField
 makeLenses ''ImageCell
 makeLenses ''CollaborationDocument
+makeLenses ''CheckboxField
 
 makePrisms ''GridFieldCell
 makePrisms ''GridValue
@@ -612,6 +622,36 @@ instance ToJSON SortField where
     , "ascending" .= (sfd ^. sfdAscending)
     ]
 
+instance ToJSON CheckboxField where
+  toJSON cbf = object
+    [ "saveInto" .= (cbf ^. cbfSaveInto)
+    , "_cId" .= (cbf ^. cbfCid)
+    , ("#t", "CheckboxField")
+    , "align" .= (cbf ^. cbfAlign)
+    , "choices" .= (cbf ^. cbfChoices)
+    , "choiceLayout" .= (cbf ^. cbfChoiceLayout)
+    ]
+
+instance FromJSON CheckboxField where
+  parseJSON val@(Object o) = parseAppianType "CheckboxField" mkField val
+    where
+      mkField = CheckboxField
+        <$> o .: "saveInto"
+        <*> o .: "_cId"
+        <*> o .: "align"
+        <*> o .: "choices"
+        <*> o .: "choiceLayout"
+        <*> o .:? "value"
+
+instance ToUpdate CheckboxField where
+  toUpdate cbf = Update $ object
+    [ "saveInto" .= (cbf ^. cbfSaveInto)
+    , "value" .= (AppianList <$> cbf ^. cbfValue)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (cbf ^. cbfCid)
+    , "model" .= cbf
+    ]
+
 instance FromJSON a => FromJSON (SaveRequestList a) where
   parseJSON val@(Object o) = parseAppianType "SaveRequest?list" mkSaveRequestList val
     where
@@ -670,7 +710,7 @@ instance FromJSON a => FromJSON (UiConfig a) where
   parseJSON _ = fail "Could not parse UiConfig"
 
 instance FromJSON TextField where
-  parseJSON val@(Object o) = parseAppianTypeWith "TextField" (\t -> t == "TextField" || t == "TextWidget") mkField val
+  parseJSON val@(Object o) = parseAppianTypeWith "TextField" (\t -> isSuffixOf "TextField" t || isSuffixOf "TextWidget" t) mkField val
     where
       mkField = TextField
         <$> o .: "saveInto"

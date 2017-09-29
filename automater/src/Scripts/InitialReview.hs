@@ -28,9 +28,7 @@ initialReview conf = do
     >>= sendReportUpdates rid "Select Funding Year" (MonadicFold (to (dropdownUpdate "Funding Year" 2)))
     >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
     >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
-    >>= distributeIdentifiers rid conf
---     >>= viewRelatedActions
---     >>= uncurry (executeRelatedAction "Review Request Decision")
+    >>= distributeLinks rid conf
     >>= addDecisions
     >>= sendUpdates "Continue to Add Notes" (MonadicFold $ to (buttonUpdate "Continue"))
     >>= addNotes
@@ -41,7 +39,6 @@ setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortFiel
 
 viewRelatedActions :: Value -> RecordRef -> Appian (RecordRef, Value)
 viewRelatedActions v recordRef = do
-  -- recordRef <- handleMissing "RecordRef" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
   let ref = PathPiece recordRef
   v' <- viewRecordDashboard ref (PathPiece $ Dashboard "summary")
   dashboard <- handleMissing "Related Actions Dashboard" v' $ v' ^? getRecordDashboard "Related Actions"
@@ -52,8 +49,6 @@ executeRelatedAction :: Text -> RecordRef -> Value -> Appian Value
 executeRelatedAction action recordId val = do
   aid <- PathPiece <$> (handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getRelatedActionId action)
   relatedActionEx (PathPiece recordId) aid
-
--- res' <- tryAny $ runAppian (sequence $ foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) (\l gf -> pure $ l <> gf ^.. gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse) mempty <$> res ^? _Right . _Right) env login
 
 addDecisions :: Value -> Appian Value
 addDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeDecisions val val
@@ -110,23 +105,23 @@ makeNote val ident = do
                                          <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
                                         )
 
-getAllIdentifiers :: ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) Appian ()
-getAllIdentifiers rid v = do
-  mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumIdentifiers v) (Just mempty) v
+getAllLinks :: ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) Appian ()
+getAllLinks rid v = do
+  mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
   case mIdents of
     Nothing -> error "There are no identifiers!"
     Just idents -> S.each $ fmap Item idents <> pure Finished
 
-accumIdentifiers :: Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> Appian (Maybe (Vector RecordRef), Value)
-accumIdentifiers val l gf = return (l', val)
+accumLinks :: Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> Appian (Maybe (Vector RecordRef), Value)
+accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-distributeIdentifiers :: ReportId -> ReviewConf -> Value -> Appian Value
-distributeIdentifiers rid conf v = do
+distributeLinks :: ReportId -> ReviewConf -> Value -> Appian Value
+distributeLinks rid conf v = do
   gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
   let execReview = viewRelatedActions v >=> uncurry (executeRelatedAction "Review Request Decision")
-  mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllIdentifiers rid v) execReview
+  mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) execReview
   handleMissing "Could not select FRN!" v mVal
 
 data ReviewConf = ReviewConf

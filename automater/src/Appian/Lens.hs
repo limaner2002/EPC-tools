@@ -55,7 +55,7 @@ getParagraphField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (
 getParagraphField = hasLabel
 
 getCheckboxGroup :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (CheckboxGroup -> f CheckboxGroup) -> s -> f s
-getCheckboxGroup label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . only "CheckboxField") <*> Fold (key "label" . _String . only label))) . _JSON
+getCheckboxGroup label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . suffixed "CheckboxField") <*> Fold (key "label" . _String . only label))) . _JSON
 
 getRadioButtonField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (RadioButtonField -> f RadioButtonField) -> s -> f s
 getRadioButtonField label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . only "RadioButtonField") <*> Fold (key "label" . _String . only label))) . _JSON

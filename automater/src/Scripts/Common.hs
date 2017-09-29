@@ -106,6 +106,7 @@ distributeTasks taskVar chan producer f = do
   case task of
     Produce -> do
       S.mapM_ (atomically . writeTChan chan) $ producer
+      atomically $ writeTChan chan Finished
       consumer
     Consume -> consumer
   where

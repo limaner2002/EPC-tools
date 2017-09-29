@@ -36,6 +36,10 @@ test3ClientEnv = do
   mgr <- newManager tlsManagerSettings
   return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
 
+test4ClientEnv = do
+  mgr <- newManager tlsManagerSettings
+  return $ ClientEnv mgr (BaseUrl Https "portal-test4.appiancloud.com" 443 "")
+
 test3ClientEnvDbg = do
   mgr <- newManager settings
   return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
