@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Appian.Lens where
 
@@ -49,7 +50,7 @@ getTextField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (TextF
 getTextField = hasLabel
 
 getPickerWidget :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (PickerWidget -> f PickerWidget) -> s -> f s
-getPickerWidget label = hasKeyValue "testLabel" ("test-" <> label) . _JSON
+getPickerWidget label = hasKeyValue "label" label . _JSON
 
 getParagraphField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (ParagraphField -> f ParagraphField) -> s -> f s
 getParagraphField = hasLabel
@@ -179,10 +180,19 @@ instance FromJSON a => FromJSON (GridField a) where
 
 instance FromJSON GridFieldCell where
   parseJSON (Object o) =
-        (TextCellLink <$> ((,) <$> o .: "data" <*> o .: "links"))
+        parseEmptyColumn
+    <|> (TextCellLink <$> ((,) <$> o .: "data" <*> o .: "links"))
     <|> (TextCellDynLink <$> ((,) <$> o .: "data" <*> o .: "links"))
     <|> (TextCell <$> o .: "data")
     <|> (ImageColumn <$> o .: "data")
+    where
+      parseEmptyColumn = do
+        (mData :: Maybe [Value]) <- o .:? "data"
+        case mData of
+          Nothing -> return EmptyColumn
+          Just [] -> return EmptyColumn
+          _ -> fail "Could not parse GridFieldCell"
+
   parseJSON _ = fail "Could not parse GridFieldCell: Expecting JSON Object but got something else."
 
 instance FromJSON a => FromJSON (TabButtonGroup a) where

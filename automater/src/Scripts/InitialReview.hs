@@ -14,25 +14,59 @@ import Control.Lens
 import Control.Lens.Action.Reified
 import qualified Data.Foldable as F
 import Scripts.Common
+import Scripts.ReviewCommon
 import Scripts.Test
 import qualified Streaming.Prelude as S
 
--- initialReview :: TVar DistributeTask -> TChan (ThreadControl RecordRef) -> Appian Value
-initialReview :: ReviewConf -> Appian Value
-initialReview conf = do
-  v <- reportsTab
-  rid <- getReportId "My Assigned Post-Commit Assignments" v
-  editReport (PathPiece rid)
-    >>= sendReportUpdates rid "Select Review Type" (MonadicFold (to (dropdownUpdate "Review Type" 6)))
-    >>= sendReportUpdates rid "Select Reviewer Type" (MonadicFold (to (dropdownUpdate "Reviewer Type" 2)))
-    >>= sendReportUpdates rid "Select Funding Year" (MonadicFold (to (dropdownUpdate "Funding Year" 2)))
-    >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
-    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
-    >>= distributeLinks rid conf
+initialReview :: ReviewConf -> ReviewBaseConf -> Appian Value
+initialReview conf baseConf = do
+  -- v <- reportsTab
+  -- rid <- getReportId "My Assigned Post-Commit Assignments" v
+  -- editReport (PathPiece rid)
+  --   >>= sendReportUpdates rid "Select Review Type" (MonadicFold (to (dropdownUpdate "Review Type" 8)))
+  --   >>= sendReportUpdates rid "Select Reviewer Type" (MonadicFold (to (dropdownUpdate "Reviewer Type" 2)))
+  --   >>= sendReportUpdates rid "Select Funding Year" (MonadicFold (to (dropdownUpdate "Funding Year" 3)))
+  --   >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
+  --   >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
+  (rid, v) <- myAssignedReport baseConf
+  distributeLinks "Review Request Decision" rid conf v
     >>= addDecisions
     >>= sendUpdates "Continue to Add Notes" (MonadicFold $ to (buttonUpdate "Continue"))
     >>= addNotes
     >>= sendUpdates "Send to Next Reviewer" (MonadicFold $ to (buttonUpdate "Send to Next Reviewer"))
+
+manageAppealDetails :: ReviewConf -> ReviewBaseConf -> Appian Value
+manageAppealDetails conf baseConf = do
+  (rid, v) <- myAssignedReport baseConf
+  distributeLinks "Manage Appeal Details" rid conf v
+    >>= sendUpdates "Select Type" (dropdownArbitraryUpdateF "What type of decision would you like to appeal?"
+                                  <|> dropdownArbitraryUpdateF "Error Analysis"
+                                  <|> dropdownArbitraryUpdateF "Appeal Type"
+                                  <|> dropdownArbitraryUpdateF "HS Type"
+                                  <|> dropdownArbitraryUpdateF "Appeal Reason"
+                                  <|> dropdownArbitraryUpdateF "Appeal Category"
+                                  <|> MonadicFold (to $ buttonUpdate "Save & Close")
+                                  )
+
+adminInitial :: ReviewConf -> ReviewBaseConf -> Appian Value
+adminInitial conf baseConf = manageAppealDetails conf baseConf >> initialReview conf baseConf
+
+finalReview :: ReviewBaseConf -> ReviewConf -> Appian Value
+finalReview bConf conf = do
+  (rid, v) <- myAssignedReport bConf
+  distributeLinks "Add Review Notes" rid conf v
+    >>= addNotes
+
+myAssignedReport :: ReviewBaseConf -> Appian (ReportId, Value)
+myAssignedReport conf = do
+  (rid, v) <- openReport "My Assigned Post-Commit Assignments"
+  res <- editReport (PathPiece rid)
+    >>= sendReportUpdates rid "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType conf))
+    >>= sendReportUpdates rid "Select Reviewer Type" (dropdownUpdateF' "Reviewer Type" (reviewerType conf))
+    >>= sendReportUpdates rid "Select Reviewer Type" (dropdownUpdateF' "Funding Year" (fundingYear conf))
+    >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
+    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
+  return (rid, res)
 
 setAgeSort :: GridField a -> GridField a
 setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortField "secondsSinceRequest" True]
@@ -117,10 +151,10 @@ accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-distributeLinks :: ReportId -> ReviewConf -> Value -> Appian Value
-distributeLinks rid conf v = do
+distributeLinks :: Text -> ReportId -> ReviewConf -> Value -> Appian Value
+distributeLinks actionName rid conf v = do
   gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
-  let execReview = viewRelatedActions v >=> uncurry (executeRelatedAction "Review Request Decision")
+  let execReview = viewRelatedActions v >=> uncurry (executeRelatedAction actionName)
   mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) execReview
   handleMissing "Could not select FRN!" v mVal
 
@@ -131,3 +165,4 @@ data ReviewConf = ReviewConf
 
 newReviewConf :: IO ReviewConf
 newReviewConf = ReviewConf <$> newTVarIO Produce <*> newTChanIO
+

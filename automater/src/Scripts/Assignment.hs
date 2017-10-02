@@ -10,25 +10,33 @@ import Appian.Instances
 import Appian.Lens
 import Appian.Client
 import Data.Aeson
+import Data.Aeson.Lens
 import Control.Lens
 import Control.Lens.Action.Reified
-import qualified Data.Foldable as F
 import Scripts.Common
-import Scripts.Test
+import Scripts.ReviewCommon
 
-assignment :: Appian Value
-assignment = do
+assignment :: ReviewBaseConf -> AppianUsername -> Appian Value
+assignment conf username = do
+  let un = Identifiers [username]
   (rid, v) <- openReport "Post-Commit Assignments"
-  sendReportUpdates rid "Select Review Type" (MonadicFold (to (dropdownUpdate "Review Type" 3))
-                                             <|> MonadicFold (to (dropdownUpdate "Reviewer Type" 2))
-                                             <|> MonadicFold (to (dropdownUpdate "Funding Year" 2))
+  sendReportUpdates rid "Select Review(er) Types, Funding Year, and Apply Filters" (dropdownUpdateF' "Review Type" (reviewType conf)
+                                             <|> dropdownUpdateF' "Reviewer Type" (reviewerType conf)
+                                             <|> dropdownUpdateF' "Funding Year" (fundingYear conf)
                                              <|> MonadicFold (checkboxGroupUpdate "" [1])
                                              <|> MonadicFold (to (buttonUpdate "Apply Filters"))
                                              ) v
+    >>= sendReportUpdates rid "Select Case" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [0]) . to toUpdate . to Right)
+    >>= sendReportUpdates rid "Select & Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un)
+                                                 <|> MonadicFold (to (buttonUpdate "Assign Case(s) to Reviewer"))
+                                                )
+                                                
+setAgeSort :: GridField a -> GridField a
+setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortField "secondsSinceRequest" True]
 
-openReport :: Text -> Appian (ReportId, Value)
-openReport reportName = do
-  v <- reportsTab
-  rid <- getReportId reportName v
-  v' <- editReport (PathPiece rid)
-  return (rid, v')
+gridSelection :: [Int] -> GridField a -> GridField a
+gridSelection idxs gf = gfSelection . traverse . _Selectable . gslSelected .~ idents $ gf
+  where
+    idents = gf ^.. gfIdentifiers . traverse . itraversed . withIndex . filtered isDesired . _2
+    isDesired (i, _) = i `elem` idxs
+

@@ -15,6 +15,7 @@ module Scripts.Test
   , paragraphArbitrary
   , paragraphArbitraryUpdate
   , intFieldArbitrary
+  , dropdownArbitraryUpdateF
   ) where 
 
 import Test.QuickCheck hiding (generate)
@@ -105,3 +106,20 @@ gfSelect gf = do
     Just idents -> do
       ident <- generate $ QC.elements idents
       return $ gfSelection . _Just . _Selectable . gslSelected .~ [ident] $ gf
+
+dropdownArbitraryUpdateF :: (MonadIO m, Plated s, AsValue s, AsJSON s) =>
+  Text -> ReifiedMonadicFold m s (Either Text Update)
+dropdownArbitraryUpdateF label = MonadicFold (dropdownArbitrary label)
+
+dropdownArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) =>
+                     Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+dropdownArbitrary label = getIt
+  where
+    getIt = getDropdown label . act dropdownArbitrarySelect . to toUpdate . to Right
+    err = Left ("Could not find dropdown " <> tshow label)
+
+dropdownArbitrarySelect :: MonadIO m => DropdownField -> m DropdownField
+dropdownArbitrarySelect df = do
+  let max = df ^. dfChoices . to length
+  n <- generate $ choose (2, max)
+  return $ dfValue .~ n $ df

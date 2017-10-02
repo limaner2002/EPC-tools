@@ -132,3 +132,11 @@ notFinished _ = True
 
 tcItem (Item a) = a
 tcItem _ = error "This should have already terminated!"
+
+openReport :: Text -> Appian (ReportId, Value)
+openReport reportName = do
+  v <- reportsTab
+  rid <- getReportId reportName v
+  v' <- editReport (PathPiece rid)
+  return (rid, v')
+

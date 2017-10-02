@@ -19,6 +19,7 @@ import Scripts.CreateCSCase
 import Scripts.FCCForm486
 import Scripts.SPINChangeIntake
 import Scripts.InitialReview
+import Scripts.ReviewCommon
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -123,7 +124,7 @@ runInitialReview baseUrl username fp nThreads = do
   stderrLn "Starting SPIN Change initial review now!"
   password <- getPassword
   conf <- newReviewConf
-  let actions = take nThreads $ repeat (initialReview conf)
+  let actions = take nThreads $ repeat (initialReview conf adminInitial2017)
       login = Login (pack username) $ pack password
   atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)

@@ -252,14 +252,14 @@ textUpdate label txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
   where
     tf = maybeToEither ("Could not find TextField " <> tshow label) $ v ^? getTextField label
 
-sendPicker :: (FromJSON b, ToJSON b) => (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> AppianPickerData b -> Value -> Appian Value
-sendPicker f pathPiece label uname v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
-  where
-    up = join $ mkUpdate <$> (_Just . pwValue . _JSON .~ uname $ apd) <*> pure v
-    apd = v ^? getPickerWidget label
+-- sendPicker :: (FromJSON b, ToJSON b) => (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> AppianPickerData b -> Value -> Appian Value
+-- sendPicker f pathPiece label uname v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
+--   where
+--     up = join $ mkUpdate <$> (_Just . pwValue . _JSON .~ (Just uname) $ apd) <*> pure v
+--     apd = v ^? getPickerWidget label
 
 pickerUpdate :: (FromJSON b, ToJSON b) => Text -> AppianPickerData b -> Value -> Either Text Update
-pickerUpdate label uname v = toUpdate <$> (_Right . pwValue .~ toJSON uname $ apd)
+pickerUpdate label uname v = toUpdate <$> (_Right . pwValue .~ Just (toJSON uname) $ apd)
   where
     apd = maybeToEither ("Could not find PickerField " <> tshow label) $ v ^? getPickerWidget label
 

@@ -229,20 +229,20 @@ data TextField = TextField
   } deriving Show
 
 data PickerWidget = PickerWidget
-  { _pwMaxSelections :: Int
-  , _pwSelectedTokensHint :: Text
-  , _pwImageSize :: Text
-  , _pwNumSuggestionsHint :: Text
+  { _pwMaxSelections :: Maybe Int
+  , _pwSelectedTokensHint :: Maybe Text
+  , _pwImageSize :: Maybe Text
+  , _pwNumSuggestionsHint :: Maybe Text
   , _pwSaveInto :: [Text]
-  , _pwNoResultsLabel :: Text
-  , _pwSearchingLabel :: Text
-  , _pwValue :: Value
-  , _pwWidth :: Text
+  , _pwNoResultsLabel :: Maybe Text
+  , _pwSearchingLabel :: Maybe Text
+  , _pwValue :: Maybe Value
+  , _pwWidth :: Maybe Text
   , _pwCid :: Text
-  , _pwRequired :: Bool
+  , _pwRequired :: Maybe Bool
   , _pwFailedRequiredness :: Text
-  , _pwSuggestions :: Value
-  , _pwTestLabel :: Text
+  , _pwSuggestions :: Maybe Value
+  , _pwTestLabel :: Maybe Text
   , _pwPlaceholder :: Text
   } deriving Show
 
@@ -315,7 +315,8 @@ data GridField a = GridField
   , _gfSaveInto :: [Text]
   , _gfCid :: Text
   , _gfTotalCount :: Int
-  } deriving Show
+  }
+  deriving Show
 
 -- This needs to be updated to better reflect the actual SAIL component.
 data GridFieldCell
@@ -323,6 +324,7 @@ data GridFieldCell
   | TextCellLink (Vector Text, Vector RecordRef)
   | TextCellDynLink (Vector Text, Vector DynamicLink)
   | ImageColumn (Vector ImageCell)
+  | EmptyColumn
   deriving Show
 
 data ImageCell = ImageCell
@@ -391,6 +393,7 @@ makeLenses ''CheckboxField
 
 makePrisms ''GridFieldCell
 makePrisms ''GridValue
+makePrisms ''GridField
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith "DropdownField" (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -723,23 +726,23 @@ instance FromJSON TextField where
         <*> o .: "refreshAfter"
 
 instance FromJSON PickerWidget where
-  parseJSON val@(Object o) = parseAppianTypeWith "PickerWidget" (\t -> t == "PickerWidget") mkWidget val
+  parseJSON val@(Object o) = parseAppianTypeWith "PickerWidget" (\t -> isSuffixOf "PickerWidget" t || isSuffixOf "PickerField" t) mkWidget val
     where
       mkWidget = PickerWidget
-        <$> o .: "maxSelections"
-        <*> o .: "selectedTokensHint"
-        <*> o .: "imageSize"
-        <*> o .: "numSuggestionsHint"
+        <$> o .:? "maxSelections"
+        <*> o .:? "selectedTokensHint"
+        <*> o .:? "imageSize"
+        <*> o .:? "numSuggestionsHint"
         <*> o .: "saveInto"
-        <*> o .: "noResultsLabel"
-        <*> o .: "searchingLabel"
-        <*> o .: "value"
-        <*> o .: "width"
+        <*> o .:? "noResultsLabel"
+        <*> o .:? "searchingLabel"
+        <*> o .:? "value"
+        <*> o .:? "width"
         <*> o .: "_cId"
-        <*> o .: "required"
+        <*> o .:? "required"
         <*> o .: "failedRequiredness"
-        <*> o .: "suggestions"
-        <*> o .: "testLabel"
+        <*> o .:? "suggestions"
+        <*> o .:? "testLabel"
         <*> o .: "placeholder"
 
 instance FromJSON ParagraphField where
@@ -928,12 +931,12 @@ instance ToUpdate DynamicLink where
 
 instance ToUpdate (GridField a) where
   toUpdate gf = Update $ object
-    [ "saveInto" .= (gf ^. gfSaveInto)
-    , ("saveType", "PRIMARY")
-    , "_cId" .= (gf ^. gfCid)
-    , "model" .= (gf ^. gfModel)
-    , "value" .= (gf ^. gfSelection)
-    ]
+        [ "saveInto" .= (gf ^. gfSaveInto)
+        , ("saveType", "PRIMARY")
+        , "_cId" .= (gf ^. gfCid)
+        , "model" .= (gf ^. gfModel)
+        , "value" .= (gf ^. gfSelection)
+        ]
 
 instance ToUpdate RadioButtonField where
   toUpdate rdg = Update $ object
