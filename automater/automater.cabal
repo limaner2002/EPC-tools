@@ -26,6 +26,7 @@ library
                      , Scripts.FCCForm486
                      , Scripts.SPINChangeIntake
                      , Scripts.InitialReview
+                     , Scripts.ReviewCommon
   build-depends:       base
                      , lens
                      , aeson
@@ -50,6 +51,7 @@ library
                      , stats
                      , lens-action
                      , QuickCheck
+                     , retry
   default-language:    Haskell2010
 
 test-suite automater-test

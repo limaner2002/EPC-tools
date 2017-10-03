@@ -210,6 +210,13 @@ instance Show ServerException where
 
 instance Exception ServerException
 
+newtype ClientException = ClientException Text
+
+instance Show ClientException where
+  show (ClientException exc) = "ClientException: " <> show (exc)
+
+instance Exception ClientException
+
 sendSelection :: PathPiece ReportId -> Text -> Int -> Value -> Appian Value
 sendSelection = sendSelection' uiUpdate
 
@@ -422,8 +429,11 @@ diffToMS elapsed = fromEnum elapsed `div` 1000000000
 maybeToEither :: a -> Maybe b -> Either a b
 maybeToEither c = maybe (Left c) Right
 
-runAppian :: Appian a -> ClientEnv -> Login -> IO (Either ServantError a)
-runAppian f env creds = bracket (runClientM login' env) (\cj -> runClientM (logout' cj) env) runF
+runAppian :: Appian a -> ClientEnv -> Login -> IO (Either SomeException a)
+runAppian f env creds = runAppian' f env creds >>= pure . bimap toException id
+
+runAppian' :: Appian a -> ClientEnv -> Login -> IO (Either ServantError a)
+runAppian' f env creds = bracket (runClientM login' env) (\cj -> runClientM (logout' cj) env) runF
   where
     login' = do
       cj <- navigateSite

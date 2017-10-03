@@ -23,7 +23,7 @@ assignment conf username = do
   sendReportUpdates rid "Select Review(er) Types, Funding Year, and Apply Filters" (dropdownUpdateF' "Review Type" (reviewType conf)
                                              <|> dropdownUpdateF' "Reviewer Type" (reviewerType conf)
                                              <|> dropdownUpdateF' "Funding Year" (fundingYear conf)
-                                             <|> MonadicFold (checkboxGroupUpdate "" [1])
+--                                             <|> MonadicFold (checkboxGroupUpdate "" [1])
                                              <|> MonadicFold (to (buttonUpdate "Apply Filters"))
                                              ) v
     >>= sendReportUpdates rid "Select Case" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [0]) . to toUpdate . to Right)

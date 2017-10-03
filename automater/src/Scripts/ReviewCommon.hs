@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.ReviewCommon where
 
@@ -14,6 +15,7 @@ import Data.Aeson.Lens
 import Control.Lens
 import Control.Lens.Action.Reified
 import Scripts.Common
+import Control.Retry
 
 data ReviewBaseConf = ReviewBaseConf
   { reviewType :: ReviewType
@@ -112,3 +114,24 @@ dropdownUpdateF' :: (Eq t, IsString t, Plated s, AsValue s, AsJSON s) =>
                     Text -> t -> ReifiedMonadicFold m s (Either Text Update)
 dropdownUpdateF' label s = MonadicFold $ dropdownUpdate' label s
 
+data ReviewConf = ReviewConf
+  { revTaskVar :: TVar DistributeTask
+  , revChan :: TChan (ThreadControl RecordRef)
+  }
+
+newReviewConf :: MonadIO m => m ReviewConf
+newReviewConf = ReviewConf <$> atomically (newTVar Produce) <*> atomically newTChan
+
+delaySecs :: MonadBase IO m => Int -> m ()
+delaySecs n = threadDelay $ n * 1000000
+
+retryIt :: MonadIO m => m (Either SomeException a) -> m (Either SomeException a)
+retryIt act = retrying reviewRetryPolicy shouldRetry (const act)
+  where
+    shouldRetry status (Left _) = do
+      putStrLn $ "Retrying with a " <> tshow (rsCumulativeDelay status) <> " delay"
+      pure True
+    shouldRetry _ (Right _) = pure False
+
+reviewRetryPolicy :: Monad m => RetryPolicyM m
+reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 7

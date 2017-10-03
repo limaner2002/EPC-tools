@@ -21,6 +21,8 @@ import qualified Streaming.Prelude as S
 import Control.Monad.Logger
 import Control.Arrow
 
+import Control.Monad.Trans.Resource hiding (throwM)
+
 handleValidations :: Either ValidationsException Value -> Appian Value
 handleValidations (Right v) = return v
 handleValidations (Left ve) = case ve ^. validationsExc . _1 of
@@ -140,3 +142,16 @@ openReport reportName = do
   v' <- editReport (PathPiece rid)
   return (rid, v')
 
+    -- This needs to be replaced as soon as ClientM is generalized in servant-client
+loggingFunc :: FilePath -> IO ()
+loggingFunc fp = S.takeWhile isMsg
+  >>> S.map unpackMsg
+--   >>> S.writeFile fp
+  >>> S.print
+  >>> runResourceT
+    $ S.repeatM (atomically $ readTChan logChan)
+  where
+    isMsg (Msg _) = True
+    isMsg _ = False
+    unpackMsg (Msg t) = unpack t
+    unpackMsg _ = error "The impossible happened unpacking the log Message!"

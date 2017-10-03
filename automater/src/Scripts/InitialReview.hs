@@ -10,6 +10,7 @@ import Appian.Instances
 import Appian.Lens
 import Appian.Client
 import Data.Aeson
+import Data.Aeson.Lens
 import Control.Lens
 import Control.Lens.Action.Reified
 import qualified Data.Foldable as F
@@ -20,14 +21,6 @@ import qualified Streaming.Prelude as S
 
 initialReview :: ReviewConf -> ReviewBaseConf -> Appian Value
 initialReview conf baseConf = do
-  -- v <- reportsTab
-  -- rid <- getReportId "My Assigned Post-Commit Assignments" v
-  -- editReport (PathPiece rid)
-  --   >>= sendReportUpdates rid "Select Review Type" (MonadicFold (to (dropdownUpdate "Review Type" 8)))
-  --   >>= sendReportUpdates rid "Select Reviewer Type" (MonadicFold (to (dropdownUpdate "Reviewer Type" 2)))
-  --   >>= sendReportUpdates rid "Select Funding Year" (MonadicFold (to (dropdownUpdate "Funding Year" 3)))
-  --   >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
-  --   >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
   (rid, v) <- myAssignedReport baseConf
   distributeLinks "Review Request Decision" rid conf v
     >>= addDecisions
@@ -41,7 +34,7 @@ manageAppealDetails conf baseConf = do
   distributeLinks "Manage Appeal Details" rid conf v
     >>= sendUpdates "Select Type" (dropdownArbitraryUpdateF "What type of decision would you like to appeal?"
                                   <|> dropdownArbitraryUpdateF "Error Analysis"
-                                  <|> dropdownArbitraryUpdateF "Appeal Type"
+                                  <|> dropdownUpdateF' "Appeal Type" RevAdminCorrection
                                   <|> dropdownArbitraryUpdateF "HS Type"
                                   <|> dropdownArbitraryUpdateF "Appeal Reason"
                                   <|> dropdownArbitraryUpdateF "Appeal Category"
@@ -56,6 +49,10 @@ finalReview bConf conf = do
   (rid, v) <- myAssignedReport bConf
   distributeLinks "Add Review Notes" rid conf v
     >>= addNotes
+    >>= sendUpdates "Send to next reviewer" (buttonUpdateWith (\l -> l == "Send to Next Reviewer" || l == "Review Completed") "Could not find 'Send to Next Reviewer'/'Review Completed' button!")
+
+buttonUpdateWith :: (Plated s, AsValue s, AsJSON s) => (Text -> Bool) -> t -> ReifiedMonadicFold m s (Either t Update)
+buttonUpdateWith f msg = MonadicFold (failing (getButtonWith f . to toUpdate . to Right) (to (const $ Left msg)))
 
 myAssignedReport :: ReviewBaseConf -> Appian (ReportId, Value)
 myAssignedReport conf = do
@@ -143,7 +140,7 @@ getAllLinks :: ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) Ap
 getAllLinks rid v = do
   mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
   case mIdents of
-    Nothing -> error "There are no identifiers!"
+    Nothing -> throwM $ MissingComponentException ("There are no identifiers!", v)
     Just idents -> S.each $ fmap Item idents <> pure Finished
 
 accumLinks :: Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> Appian (Maybe (Vector RecordRef), Value)
@@ -157,12 +154,3 @@ distributeLinks actionName rid conf v = do
   let execReview = viewRelatedActions v >=> uncurry (executeRelatedAction actionName)
   mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) execReview
   handleMissing "Could not select FRN!" v mVal
-
-data ReviewConf = ReviewConf
-  { revTaskVar :: TVar DistributeTask
-  , revChan :: TChan (ThreadControl RecordRef)
-  }
-
-newReviewConf :: IO ReviewConf
-newReviewConf = ReviewConf <$> newTVarIO Produce <*> newTChanIO
-

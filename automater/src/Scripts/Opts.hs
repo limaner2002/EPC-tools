@@ -156,30 +156,13 @@ run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run48
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
 setTimeout timeout settings = settings { managerResponseTimeout = timeout }
 
-dispResults :: [Either SomeException (Either ServantError a)] -> IO ()
+dispResults :: [Either SomeException a] -> IO ()
 dispResults results = do
   let appianErrors = results ^.. traverse . _Left
-      clientErrors = results ^.. traverse . _Right . _Left
-      successes = results ^.. traverse . _Right . _Right
+      successes = results ^.. traverse . _Right
   mapM_ print appianErrors
-  mapM_ print clientErrors
   putStrLn $ "Successfully executed: " <> tshow (length successes)
   putStrLn $ "Appian Errors: " <> tshow (length appianErrors)
-  putStrLn $ "Client Errors: " <> tshow (length clientErrors)
-
-    -- This needs to be replaced as soon as ClientM is generalized in servant-client
-loggingFunc :: FilePath -> IO ()
-loggingFunc fp = S.takeWhile isMsg
-  >>> S.map unpackMsg
---   >>> S.writeFile fp
-  >>> S.print
-  >>> runResourceT
-    $ S.repeatM (atomically $ readTChan logChan)
-  where
-    isMsg (Msg _) = True
-    isMsg _ = False
-    unpackMsg (Msg t) = unpack t
-    unpackMsg _ = error "The impossible happened unpacking the log Message!"
 
 commandsInfo :: ParserInfo (IO ())
 commandsInfo = info (helper <*> parseCommands)
