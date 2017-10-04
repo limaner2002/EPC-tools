@@ -20,12 +20,12 @@ assignment :: ReviewBaseConf -> AppianUsername -> Appian Value
 assignment conf username = do
   let un = Identifiers [username]
   (rid, v) <- openReport "Post-Commit Assignments"
-  sendReportUpdates rid "Select Review(er) Types, Funding Year, and Apply Filters" (dropdownUpdateF' "Review Type" (reviewType conf)
-                                             <|> dropdownUpdateF' "Reviewer Type" (reviewerType conf)
-                                             <|> dropdownUpdateF' "Funding Year" (fundingYear conf)
---                                             <|> MonadicFold (checkboxGroupUpdate "" [1])
-                                             <|> MonadicFold (to (buttonUpdate "Apply Filters"))
-                                             ) v
+  sendReportUpdates rid "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType conf)) v
+    >>= sendReportUpdates rid "Select Reviewer Type, and Funding Year" (dropdownUpdateF' "Reviewer Type" (reviewerType conf)
+                                                                        <|> dropdownUpdateF' "Funding Year" (fundingYear conf)
+                                                                       --          <|> MonadicFold (checkboxGroupUpdate "" [1])
+                                                                       )
+    >>= sendReportUpdates rid "Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
     >>= sendReportUpdates rid "Select Case" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [0]) . to toUpdate . to Right)
     >>= sendReportUpdates rid "Select & Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un)
                                                  <|> MonadicFold (to (buttonUpdate "Assign Case(s) to Reviewer"))

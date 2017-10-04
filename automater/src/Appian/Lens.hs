@@ -50,7 +50,11 @@ getTextField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (TextF
 getTextField = hasLabel
 
 getPickerWidget :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (PickerWidget -> f PickerWidget) -> s -> f s
-getPickerWidget label = hasKeyValue "label" label . _JSON
+getPickerWidget label = failing byLabel byTestLabel . _JSON
+  where
+    byLabel = deep (filtered $ has $ runFold ((,) <$> Fold (filtered $ anyOf (key "#t" . _String) pickerType) <*> Fold (key "label" . _String . only label)))
+    byTestLabel = deep (filtered $ has $ runFold ((,) <$> Fold (filtered $ anyOf (key "#t" . _String) pickerType) <*> Fold (key "testLabel" . _String . only ("test-" <> label)))) -- hasTypeAnd "PickerWidget" (key "testLabel" . _String . only ("test-" <> label))
+    pickerType t = isSuffixOf "PickerWidget" t || isSuffixOf "PickerField" t
 
 getParagraphField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (ParagraphField -> f ParagraphField) -> s -> f s
 getParagraphField = hasLabel

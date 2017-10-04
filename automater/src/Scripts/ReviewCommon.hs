@@ -35,6 +35,30 @@ adminSolix2017 = ReviewBaseConf RevAdminCorrection RevSolix FY2017
 adminUsac2017 :: ReviewBaseConf
 adminUsac2017 = ReviewBaseConf RevAdminCorrection RevUsac FY2017
 
+spinInitial2017 :: ReviewBaseConf
+spinInitial2017 = ReviewBaseConf RevSpinChange RevInitial FY2017
+
+spinFinal2017 :: ReviewBaseConf
+spinFinal2017 = ReviewBaseConf RevSpinChange RevFinal FY2017
+
+spinSolix2017 :: ReviewBaseConf
+spinSolix2017 = ReviewBaseConf RevSpinChange RevSolix FY2017
+
+spinUsac2017 :: ReviewBaseConf
+spinUsac2017 = ReviewBaseConf RevSpinChange RevUsac FY2017
+
+form486Initial2017 :: ReviewBaseConf
+form486Initial2017 = ReviewBaseConf RevForm486 RevInitial FY2017
+
+form486Final2017 :: ReviewBaseConf
+form486Final2017 = ReviewBaseConf RevForm486 RevFinal FY2017
+
+form486Solix2017 :: ReviewBaseConf
+form486Solix2017 = ReviewBaseConf RevForm486 RevSolix FY2017
+
+form486Usac2017 :: ReviewBaseConf
+form486Usac2017 = ReviewBaseConf RevForm486 RevUsac FY2017
+
 data ReviewType
   = RevSelect
   | RevAppeals
@@ -134,4 +158,4 @@ retryIt act = retrying reviewRetryPolicy shouldRetry (const act)
     shouldRetry _ (Right _) = pure False
 
 reviewRetryPolicy :: Monad m => RetryPolicyM m
-reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 7
+reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 3

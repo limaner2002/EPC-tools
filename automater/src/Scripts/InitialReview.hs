@@ -115,9 +115,12 @@ makeDecision val ident = do
     >>= sendUpdates "Select Decision" (MonadicFold $ to $ dropdownUpdate "Select Decision" 2)
     >>= sendUpdates "Select Reason" (MonadicFold $ to $ dropdownUpdate "Select Reason" 2)
     >>= sendUpdates "Add Rationale" (MonadicFold $ to $ dynamicLinkUpdate "Add Rationale")
-    >>= sendUpdates "Select Rationale" (MonadicFold (to $ dropdownUpdate "Rationale_1_Dropdown" 2)
-                                        <|> MonadicFold (to $ buttonUpdate "No")
-                                       )
+    >>= (\v -> do
+            v' <- sendUpdates "Select Rationale" (MonadicFold (to $ dropdownUpdate "Rationale_1_Dropdown" 2)) v
+            case v ^? getButton "No" of
+              Nothing -> return $ trace "No button doesn't exist." v'
+              Just _ -> sendUpdates "Click 'No' for 'does this change the original FRN decision?'" (MonadicFold (to $ buttonUpdate "No")) v
+        )
     >>= sendUpdates "Save Decision" (MonadicFold $ to $ buttonUpdate "Save Decision")
 
 makeNote :: Value -> AppianInt -> Appian Value

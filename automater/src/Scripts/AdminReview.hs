@@ -20,8 +20,8 @@ import Scripts.Assignment
 import Scripts.InitialReview
 import Servant.Client
 
-adminReview :: ClientEnv -> ReviewUsers -> IO (Either SomeException Value)
-adminReview env revUsers = do
+fullReview :: ClientEnv -> ReviewUsers -> FullReviewConf -> IO (Either SomeException Value)
+fullReview env revUsers fullReviewConf = do
   let reviewManager = userReviewerManager revUsers
       initialReviewer = userInitialReviewer revUsers
       finalReviewer = userFinalReviewer revUsers
@@ -29,15 +29,28 @@ adminReview env revUsers = do
       usacReviewer = userUsacReviewer revUsers
       runIt act login = concurrently (loggingFunc "blah!") (tryAny (runAppian act env login) >>= \r -> (atomically $ writeTChan logChan Appian.Client.Done) >> return r)
       runItRetry action login = retryIt (login ^! act (runIt action) . _2 . to join)
-  -- runItRetry (assignment adminInitial2017 (initialReviewer ^. username . to AppianUsername)) reviewManager
-  --   >>= mapErr (runItRetry (withReviewConf $ flip manageAppealDetails adminInitial2017) initialReviewer)
-  --   >>= mapErr (runItRetry (withReviewConf $ flip initialReview adminInitial2017) initialReviewer)
-    -- >>= mapErr (runItRetry (assignment adminFinal2017 (finalReviewer ^. username . to AppianUsername)) reviewManager)
-    -- >>= mapErr (runItRetry (withReviewConf $ finalReview adminFinal2017) finalReviewer)
-    -- >>= mapErr (runItRetry (assignment adminSolix2017 (solixReviewer ^. username . to AppianUsername)) reviewManager)
-    -- >>= mapErr (runItRetry (withReviewConf $ finalReview adminSolix2017) solixReviewer)
-  runItRetry (assignment adminUsac2017 (usacReviewer ^. username . to AppianUsername)) reviewManager
-    >>= mapErr (runItRetry (withReviewConf $ finalReview adminUsac2017) usacReviewer)
+      initial = initialReviewConf fullReviewConf
+      final = finalReviewConf fullReviewConf
+      solix = solixReviewConf fullReviewConf
+      usac = usacReviewConf fullReviewConf
+      manageAppealDeets = case reviewType initial of
+                            RevAdminCorrection -> runItRetry (withReviewConf $ flip manageAppealDetails initial) initialReviewer
+                            _ -> return $ Right Null
+
+      maybeFinal res = case reviewType final of
+                         RevForm486 -> return res
+                         _ -> mapErr (runItRetry (assignment final (finalReviewer ^. username . to AppianUsername)) $ trace "Final Assign" reviewManager) res
+                                >>= mapErr (runItRetry (withReviewConf $ finalReview final) $ trace "Final Review" finalReviewer)
+
+
+  runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) (trace "Initial Assign" reviewManager)
+    >>= mapErr manageAppealDeets
+    >>= mapErr (runItRetry (withReviewConf $ flip initialReview initial) $ trace "Initial Review" initialReviewer)
+    >>= maybeFinal
+    >>= mapErr (runItRetry (assignment solix (solixReviewer ^. username . to AppianUsername)) (trace "Solix Assign" reviewManager))
+    >>= mapErr (runItRetry (withReviewConf $ finalReview solix) $ trace "Solix Review" solixReviewer)
+    >>= mapErr (runItRetry (assignment usac (usacReviewer ^. username . to AppianUsername)) (trace "Usac Assign" reviewManager))
+    >>= mapErr (runItRetry (withReviewConf $ finalReview usac) $ trace "Usac Review" usacReviewer)
 
 mapErr :: Monad m => m (Either SomeException b) -> Either SomeException a -> m (Either SomeException b)
 mapErr _ (Left exc) = return $ Left exc
@@ -56,6 +69,13 @@ data ReviewUsers = ReviewUsers
   , userUsacReviewer :: Login
   } deriving Show
 
+data FullReviewConf = FullReviewConf
+  { initialReviewConf :: ReviewBaseConf
+  , finalReviewConf :: ReviewBaseConf
+  , solixReviewConf :: ReviewBaseConf
+  , usacReviewConf :: ReviewBaseConf
+  } deriving Show
+
 testReviewUsers :: ReviewUsers
 testReviewUsers = ReviewUsers
   (Login "bwuser@mailinator.com" "USACuser123$")
@@ -64,10 +84,38 @@ testReviewUsers = ReviewUsers
   (Login "solixqareviewer@mailinator.com" "USACuser123$")
   (Login "usacqareviewer@mailinator.com" "qweR123!")
 
-preprodReviewUsers :: ReviewUsers
-preprodReviewUsers = ReviewUsers
+preprodAdminReviewUsers :: ReviewUsers
+preprodAdminReviewUsers = ReviewUsers
   (Login "christine.forsythe@sl.universalservice.org" "EPCPassword123!")
   (Login "jennifer.gawronski@sl.universalservice.org" "EPCPassword123!")
   (Login "karen.hulmes@sl.universalservice.org" "EPCPassword123!")
   (Login "brian.kickey@solixinc.com" "EPCPassword123!")
   (Login "carolyn.mccornac@usac.org" "EPCPassword123!")
+
+adminReview env revUsers = fullReview env revUsers adminReviewConf
+  where
+    adminReviewConf = FullReviewConf adminInitial2017 adminFinal2017 adminSolix2017 adminUsac2017
+
+preprodSpinReviewUsers :: ReviewUsers
+preprodSpinReviewUsers = ReviewUsers
+  (Login "lorraine.lipka@sl.universalservice.org" "EPCPassword123!")
+  (Login "kevin.conroy@sl.universalservice.org" "EPCPassword123!")
+  (Login "victor.guevara@sl.universalservice.org" "EPCPassword123!")
+  (Login "brian.kickey@solixinc.com" "EPCPassword123!")
+  (Login "cjames@usac.org" "EPCPassword123!")
+
+spinReview env revUsers = fullReview env revUsers spinReviewConf
+  where
+    spinReviewConf = FullReviewConf spinInitial2017 spinFinal2017 spinSolix2017 spinUsac2017
+
+preprodForm486Users :: ReviewUsers
+preprodForm486Users = ReviewUsers
+  (Login "krobinson@usac.org" "EPCPassword123!")
+  (Login "gregory.disarno@solixinc.com" "EPCPassword123!")
+  (Login "mark.goldberg@sl.universalservice.org" "EPCPassword123!")
+  (Login "robin.reingold@sl.universalservice.org" "EPCPassword123!")
+  (Login "avery.scott@sl.universalservice.org" "EPCPassword123!")
+
+form486Review env revUsers = fullReview env revUsers form486ReviewConf
+  where
+    form486ReviewConf = FullReviewConf form486Initial2017 form486Final2017 form486Solix2017 form486Usac2017 
