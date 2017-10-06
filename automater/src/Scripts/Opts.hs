@@ -20,6 +20,7 @@ import Scripts.FCCForm486
 import Scripts.SPINChangeIntake
 import Scripts.InitialReview
 import Scripts.ReviewCommon
+import Scripts.AdminReview
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -28,7 +29,7 @@ import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Control.Arrow
 import qualified Streaming.Prelude as S
-import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Resource hiding (throwM)
 import Data.Aeson (Value)
 import Control.Lens
 import Network.HTTP.Client
@@ -136,6 +137,26 @@ runInitialReview baseUrl username fp nThreads = do
 
   dispResults results
 
+runReview :: BaseUrl -> FilePath -> Int -> IO ()
+runReview baseUrl fp nThreads = do
+  stderrLn $ "Running review on " <> tshow baseUrl <> " for " <> tshow nThreads <> " threads."
+  mgr <- newManager tlsManagerSettings
+  res <- dispatchReview RevSpinChange (ClientEnv mgr baseUrl)
+  print res
+
+newtype UnsupportedReviewException = UnsupportedReviewException Text
+
+instance Show UnsupportedReviewException where
+  show (UnsupportedReviewException msg) = "UnsupportedReviewException: " <> unpack msg
+
+instance Exception UnsupportedReviewException
+
+dispatchReview :: ReviewType -> ClientEnv -> IO (Either SomeException Value)
+dispatchReview RevSpinChange env = spinReview env preprodSpinReviewUsers
+dispatchReview RevForm486 env = form486Review env preprodForm486Users
+dispatchReview RevServSub env = servSubReview env preprodServSubUsers
+dispatchReview typ _ = throwM $ UnsupportedReviewException $ tshow typ
+
 loginConsumer :: MonadIO m => TChan (ThreadControl a) -> (a -> m ()) -> m ()
 loginConsumer chan f = S.mapM_ f $ S.map tcItem $ S.takeWhile notFinished $ S.repeatM (atomically $ readTChan chan)
 
@@ -176,6 +197,7 @@ parseCommands = subparser
   <> command "form486Intake" form486Info
   <> command "spinChangeIntake" spinChangeInfo
   <> command "initialReview" initialReviewInfo
+  <> command "review" reviewInfo
   )
 
 scriptsInfo :: ParserInfo (IO ())
@@ -290,6 +312,21 @@ initialReviewParser = runMultiple
   <> short 'n'
   )
   <*> threadsParser
+
+reviewInfo :: ParserInfo (IO ())
+reviewInfo = info (helper <*> reviewParser)
+  (  fullDesc
+  <> progDesc "Runs PC review for 486, Service Substitution, SPIN Change, and Appeals."
+  )
+
+reviewParser :: Parser (IO ())
+reviewParser = runReview
+  <$> urlParser
+  <*> logFileParser
+  <*> option auto
+  (  long "num-threads"
+  <> short 't'
+  )
 
 parseMany :: ReadM [String]
 parseMany = readerAsk >>= pure . words

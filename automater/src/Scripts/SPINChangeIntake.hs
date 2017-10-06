@@ -40,7 +40,7 @@ spinChangeIntake = do
     >>= sendUpdates "Add All FRNs Button & Continue" (addAllFRNsButtonUpdate
                                                       <|> MonadicFold (to (buttonUpdate "Continue"))
                                                      )
-    >>= \v -> foldGridFieldPages (MonadicFold (getGridFieldCell . traverse)) printFRNs Null v
+    >>= \v -> foldGridFieldPages (MonadicFold (getGridFieldCell . traverse)) printFRNs v v
     >>= selectNewSPIN 143000824
     >>= sendUpdates "Click Preview" (MonadicFold (to (dropdownUpdate "Please select the reason why you would like to change the service provider on the FRN(s)" 2))
                                       <|> MonadicFold (to (buttonUpdate "Preview"))

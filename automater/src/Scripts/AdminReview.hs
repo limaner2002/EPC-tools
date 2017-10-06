@@ -93,8 +93,8 @@ preprodAdminReviewUsers = ReviewUsers
   (Login "carolyn.mccornac@usac.org" "EPCPassword123!")
 
 adminReview env revUsers = fullReview env revUsers adminReviewConf
-  where
-    adminReviewConf = FullReviewConf adminInitial2017 adminFinal2017 adminSolix2017 adminUsac2017
+
+adminReviewConf = FullReviewConf adminInitial2017 adminFinal2017 adminSolix2017 adminUsac2017
 
 preprodSpinReviewUsers :: ReviewUsers
 preprodSpinReviewUsers = ReviewUsers
@@ -105,8 +105,8 @@ preprodSpinReviewUsers = ReviewUsers
   (Login "cjames@usac.org" "EPCPassword123!")
 
 spinReview env revUsers = fullReview env revUsers spinReviewConf
-  where
-    spinReviewConf = FullReviewConf spinInitial2017 spinFinal2017 spinSolix2017 spinUsac2017
+
+spinReviewConf = FullReviewConf spinInitial2017 spinFinal2017 spinSolix2017 spinUsac2017
 
 preprodForm486Users :: ReviewUsers
 preprodForm486Users = ReviewUsers
@@ -117,8 +117,8 @@ preprodForm486Users = ReviewUsers
   (Login "avery.scott@sl.universalservice.org" "EPCPassword123!")
 
 form486Review env revUsers = fullReview env revUsers form486ReviewConf
-  where
-    form486ReviewConf = FullReviewConf form486Initial2017 form486Final2017 form486Solix2017 form486Usac2017 
+
+form486ReviewConf = FullReviewConf form486Initial2017 form486Final2017 form486Solix2017 form486Usac2017 
 
 preprodServSubUsers :: ReviewUsers
 preprodServSubUsers = ReviewUsers
@@ -129,5 +129,5 @@ preprodServSubUsers = ReviewUsers
   (Login "jwalsh@usac.org" "EPCPassword123!")
 
 servSubReview env revUsers = fullReview env revUsers servSubConf
-  where
-    servSubConf = FullReviewConf servSubInitial2017 servSubFinal2017 servSubSolix2017 servSubUsac2017
+
+servSubConf = FullReviewConf servSubInitial2017 servSubFinal2017 servSubSolix2017 servSubUsac2017
