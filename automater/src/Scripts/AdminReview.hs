@@ -119,3 +119,15 @@ preprodForm486Users = ReviewUsers
 form486Review env revUsers = fullReview env revUsers form486ReviewConf
   where
     form486ReviewConf = FullReviewConf form486Initial2017 form486Final2017 form486Solix2017 form486Usac2017 
+
+preprodServSubUsers :: ReviewUsers
+preprodServSubUsers = ReviewUsers
+  (Login "rae.coan@sl.universalservice.org" "EPCPassword123!")
+  (Login "sgabaly@solixinc.com" "EPCPassword123!")
+  (Login "brian.oconnell@sl.universalservice.org" "EPCPassword123!")
+  (Login "brian.kickey@solixinc.com" "EPCPassword123!")
+  (Login "jwalsh@usac.org" "EPCPassword123!")
+
+servSubReview env revUsers = fullReview env revUsers servSubConf
+  where
+    servSubConf = FullReviewConf servSubInitial2017 servSubFinal2017 servSubSolix2017 servSubUsac2017

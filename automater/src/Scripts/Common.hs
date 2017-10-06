@@ -155,3 +155,16 @@ loggingFunc fp = S.takeWhile isMsg
     isMsg _ = False
     unpackMsg (Msg t) = unpack t
     unpackMsg _ = error "The impossible happened unpacking the log Message!"
+
+viewRelatedActions :: Value -> RecordRef -> Appian (RecordRef, Value)
+viewRelatedActions v recordRef = do
+  let ref = PathPiece recordRef
+  v' <- viewRecordDashboard ref (PathPiece $ Dashboard "summary")
+  dashboard <- handleMissing "Related Actions Dashboard" v' $ v' ^? getRecordDashboard "Related Actions"
+  v'' <- viewRecordDashboard ref (PathPiece dashboard)
+  return (recordRef, v'')
+
+executeRelatedAction :: Text -> RecordRef -> Value -> Appian Value
+executeRelatedAction action recordId val = do
+  aid <- PathPiece <$> (handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getRelatedActionId action)
+  relatedActionEx (PathPiece recordId) aid

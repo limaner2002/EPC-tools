@@ -16,6 +16,7 @@ import Control.Lens
 import Control.Lens.Action.Reified
 import Scripts.Common
 import Control.Retry
+import qualified Streaming.Prelude as S
 
 data ReviewBaseConf = ReviewBaseConf
   { reviewType :: ReviewType
@@ -58,6 +59,18 @@ form486Solix2017 = ReviewBaseConf RevForm486 RevSolix FY2017
 
 form486Usac2017 :: ReviewBaseConf
 form486Usac2017 = ReviewBaseConf RevForm486 RevUsac FY2017
+
+servSubInitial2017 :: ReviewBaseConf
+servSubInitial2017 = ReviewBaseConf RevServSub RevInitial FY2017
+
+servSubFinal2017 :: ReviewBaseConf
+servSubFinal2017 = ReviewBaseConf RevServSub RevFinal FY2017
+
+servSubSolix2017 :: ReviewBaseConf
+servSubSolix2017 = ReviewBaseConf RevServSub RevSolix FY2017
+
+servSubUsac2017 :: ReviewBaseConf
+servSubUsac2017 = ReviewBaseConf RevServSub RevUsac FY2017
 
 data ReviewType
   = RevSelect
@@ -159,3 +172,22 @@ retryIt act = retrying reviewRetryPolicy shouldRetry (const act)
 
 reviewRetryPolicy :: Monad m => RetryPolicyM m
 reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 3
+
+distributeLinks :: Text -> ReportId -> ReviewConf -> Value -> Appian Value
+distributeLinks actionName rid conf v = do
+  gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
+  let execReview = viewRelatedActions v >=> uncurry (executeRelatedAction actionName)
+  mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) execReview
+  handleMissing "Could not select FRN!" v mVal
+
+getAllLinks :: ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) Appian ()
+getAllLinks rid v = do
+  mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
+  case mIdents of
+    Nothing -> throwM $ MissingComponentException ("There are no identifiers!", v)
+    Just idents -> S.each $ fmap Item idents <> pure Finished
+
+accumLinks :: Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> Appian (Maybe (Vector RecordRef), Value)
+accumLinks val l gf = return (l', val)
+  where
+    l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)

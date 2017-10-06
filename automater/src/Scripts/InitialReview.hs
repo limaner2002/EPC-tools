@@ -17,7 +17,7 @@ import qualified Data.Foldable as F
 import Scripts.Common
 import Scripts.ReviewCommon
 import Scripts.Test
-import qualified Streaming.Prelude as S
+
 
 initialReview :: ReviewConf -> ReviewBaseConf -> Appian Value
 initialReview conf baseConf = do
@@ -67,19 +67,6 @@ myAssignedReport conf = do
 
 setAgeSort :: GridField a -> GridField a
 setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortField "secondsSinceRequest" True]
-
-viewRelatedActions :: Value -> RecordRef -> Appian (RecordRef, Value)
-viewRelatedActions v recordRef = do
-  let ref = PathPiece recordRef
-  v' <- viewRecordDashboard ref (PathPiece $ Dashboard "summary")
-  dashboard <- handleMissing "Related Actions Dashboard" v' $ v' ^? getRecordDashboard "Related Actions"
-  v'' <- viewRecordDashboard ref (PathPiece dashboard)
-  return (recordRef, v'')
-
-executeRelatedAction :: Text -> RecordRef -> Value -> Appian Value
-executeRelatedAction action recordId val = do
-  aid <- PathPiece <$> (handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getRelatedActionId action)
-  relatedActionEx (PathPiece recordId) aid
 
 addDecisions :: Value -> Appian Value
 addDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeDecisions val val
@@ -139,21 +126,4 @@ makeNote val ident = do
                                          <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
                                         )
 
-getAllLinks :: ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) Appian ()
-getAllLinks rid v = do
-  mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
-  case mIdents of
-    Nothing -> throwM $ MissingComponentException ("There are no identifiers!", v)
-    Just idents -> S.each $ fmap Item idents <> pure Finished
 
-accumLinks :: Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> Appian (Maybe (Vector RecordRef), Value)
-accumLinks val l gf = return (l', val)
-  where
-    l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
-
-distributeLinks :: Text -> ReportId -> ReviewConf -> Value -> Appian Value
-distributeLinks actionName rid conf v = do
-  gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
-  let execReview = viewRelatedActions v >=> uncurry (executeRelatedAction actionName)
-  mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) execReview
-  handleMissing "Could not select FRN!" v mVal
