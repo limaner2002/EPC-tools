@@ -13,9 +13,10 @@ import Servant.Client
 import Control.Arrow
 import Control.Monad.Logger
 import Control.Monad.Trans.Resource
+import Control.Lens
 
-checkUsers :: (MonadBaseControl IO m, MonadThrow m, MonadIO m) => ClientEnv -> FilePath -> m String
-checkUsers env fp = check fp
+checkUsers :: (MonadBaseControl IO m, MonadThrow m, MonadIO m) => ClientEnv -> FilePath -> FilePath -> m String
+checkUsers env fp outFile = check fp
   where
     f login = do
       res <- tryAny $ runAppian recordsTab env login
@@ -25,7 +26,8 @@ checkUsers env fp = check fp
     check = csvStreamByName
       >>> S.mapM (liftBase . f)
       >>> S.filter isJust
-      >>> S.print
+      >>> S.map (unpack . toRow)
+      >>> S.writeFile outFile
       >>> runResourceT
       >>> runNoLoggingT
-
+    toRow (Just login) = login ^. username <> "," <> login ^. password

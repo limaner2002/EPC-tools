@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.Common where
 
@@ -143,11 +144,11 @@ openReport reportName = do
   return (rid, v')
 
     -- This needs to be replaced as soon as ClientM is generalized in servant-client
-loggingFunc :: FilePath -> IO ()
+loggingFunc :: (MonadIO m, MonadThrow m, MonadBaseControl IO m) => FilePath -> m ()
 loggingFunc fp = S.takeWhile isMsg
   >>> S.map unpackMsg
---   >>> S.writeFile fp
-  >>> S.print
+  >>> S.writeFile fp
+--   >>> S.mapM_ (liftIO . print)
   >>> runResourceT
     $ S.repeatM (atomically $ readTChan logChan)
   where

@@ -15,6 +15,7 @@ module Scripts.Test
   , paragraphArbitrary
   , paragraphArbitraryUpdate
   , intFieldArbitrary
+  , intFieldArbitraryUpdateF
   , dropdownArbitraryUpdateF
   ) where 
 
@@ -91,8 +92,14 @@ fillTextField size tf = do
   txt <- generate $ arbitraryTextFixedPrintable size
   return $ tfValue .~ txt $ tf
 
-intFieldArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> (Either a Update -> f (Either a Update)) -> s -> f s
-intFieldArbitrary label = getTextField label . act fillIntField . to toUpdate . to Right
+intFieldArbitraryUpdateF :: (MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> ReifiedMonadicFold m s (Either Text Update)
+intFieldArbitraryUpdateF label = MonadicFold (intFieldArbitrary label)
+
+intFieldArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+intFieldArbitrary label = getField
+  where
+    getField = getTextField label . act fillIntField . to toUpdate . to Right
+    -- err = to (const $ Left $ "Could not find TextField " <> tshow label)
 
 fillIntField :: MonadIO m => TextField -> m TextField
 fillIntField tf = do

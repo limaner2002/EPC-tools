@@ -21,6 +21,7 @@ import Scripts.SPINChangeIntake
 import Scripts.InitialReview
 import Scripts.ReviewCommon
 import Scripts.AdminReview
+import Scripts.AdminIntake
 import Appian.Client (runAppian, LogMessage(..), logChan)
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -141,8 +142,39 @@ runReview :: BaseUrl -> FilePath -> Int -> IO ()
 runReview baseUrl fp nThreads = do
   stderrLn $ "Running review on " <> tshow baseUrl <> " for " <> tshow nThreads <> " threads."
   mgr <- newManager tlsManagerSettings
-  res <- dispatchReview RevSpinChange (ClientEnv mgr baseUrl)
-  print res
+  results <- runConcurrently
+    $  Concurrently (loggingFunc fp)
+    *> Concurrently (mapConcurrently (const $ dispatchReview RevSpinChange (ClientEnv mgr baseUrl)) [1..nThreads])
+  atomically $ writeTChan logChan Done
+
+  dispResults results
+
+runAdminIntake :: FilePath -> Int -> BaseUrl -> FilePath -> IO ()
+runAdminIntake userFile nThreads baseUrl fp = runConsumer action baseUrl fp userFile nThreads
+  where
+    action login = adminIntake $ login ^. username . to AppianUsername
+  
+runConsumer :: (Login -> Appian a) -> BaseUrl -> FilePath -> FilePath -> Int -> IO ()
+runConsumer f baseUrl fp userFile nThreads = do
+  chan <- atomically newTChan
+  mgr <- liftIO $ newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+  _ <- concurrently (concurrently
+                      (loggingFunc fp)
+                      (loginProducer userFile chan)
+                    )
+           (do
+               atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
+               results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
+               atomically $ writeTChan logChan Done
+               return results
+           )
+  putStrLn "Done!"
+    where
+      runIt mgr login = do
+        res <- join <$> (tryAny $ runAppian (f login) (ClientEnv mgr baseUrl) login)
+        case res of
+          Left exc -> print exc
+          Right _ -> putStrLn "Success!"
 
 newtype UnsupportedReviewException = UnsupportedReviewException Text
 
@@ -198,6 +230,7 @@ parseCommands = subparser
   <> command "spinChangeIntake" spinChangeInfo
   <> command "initialReview" initialReviewInfo
   <> command "review" reviewInfo
+  <> command "adminIntake" adminIntakeInfo
   )
 
 scriptsInfo :: ParserInfo (IO ())
@@ -327,6 +360,22 @@ reviewParser = runReview
   (  long "num-threads"
   <> short 't'
   )
+
+adminIntakeInfo :: ParserInfo (IO ())
+adminIntakeInfo = info (helper <*> adminIntakeParser)
+  (  fullDesc
+  <> progDesc "Runs Administrative Correction intake"
+  )
+
+adminIntakeParser :: Parser (IO ())
+adminIntakeParser = runAdminIntake
+  <$> userParser
+  <*> option auto
+  (  long "num-threads"
+  <> short 't'
+  )
+  <*> urlParser
+  <*> logFileParser
 
 parseMany :: ReadM [String]
 parseMany = readerAsk >>= pure . words

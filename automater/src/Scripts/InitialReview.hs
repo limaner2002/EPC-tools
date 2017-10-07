@@ -84,14 +84,6 @@ makeNotes val gf = do
   v <- foldGridField' makeNote val gf
   return (v, v)
 
-foldGridField' :: (b -> AppianInt -> Appian b) -> b -> GridField a -> Appian b
-foldGridField' f b gf = do
-  let boxes = gf ^.. gfIdentifiers . traverse . traverse
-  F.foldlM f b boxes
-
-selectCheckbox :: AppianInt -> GridField a -> GridField a
-selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]
-
 makeDecision :: Value -> AppianInt -> Appian Value
 makeDecision val ident = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse

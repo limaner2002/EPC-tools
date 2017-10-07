@@ -27,6 +27,9 @@ library
                      , Scripts.SPINChangeIntake
                      , Scripts.InitialReview
                      , Scripts.ReviewCommon
+                     , Scripts.AdminReview
+                     , Scripts.Assignment
+                     , Scripts.AdminIntake
   build-depends:       base
                      , lens
                      , aeson
