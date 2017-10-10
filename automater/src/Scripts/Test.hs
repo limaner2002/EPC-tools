@@ -17,6 +17,10 @@ module Scripts.Test
   , intFieldArbitrary
   , intFieldArbitraryUpdateF
   , dropdownArbitraryUpdateF
+  , dropdownArbitraryUpdateF_
+  , intFieldArbitraryUpdateF_
+  , fillIntField_
+  , dropdownArbitrarySelect_
   ) where 
 
 import Test.QuickCheck hiding (generate)
@@ -92,19 +96,28 @@ fillTextField size tf = do
   txt <- generate $ arbitraryTextFixedPrintable size
   return $ tfValue .~ txt $ tf
 
-intFieldArbitraryUpdateF :: (MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> ReifiedMonadicFold m s (Either Text Update)
-intFieldArbitraryUpdateF label = MonadicFold (intFieldArbitrary label)
+intFieldArbitraryUpdateF_ :: (MonadIO m, Plated s, AsValue s, AsJSON s) => (TextField -> m TextField) -> Text -> ReifiedMonadicFold m s (Either Text Update)
+intFieldArbitraryUpdateF_ fillField label = MonadicFold (intFieldArbitrary_ fillField label)
 
-intFieldArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
-intFieldArbitrary label = getField
+intFieldArbitraryUpdateF :: (MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> ReifiedMonadicFold m s (Either Text Update)
+intFieldArbitraryUpdateF = intFieldArbitraryUpdateF_ fillIntField
+
+intFieldArbitrary_ :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => (TextField -> m TextField) -> Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+intFieldArbitrary_ fillField label = getField
   where
-    getField = getTextField label . act fillIntField . to toUpdate . to Right
+    getField = getTextField label . act fillField . to toUpdate . to Right
     -- err = to (const $ Left $ "Could not find TextField " <> tshow label)
 
-fillIntField :: MonadIO m => TextField -> m TextField
-fillIntField tf = do
-  int <- generate (QC.arbitrarySizedNatural :: Gen Int)
+intFieldArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+intFieldArbitrary = intFieldArbitrary_ fillIntField
+
+fillIntField_ :: MonadIO m => Gen Int -> TextField -> m TextField
+fillIntField_ gen tf = do
+  int <- generate gen
   return $ tfValue .~ (tshow int) $ tf
+
+fillIntField :: MonadIO m => TextField -> m TextField
+fillIntField = fillIntField_ QC.arbitrarySizedNatural
 
 gfSelect :: MonadIO m => GridField a -> m (GridField a)
 gfSelect gf = do
@@ -114,19 +127,30 @@ gfSelect gf = do
       ident <- generate $ QC.elements idents
       return $ gfSelection . _Just . _Selectable . gslSelected .~ [ident] $ gf
 
+dropdownArbitraryUpdateF_ :: (MonadIO m, Plated s, AsValue s, AsJSON s) => (DropdownField -> m DropdownField) -> Text -> ReifiedMonadicFold m s (Either Text Update)
+dropdownArbitraryUpdateF_ selectFcn label = MonadicFold (dropdownArbitrary_ selectFcn label)
+
 dropdownArbitraryUpdateF :: (MonadIO m, Plated s, AsValue s, AsJSON s) =>
   Text -> ReifiedMonadicFold m s (Either Text Update)
-dropdownArbitraryUpdateF label = MonadicFold (dropdownArbitrary label)
+dropdownArbitraryUpdateF label = MonadicFold (dropdownArbitrary_ dropdownArbitrarySelect label)
+
+dropdownArbitrary_ :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) =>
+                     (DropdownField -> m DropdownField) -> Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+dropdownArbitrary_ selectFn label = getIt
+  where
+    getIt = getDropdown label . act selectFn . to toUpdate . to Right
+    err = Left ("Could not find dropdown " <> tshow label)
 
 dropdownArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) =>
                      Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
-dropdownArbitrary label = getIt
-  where
-    getIt = getDropdown label . act dropdownArbitrarySelect . to toUpdate . to Right
-    err = Left ("Could not find dropdown " <> tshow label)
+dropdownArbitrary = dropdownArbitrary_ dropdownArbitrarySelect
+
+dropdownArbitrarySelect_ :: MonadIO m => Gen Int -> DropdownField -> m DropdownField
+dropdownArbitrarySelect_ gen df = do
+  n <- generate $ gen
+  return $ dfValue .~ n $ df
 
 dropdownArbitrarySelect :: MonadIO m => DropdownField -> m DropdownField
-dropdownArbitrarySelect df = do
-  let max = df ^. dfChoices . to length
-  n <- generate $ choose (2, max)
-  return $ dfValue .~ n $ df
+dropdownArbitrarySelect df = dropdownArbitrarySelect_ (choose (2, max)) df
+  where
+    max = df ^. dfChoices . to length

@@ -18,6 +18,7 @@ import Scripts.Common
 import Scripts.ReviewCommon
 import Scripts.Assignment
 import Scripts.InitialReview
+import Scripts.ComadReview
 import Servant.Client
 
 fullReview :: ClientEnv -> ReviewUsers -> FullReviewConf -> IO (Either SomeException Value)
@@ -42,11 +43,12 @@ fullReview env revUsers fullReviewConf = do
                          RevForm486 -> return res
                          _ -> mapErr (runItRetry (assignment final (finalReviewer ^. username . to AppianUsername)) $ trace "Final Assign" reviewManager) res
                                 >>= mapErr (runItRetry (withReviewConf $ finalReview final) $ trace "Final Review" finalReviewer)
-
+      dispatchInitialReview RevCOMAD = withReviewConf $ flip comadInitialReview initial
+      dispatchInitialReview _ = withReviewConf $ flip initialReview initial
 
   runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) (trace "Initial Assign" reviewManager)
     >>= mapErr manageAppealDeets
-    >>= mapErr (runItRetry (withReviewConf $ flip initialReview initial) $ trace "Initial Review" initialReviewer)
+    >>= mapErr (runItRetry (dispatchInitialReview $ reviewType initial) $ trace "Initial Review" initialReviewer)
     >>= maybeFinal
     >>= mapErr (runItRetry (assignment solix (solixReviewer ^. username . to AppianUsername)) (trace "Solix Assign" reviewManager))
     >>= mapErr (runItRetry (withReviewConf $ finalReview solix) $ trace "Solix Review" solixReviewer)
@@ -148,3 +150,15 @@ preprodForm500Users = ReviewUsers
 form500Review env revUsers = fullReview env revUsers form500ReviewConf
 
 form500ReviewConf = FullReviewConf form500Initial2017 form500Final2017 form500Solix2017 form500Usac2017
+
+preprodComadUsers :: ReviewUsers
+preprodComadUsers = ReviewUsers
+  (Login "ramesh.akkramani@usac.org" "EPCPassword123!")
+  (Login "jean.chandrasegar@solixinc.com" "EPCPassword123!")
+  (Login "dennis.nielsen@sl.universalservice.org" "EPCPassword123!")
+  (Login "joseph.moryl@sl.universalservice.org" "EPCPassword123!")
+  (Login "rama.tangirala@usac.org" "EPCPassword123!")
+
+comadReview env revUsers = fullReview env revUsers comadReviewConf
+
+comadReviewConf = FullReviewConf comadInitial2016 comadFinal2016 comadSolix2016 comadUsac2016
