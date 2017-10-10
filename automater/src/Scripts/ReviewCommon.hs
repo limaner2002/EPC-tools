@@ -37,6 +37,18 @@ adminSolix2017 = ReviewBaseConf RevAdminCorrection RevSolix FY2017
 adminUsac2017 :: ReviewBaseConf
 adminUsac2017 = ReviewBaseConf RevAdminCorrection RevUsac FY2017
 
+appealInitial2017 :: ReviewBaseConf
+appealInitial2017 = ReviewBaseConf RevAppeals RevInitial FY2017
+
+appealFinal2017 :: ReviewBaseConf
+appealFinal2017 = ReviewBaseConf RevAppeals RevFinal FY2017
+
+appealSolix2017 :: ReviewBaseConf
+appealSolix2017 = ReviewBaseConf RevAppeals RevSolix FY2017
+
+appealUsac2017 :: ReviewBaseConf
+appealUsac2017 = ReviewBaseConf RevAppeals RevUsac FY2017
+
 spinInitial2017 :: ReviewBaseConf
 spinInitial2017 = ReviewBaseConf RevSpinChange RevInitial FY2017
 
@@ -72,6 +84,18 @@ servSubSolix2017 = ReviewBaseConf RevServSub RevSolix FY2017
 
 servSubUsac2017 :: ReviewBaseConf
 servSubUsac2017 = ReviewBaseConf RevServSub RevUsac FY2017
+
+form500Initial2017 :: ReviewBaseConf
+form500Initial2017 = ReviewBaseConf RevForm500 RevInitial FY2017
+
+form500Final2017 :: ReviewBaseConf
+form500Final2017 = ReviewBaseConf RevForm500 RevFinal FY2017
+
+form500Solix2017 :: ReviewBaseConf
+form500Solix2017 = ReviewBaseConf RevForm500 RevSolix FY2017
+
+form500Usac2017 :: ReviewBaseConf
+form500Usac2017 = ReviewBaseConf RevForm500 RevUsac FY2017
 
 data ReviewType
   = RevSelect
@@ -193,10 +217,10 @@ accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-selectCheckbox :: AppianInt -> GridField a -> GridField a
+selectCheckbox :: GridFieldIdent -> GridField a -> GridField a
 selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]
 
-foldGridField' :: (b -> AppianInt -> Appian b) -> b -> GridField a -> Appian b
+foldGridField' :: (b -> GridFieldIdent -> Appian b) -> b -> GridField a -> Appian b
 foldGridField' f b gf = do
   let boxes = gf ^.. gfIdentifiers . traverse . traverse
   F.foldlM f b boxes

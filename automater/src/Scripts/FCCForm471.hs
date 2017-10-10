@@ -174,7 +174,7 @@ isWindowClose :: (Contravariant f, Applicative f, AsValue t) => (Bool -> f Bool)
 isWindowClose = key "title" . _String . to (=="FCC Form 471 Funding Year Window is Closed")
 
 selectFirst :: Applicative f =>
-     (AppianInt -> f AppianInt) -> GridField a0 -> f (GridField a0)
+     (GridFieldIdent -> f GridFieldIdent) -> GridField a0 -> f (GridField a0)
 selectFirst = gfIdentifiers . traverse . taking 1 traverse
 
 logIt :: MonadIO m => Text -> (a -> ByteString) -> a -> m a

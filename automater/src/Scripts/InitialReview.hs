@@ -34,7 +34,8 @@ manageAppealDetails conf baseConf = do
   distributeLinks "Manage Appeal Details" rid conf v
     >>= sendUpdates "Select Type" (dropdownArbitraryUpdateF "What type of decision would you like to appeal?"
                                   <|> dropdownArbitraryUpdateF "Error Analysis"
-                                  <|> dropdownUpdateF' "Appeal Type" RevAdminCorrection
+--                                  <|> dropdownUpdateF' "Appeal Type" RevAdminCorrection
+                                  <|> dropdownArbitraryUpdateF "Appeal Type"
                                   <|> dropdownArbitraryUpdateF "HS Type"
                                   <|> dropdownArbitraryUpdateF "Appeal Reason"
                                   <|> dropdownArbitraryUpdateF "Appeal Category"
@@ -65,9 +66,6 @@ myAssignedReport conf = do
     >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
   return (rid, res)
 
-setAgeSort :: GridField a -> GridField a
-setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortField "secondsSinceRequest" True]
-
 addDecisions :: Value -> Appian Value
 addDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeDecisions val val
 
@@ -84,7 +82,7 @@ makeNotes val gf = do
   v <- foldGridField' makeNote val gf
   return (v, v)
 
-makeDecision :: Value -> AppianInt -> Appian Value
+makeDecision :: Value -> GridFieldIdent -> Appian Value
 makeDecision val ident = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse
   _ <- sendUpdates "Decision: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
@@ -102,7 +100,7 @@ makeDecision val ident = do
         )
     >>= sendUpdates "Save Decision" (MonadicFold $ to $ buttonUpdate "Save Decision")
 
-makeNote :: Value -> AppianInt -> Appian Value
+makeNote :: Value -> GridFieldIdent -> Appian Value
 makeNote val ident = do
   gf <- handleMissing "FRN Note Grid" val $ val ^? getGridFieldCell . traverse
   val' <- sendUpdates "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))

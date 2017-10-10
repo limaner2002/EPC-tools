@@ -285,7 +285,7 @@ data GridValue
   deriving Show
 
 data GridSelection = GridSelection
-  { _gslSelected :: [AppianInt]
+  { _gslSelected :: [GridFieldIdent]
   , _gslPagingInfo :: PagingInfo
   } deriving Show
 
@@ -309,7 +309,7 @@ newtype GridWidget a = GridWidget
 
 data GridField a = GridField
   { _gfColumns :: HashMap Text a
-  , _gfIdentifiers :: Maybe [AppianInt]
+  , _gfIdentifiers :: Maybe [GridFieldIdent]
   , _gfSelection :: Maybe GridValue
   , _gfModel :: Value
   , _gfSaveInto :: [Text]
@@ -317,6 +317,21 @@ data GridField a = GridField
   , _gfTotalCount :: Int
   }
   deriving Show
+
+data GridFieldIdent
+  = IntIdent AppianInt
+  | TxtIdent AppianString
+  deriving Show
+
+makePrisms ''GridFieldIdent
+
+instance ToJSON GridFieldIdent where
+  toJSON (IntIdent i) = toJSON i
+  toJSON (TxtIdent i) = toJSON i
+
+instance FromJSON GridFieldIdent where
+  parseJSON v = IntIdent <$> parseJSON v
+    <|> TxtIdent <$> parseJSON v
 
 -- This needs to be updated to better reflect the actual SAIL component.
 data GridFieldCell

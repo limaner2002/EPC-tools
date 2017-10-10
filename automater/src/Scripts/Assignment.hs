@@ -26,14 +26,12 @@ assignment conf username = do
                                                                        --          <|> MonadicFold (checkboxGroupUpdate "" [1])
                                                                        )
     >>= sendReportUpdates rid "Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
+    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
     >>= sendReportUpdates rid "Select Case" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [0..19]) . to toUpdate . to Right)
     >>= sendReportUpdates rid "Select & Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un)
                                                  <|> MonadicFold (to (buttonUpdate "Assign Case(s) to Reviewer"))
                                                 )
                                                 
-setAgeSort :: GridField a -> GridField a
-setAgeSort = gfSelection . traverse . _NonSelectable . pgISort .~ Just [SortField "secondsSinceRequest" True]
-
 gridSelection :: [Int] -> GridField a -> GridField a
 gridSelection idxs gf = gfSelection . traverse . _Selectable . gslSelected .~ idents $ gf
   where

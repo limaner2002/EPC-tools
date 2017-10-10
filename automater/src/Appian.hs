@@ -49,5 +49,7 @@ instance MonadTrans AppianT where
 
 instance MonadLogger m => MonadLogger (AppianT m)
 
+type AppianStack = AppianT (LoggingT ClientM)
+
 -- instance Monad m => MonadBase ClientM (AppianT m) where
 --   liftBase b = _

@@ -24,7 +24,7 @@ editAdjustmentAmounts :: RecordRef -> Appian Value
 editAdjustmentAmounts rid =
   viewRecordDashboard (PathPiece rid) (PathPiece $ Dashboard "summary")
     >>= flip viewRelatedActions rid
-    >>= uncurry (executeRelatedAction "Review COMAD Request")
+    >>= uncurry (executeRelatedAction "Edit Adjustment Amount")
     >>= pageAdjustments
     >>= sendUpdates "Submit" (MonadicFold $ to $ buttonUpdate "Submit")
 
@@ -36,10 +36,10 @@ editAdjustments val gf = do
   v <- foldGridField' editAdjustment val gf
   return (v, v)
 
-selectGridfieldUpdateF :: AppianInt -> GridField a -> ReifiedMonadicFold m s (Either Text Update)
+selectGridfieldUpdateF :: GridFieldIdent -> GridField a -> ReifiedMonadicFold m s (Either Text Update)
 selectGridfieldUpdateF ident gf = MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
 
-editAdjustment :: Value -> AppianInt -> Appian Value
+editAdjustment :: Value -> GridFieldIdent -> Appian Value
 editAdjustment val ident = do
   gf <- handleMissing "FRN Adjustment Grid" val $ val ^? getGridFieldCell . traverse
   val' <- sendUpdates "Adjustments: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val

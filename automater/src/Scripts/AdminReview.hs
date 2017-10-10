@@ -35,6 +35,7 @@ fullReview env revUsers fullReviewConf = do
       usac = usacReviewConf fullReviewConf
       manageAppealDeets = case reviewType initial of
                             RevAdminCorrection -> runItRetry (withReviewConf $ flip manageAppealDetails initial) initialReviewer
+                            RevAppeals -> runItRetry (withReviewConf $ flip manageAppealDetails initial) initialReviewer
                             _ -> return $ Right Null
 
       maybeFinal res = case reviewType final of
@@ -131,3 +132,19 @@ preprodServSubUsers = ReviewUsers
 servSubReview env revUsers = fullReview env revUsers servSubConf
 
 servSubConf = FullReviewConf servSubInitial2017 servSubFinal2017 servSubSolix2017 servSubUsac2017
+
+appealReview env revUsers = fullReview env revUsers appealReviewConf
+
+appealReviewConf = FullReviewConf appealInitial2017 appealFinal2017 appealSolix2017 appealUsac2017
+
+preprodForm500Users :: ReviewUsers
+preprodForm500Users = ReviewUsers
+  (Login "daminiben.patel@sl.universalservice.org" "EPCPassword123!")
+  (Login "kroman@sl.universalservice.org" "EPCPassword123!")
+  (Login "dsamuel@sl.universalservice.org" "EPCPassword123!")
+  (Login "aisha.mahmood@sl.universalservice.org" "EPCPassword123!")
+  (Login "banderson@usac.org" "EPCPassword123!")
+
+form500Review env revUsers = fullReview env revUsers form500ReviewConf
+
+form500ReviewConf = FullReviewConf form500Initial2017 form500Final2017 form500Solix2017 form500Usac2017

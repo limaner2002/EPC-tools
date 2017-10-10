@@ -33,7 +33,8 @@ adminIntake un = do
             <|> MonadicFold (to $ dropdownUpdate "Funding Year" 3)
             <|> dropdownArbitraryUpdateF "What type of decision would you like to appeal?"
             <|> dropdownArbitraryUpdateF "Appeal Category"
-            <|> dropdownUpdateF' "Appeal Type" RevAdminCorrection
+--            <|> dropdownUpdateF' "Appeal Type" RevAdminCorrection
+            <|> dropdownArbitraryUpdateF "Appeal Type"
             <|> MonadicFold (to $ pickerUpdate "Main Contact Person" user)
             <|> MonadicFold (to $ buttonUpdate "Continue")
           ) v'

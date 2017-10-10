@@ -147,8 +147,8 @@ openReport reportName = do
 loggingFunc :: (MonadIO m, MonadThrow m, MonadBaseControl IO m) => FilePath -> m ()
 loggingFunc fp = S.takeWhile isMsg
   >>> S.map unpackMsg
-  >>> S.writeFile fp
---   >>> S.mapM_ (liftIO . print)
+--   >>> S.writeFile fp
+  >>> S.mapM_ (liftIO . print)
   >>> runResourceT
     $ S.repeatM (atomically $ readTChan logChan)
   where
@@ -169,3 +169,6 @@ executeRelatedAction :: Text -> RecordRef -> Value -> Appian Value
 executeRelatedAction action recordId val = do
   aid <- PathPiece <$> (handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getRelatedActionId action)
   relatedActionEx (PathPiece recordId) aid
+
+setAgeSort :: GridField a -> GridField a
+setAgeSort = gfSelection . traverse . failing _NonSelectable (_Selectable . gslPagingInfo) . pgISort .~ Just [SortField "secondsSinceRequest" True]
