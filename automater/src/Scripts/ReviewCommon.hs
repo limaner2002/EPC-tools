@@ -232,14 +232,6 @@ accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-selectCheckbox :: GridFieldIdent -> GridField a -> GridField a
-selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]
-
-foldGridField' :: (b -> GridFieldIdent -> Appian b) -> b -> GridField a -> Appian b
-foldGridField' f b gf = do
-  let boxes = gf ^.. gfIdentifiers . traverse . traverse
-  F.foldlM f b boxes
-
 addNotes :: Value -> Appian Value
 addNotes val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeNotes val val
 

@@ -52,6 +52,11 @@ foldGridField f column b gf = do
   let col = gf ^.. gfColumns . at column . traverse
   F.foldlM f b col
 
+foldGridField' :: (b -> GridFieldIdent -> Appian b) -> b -> GridField a -> Appian b
+foldGridField' f b gf = do
+  let boxes = gf ^.. gfIdentifiers . traverse . traverse
+  F.foldlM f b boxes
+
 type Updater = (Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value)
 
     -- Make this use state as soon as the new servant can be used. 
@@ -172,3 +177,9 @@ executeRelatedAction action recordId val = do
 
 setAgeSort :: GridField a -> GridField a
 setAgeSort = gfSelection . traverse . failing _NonSelectable (_Selectable . gslPagingInfo) . pgISort .~ Just [SortField "secondsSinceRequest" True]
+
+selectGridfieldUpdateF :: GridFieldIdent -> GridField a -> ReifiedMonadicFold m s (Either Text Update)
+selectGridfieldUpdateF ident gf = MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
+
+selectCheckbox :: GridFieldIdent -> GridField a -> GridField a
+selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]

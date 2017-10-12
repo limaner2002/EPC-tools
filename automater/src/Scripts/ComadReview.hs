@@ -39,9 +39,6 @@ editAdjustments val gf = do
   v <- foldGridField' editAdjustment val gf
   return (v, v)
 
-selectGridfieldUpdateF :: GridFieldIdent -> GridField a -> ReifiedMonadicFold m s (Either Text Update)
-selectGridfieldUpdateF ident gf = MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
-
 editAdjustment :: Value -> GridFieldIdent -> Appian Value
 editAdjustment val ident = do
   gf <- handleMissing "FRN Adjustment Grid" val $ val ^? getGridFieldCell . traverse
@@ -69,6 +66,8 @@ reviewComadRequest rid =
     >>= flip viewRelatedActions rid
     >>= uncurry (executeRelatedAction "Review COMAD Request")
     >>= pageViolations
+    >>= sendUpdates' "Continue to 'Review FRN Decisions'" (MonadicFold (to $ buttonUpdate "Continue"))
+    >>= handleDecisionValidation
     >>= pageDecisions
     >>= sendUpdates "Continue to 'Review Notes'" (MonadicFold $ to $ buttonUpdate "Continue")
     >>= addNotes
@@ -92,18 +91,30 @@ addViolation val ident = do
     
 handleNoViolation :: Either ValidationsException Value -> Appian Value
 handleNoViolation (Left ve) = case ve ^. validationsExc . _1 of
-  ["You cannot add a Violation to an FRN that you have marked as \"No Violation\""] ->
-    sendUpdates "Continue to 'Review FRN Decisions'" (MonadicFold (to $ buttonUpdate "Continue")) $ ve ^. validationsExc . _2
+  ["You cannot add a Violation to an FRN that you have marked as \"No Violation\""] -> return $ ve ^. validationsExc . _2
+    -- sendUpdates "Continue to 'Review FRN Decisions'" (MonadicFold (to $ buttonUpdate "Continue")) $ ve ^. validationsExc . _2
   [] -> error "Violations not implemented yet!"
   _ -> throwM ve
 handleNoViolation (Right v) =
-  sendUptates "Add Violation Button" (MonadicFold $ to $ buttonUpdate "Add Violation") v
+  sendUpdates "Add Violation Button" (MonadicFold $ to $ buttonUpdate "Add Violation") v
     >>= sendUpdates "Add Violation" (MonadicFold $ dropping 1 getGridFieldCell . traverse . gfColumns . at "" . traverse . _TextCellDynLink . _2 . traverse . to toUpdate . to Right)
     >>= sendUpdates "Select Party at Fault & Save" (MonadicFold (to $ dropdownUpdate "Party at Fault" 2)
                                                     <|> MonadicFold (to $ buttonUpdate "Save & Continue")
                                                    )
     >>= sendUpdates "Add Rationale Button" (MonadicFold (to $ buttonUpdate "Add Rationale"))
     >>= sendUpdates "Select Rationale Type" (MonadicFold (to $ dropdownUpdate "Rationale Type" 3))
+    >>= sendUpdates "Select Rationale Text" (MonadicFold $ dropping 2 getGridFieldCell . traverse . gfColumns . at "" . traverse . _TextCellDynLink . _2 . traverse . to toUpdate . to Right)
+    >>= sendUpdates "Save Rationale" (MonadicFold $ to $ buttonUpdate "Save Rationale")
+    >>= sendUpdates "Back to Violations" (MonadicFold $ to $ buttonUpdate "Back")
+    >>= sendUpdates "Back to Review COMAD Request" (MonadicFold $ to $ buttonUpdate "Back")
+
+handleDecisionValidation :: Either ValidationsException Value -> Appian Value
+handleDecisionValidation (Left ve) = case ve ^. validationsExc . _1 of
+  [msg] -> case isPrefixOf "You must select a Decision for FRN" msg of
+    True -> return $ ve ^. validationsExc . _2
+    False -> throwM ve
+  _ -> throwM ve
+handleDecisionValidation (Right v) = return v
 
 pageDecisions :: Value -> Appian Value
 pageDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) addDecisions val val
@@ -116,7 +127,10 @@ addDecisions val gf = do
 addDecision :: Value -> GridFieldIdent -> Appian Value
 addDecision val ident = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse
-  val' <- sendUpdates "Decisions: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
+  eRes <- sendUpdates' "Decisions: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
+  val' <- case eRes of
+    Right v -> return v
+    Left ve -> return $ ve ^. validationsExc . _2
   df <- handleMissing "FRN Decision Dropdown" val' $ val' ^? getDropdown "FRN Decision"
 
   let choices
@@ -151,3 +165,4 @@ addDecision_ decState ident val l = do
   case eRes of
     Right val'' -> return val''
     Left ve -> addDecision_ Retry ident (ve ^. validationsExc . _2) (delete idx l)
+

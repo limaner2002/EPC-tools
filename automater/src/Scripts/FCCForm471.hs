@@ -4,7 +4,7 @@
 module Scripts.FCCForm471 where
 
 import ClassyPrelude
-import Control.Lens
+import Control.Lens hiding (index)
 import Data.Aeson
 import Data.Aeson.Lens
 import Appian
@@ -18,6 +18,8 @@ import Scripts.Test
 import qualified Test.QuickCheck as QC
 import Control.Lens.Action
 import Control.Lens.Action.Reified
+import Scripts.Common
+import qualified Data.Foldable as F
 
 form471Intake :: Text -> Appian Value
 form471Intake spin = do
@@ -58,65 +60,28 @@ form471Intake spin = do
     True -> sendUpdates "Entity Members" (MonadicFold (to (buttonUpdate "Save & Continue"))) membersPage
     False -> selectMembers membersPage
 
-  dates <- sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
+  sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
             >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
-            >>= sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN"))
-            >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
-                                               <|> MonadicFold (to (buttonUpdate "No"))
-                                               <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 2))
-                                               <|> MonadicFold (to (buttonUpdate "Continue"))
-                                              )
-            >>= sendUpdates "Select Purchase Type" (MonadicFold (to (buttonUpdate "Tariff"))
-                              <|> MonadicFold (to (buttonUpdate "Continue"))
-                            )
-            >>= sendUpdates "Enter number of Bids" ( MonadicFold (intFieldArbitrary "How many bids were received?") -- (to (textUpdate "How many bids were received?" "3"))
-                                     <|> MonadicFold (to (buttonUpdate "Yes"))
-                                   )
-            >>= sendUpdates "Search for 470" (MonadicFold $ to (buttonUpdate "Search"))
-            >>= select470
-            -- >>= sendUpdates "Select 470 and Continue" (MonadicFold (to (gridFieldUpdate 0))
-            --                  <|> MonadicFold (to (buttonUpdate "Continue"))
-            --                 )
-            >>= sendUpdates "SPIN Search" (    MonadicFold (to (textUpdate "Search by SPIN" spin))
-                             <|> MonadicFold (to (buttonUpdate "Search"))
-                            )
-            >>= sendUpdates "Select SPIN and Continue" ( MonadicFold (to (gridFieldUpdate 0))
-                            <|> MonadicFold (to (buttonUpdate "Continue"))
-                            )
-
-  startDate <- handleMissing "Start Date" dates $ dates ^? hasLabel "What is the service start date?" . dpwValue . appianDate . traverse
-
-  pricing <- sendUpdates "Enter funding dates and Continue" (MonadicFold (to (datePickerUpdate "When will the services end? " (AppianDate $ Just $ addDays 360 startDate)))
-              <|> MonadicFold (to (buttonUpdate "Continue"))
-              ) dates
-
-  narrative <- sendUpdates "Price Confidentiality and Continue" (MonadicFold (to (buttonUpdate "No"))
-               <|> MonadicFold (to (buttonUpdate "Continue"))
-              ) pricing
-
-  frnList <- sendUpdates "Enter narrative and Continue" (paragraphArbitraryUpdate "Provide a brief explanation of the products and services that you are requesting, or provide any other relevant information regarding this Funding Request. You should also use this field to describe any updates to your entity data, such as revised student counts, entity relationships, etc, that you were unable to make after the close of the Administrative filing window for profile updates. These changes will be addressed during the application review process." 4000
-                           <|> MonadicFold (to (buttonUpdate "Save & Continue"))
-                         ) narrative
-
-  sendUpdates "Click FRN Link" (MonadicFold (to (gridFieldDynLinkUpdate "FRN"))) frnList
-    >>= sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item")))
-    >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
-    >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
-                    <|> MonadicFold (to (buttonUpdate "Continue"))
-                    )
-    >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
-                     <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                     <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
-                     <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt <*> pure v))
-                     <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                     <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt <*> pure v))
-                     <|> MonadicFold (to (buttonUpdate "Save & Continue"))
-                    )
-    >>= selectEntities
---    >>= sendUpdates "Continue" (MonadicFold (to (buttonUpdate "Save & Continue")))
-    >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
-    -- End new line item
-    >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
+            >>= createFRN 5 spin
+  --   -- Add new FRN Line Item
+  -- sendUpdates "Click FRN Link" (MonadicFold (to (gridFieldDynLinkUpdate "FRN"))) frnList
+  --   >>= sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item")))
+  --   >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
+  --   >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
+  --                   <|> MonadicFold (to (buttonUpdate "Continue"))
+  --                   )
+  --   >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
+  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
+  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt <*> pure v))
+  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt <*> pure v))
+  --                    <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+  --                   )
+  --   >>= selectEntities
+  --   >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
+  --   -- End new line item
+    >>= pageLineItems
     >>= ifContinueToCertification
     >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
 
@@ -255,3 +220,78 @@ getAddAllButton label
   || label == "Add All Schools and Dependent NIFs "
   || label == "Add All Libraries and Dependent NIFs "
   || label == "Add All Dependent Libraries and NIFs "
+
+createFRN :: Int -> Text -> Value -> Appian Value
+createFRN 0 _ val = return val
+createFRN n spin val = do
+  dates <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
+            >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
+                                               <|> MonadicFold (to (buttonUpdate "No"))
+                                               <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 2))
+                                               <|> MonadicFold (to (buttonUpdate "Continue"))
+                                              )
+            >>= sendUpdates "Select Purchase Type" (MonadicFold (to (buttonUpdate "Tariff"))
+                              <|> MonadicFold (to (buttonUpdate "Continue"))
+                            )
+            >>= sendUpdates "Enter number of Bids" ( MonadicFold (intFieldArbitrary "How many bids were received?") -- (to (textUpdate "How many bids were received?" "3"))
+                                     <|> MonadicFold (to (buttonUpdate "Yes"))
+                                   )
+            >>= sendUpdates "Search for 470" (MonadicFold $ to (buttonUpdate "Search"))
+            >>= select470
+            -- >>= sendUpdates "Select 470 and Continue" (MonadicFold (to (gridFieldUpdate 0))
+            --                  <|> MonadicFold (to (buttonUpdate "Continue"))
+            --                 )
+            >>= sendUpdates "SPIN Search" (    MonadicFold (to (textUpdate "Search by SPIN" spin))
+                             <|> MonadicFold (to (buttonUpdate "Search"))
+                            )
+            >>= sendUpdates "Select SPIN and Continue" ( MonadicFold (to (gridFieldUpdate 0))
+                            <|> MonadicFold (to (buttonUpdate "Continue"))
+                            )
+
+  startDate <- handleMissing "Start Date" dates $ dates ^? hasLabel "What is the service start date?" . dpwValue . appianDate . traverse
+
+  pricing <- sendUpdates "Enter funding dates and Continue" (MonadicFold (to (datePickerUpdate "When will the services end? " (AppianDate $ Just $ addDays 360 startDate)))
+              <|> MonadicFold (to (buttonUpdate "Continue"))
+              ) dates
+
+  narrative <- sendUpdates "Price Confidentiality and Continue" (MonadicFold (to (buttonUpdate "No"))
+               <|> MonadicFold (to (buttonUpdate "Continue"))
+              ) pricing
+
+  frnList <- sendUpdates "Enter narrative and Continue" (paragraphArbitraryUpdate "Provide a brief explanation of the products and services that you are requesting, or provide any other relevant information regarding this Funding Request. You should also use this field to describe any updates to your entity data, such as revised student counts, entity relationships, etc, that you were unable to make after the close of the Administrative filing window for profile updates. These changes will be addressed during the application review process." 4000
+                           <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+                         ) narrative
+  createFRN (n - 1) spin frnList
+
+pageLineItems :: Value -> Appian Value
+pageLineItems val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) createFRNLineItems val val
+
+createFRNLineItems :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+createFRNLineItems val gf = do
+  v <- foldGridField createFRNLineItem "FRN" val gf
+  return (v, v)
+
+createFRNLineItem :: Value -> GridFieldCell -> Appian Value
+createFRNLineItem val gf = F.foldlM f val [0..nRows - 1]
+  where
+    nRows = length $ gf ^.. _TextCellDynLink . _2 . traverse
+    f val' idx = do
+      writeFile "/tmp/response1.json" $ toStrict $ encode val'
+      dyl <- handleMissing "FRN Link" val' $ val' ^? getGridFieldCell . traverse . gfColumns . at "FRN" . traverse . _TextCellDynLink . _2 . to (flip index idx) . traverse
+      sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) val'
+        >>= sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item")))
+        >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
+        >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
+                                                                  <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                                 )
+        >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt <*> pure v))
+                                                                <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+                                                               )
+        >>= selectEntities
+        >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
+        >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
