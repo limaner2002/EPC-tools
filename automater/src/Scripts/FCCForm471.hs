@@ -20,9 +20,10 @@ import Control.Lens.Action
 import Control.Lens.Action.Reified
 import Scripts.Common
 import qualified Data.Foldable as F
+import qualified Data.Csv as Csv
 
-form471Intake :: Text -> Appian Value
-form471Intake spin = do
+form471Intake :: Form471Conf -> Appian Value
+form471Intake conf = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
   v' <- editReport (PathPiece rid)
@@ -62,25 +63,7 @@ form471Intake spin = do
 
   sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
             >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
-            >>= createFRN 5 spin
-  --   -- Add new FRN Line Item
-  -- sendUpdates "Click FRN Link" (MonadicFold (to (gridFieldDynLinkUpdate "FRN"))) frnList
-  --   >>= sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item")))
-  --   >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
-  --   >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
-  --                   <|> MonadicFold (to (buttonUpdate "Continue"))
-  --                   )
-  --   >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
-  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
-  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt <*> pure v))
-  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-  --                    <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt <*> pure v))
-  --                    <|> MonadicFold (to (buttonUpdate "Save & Continue"))
-  --                   )
-  --   >>= selectEntities
-  --   >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
-  --   -- End new line item
+            >>= createFRN (conf ^. nFRNs) (conf ^. spin)
     >>= pageLineItems
     >>= ifContinueToCertification
     >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
@@ -295,3 +278,33 @@ createFRNLineItem val gf = F.foldlM f val [0..nRows - 1]
         >>= selectEntities
         >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
         >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
+
+data Form471Conf = Form471Conf
+  { _nFRNs :: Int
+  , _spin :: Text
+  , _applicant :: Login
+  } deriving Show
+
+instance Csv.FromNamedRecord Form471Conf where
+  parseNamedRecord r = Form471Conf
+    <$> r Csv..: "nFRNs"
+    <*> r Csv..: "spin"
+    <*> Csv.parseNamedRecord r
+
+nFRNs :: Functor f => (Int -> f Int) -> Form471Conf -> f Form471Conf
+nFRNs = lens get update
+  where
+    get = _nFRNs
+    update conf v = conf { _nFRNs = v }
+
+spin :: Functor f => (Text -> f Text) -> Form471Conf -> f Form471Conf
+spin = lens get update
+  where
+    get = _spin
+    update conf v = conf { _spin = v }
+
+applicant :: Functor f => (Login -> f Login) -> Form471Conf -> f Form471Conf
+applicant = lens get update
+  where
+    get = _applicant
+    update conf v = conf { _applicant = v }

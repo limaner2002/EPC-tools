@@ -14,7 +14,7 @@ import Servant.Client hiding (responseStatus)
 import Network.HTTP.Client.TLS
 import Network.HTTP.Client ( newManager, defaultManagerSettings, managerModifyRequest
                            , managerModifyResponse, responseStatus, responseHeaders
-                           , responseCookieJar, CookieJar
+                           , responseCookieJar, CookieJar, responseTimeoutMicro
                            )
 import Control.Lens
 import qualified Web.Cookie as WC
@@ -59,7 +59,7 @@ localClientEnv = do
   return $ ClientEnv mgr (BaseUrl Http "localhost" 3000 "")  
 
 preprodClientEnv = do
-  mgr <- newManager tlsManagerSettings
+  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
 
 testCreds = Login "app.full.right@testmail.usac.org" "Usac123$"

@@ -109,11 +109,9 @@ handleNoViolation (Right v) =
     >>= sendUpdates "Back to Review COMAD Request" (MonadicFold $ to $ buttonUpdate "Back")
 
 handleDecisionValidation :: Either ValidationsException Value -> Appian Value
-handleDecisionValidation (Left ve) = case ve ^. validationsExc . _1 of
-  [msg] -> case isPrefixOf "You must select a Decision for FRN" msg of
-    True -> return $ ve ^. validationsExc . _2
-    False -> throwM ve
-  _ -> throwM ve
+handleDecisionValidation (Left ve) = case ve ^. validationsExc . _1 . to (all $ isPrefixOf "You must select a Decision for FRN") of
+  True -> return $ ve ^. validationsExc . _2
+  False -> throwM ve
 handleDecisionValidation (Right v) = return v
 
 pageDecisions :: Value -> Appian Value
@@ -164,5 +162,8 @@ addDecision_ decState ident val l = do
                               ) val'
   case eRes of
     Right val'' -> return val''
-    Left ve -> addDecision_ Retry ident (ve ^. validationsExc . _2) (delete idx l)
+    -- Left ve -> addDecision_ Retry ident (ve ^. validationsExc . _2) (delete idx l)
+    Left ve -> case ve ^. validationsExc . _1 . to (all $ isPrefixOf "You must select a Decision for FRN") of
+                 True -> return $ ve ^. validationsExc . _2
+                 False -> addDecision_ Retry ident (ve ^. validationsExc . _2) (delete idx l)
 

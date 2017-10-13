@@ -209,7 +209,7 @@ retryIt act = retrying reviewRetryPolicy shouldRetry (const act)
     shouldRetry _ (Right _) = pure False
 
 reviewRetryPolicy :: Monad m => RetryPolicyM m
-reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 3
+reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 1
 
 distributeLinks_ :: (RecordRef -> Appian Value) -> ReportId -> ReviewConf -> Value -> Appian Value
 distributeLinks_ action rid conf v = do

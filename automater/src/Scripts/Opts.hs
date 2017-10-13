@@ -8,6 +8,7 @@ module Scripts.Opts -- where
   , runScript
   , Script (..)
   , loggingFunc
+  , setTimeout
   ) where
 
 import ClassyPrelude
@@ -289,9 +290,10 @@ data Script
 scriptParser :: ReadM Script
 scriptParser = do
   name <- readerAsk
+  let conf = Form471Conf {_nFRNs = 5, _spin = "143000413", _applicant = Login {_username = "mcmechd@gardencityschools.com", _password = "EPCPassword123!"}}
   case name of
     "cscase" -> return $ CSScript createCSCase
-    "form471" -> return $ Form471 (form471Intake "143000618")
+    "form471" -> return $ Form471 (form471Intake conf)
     _ -> fail $ show name <> " is not a valid script name!"
 
 form486Info :: ParserInfo (IO ())

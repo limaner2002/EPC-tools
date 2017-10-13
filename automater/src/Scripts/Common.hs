@@ -82,6 +82,10 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
           atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf' ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable)
           loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
+-- forGridRows :: ReifiedMonadicFold Appian Value (GridField a) -> (GridField a -> b) -> Value -> Appian Value
+-- forGridRows fold f v = do
+  
+
 getNextPage_ :: Updater
              -> GridField a -> GridField a -> Value -> Appian Value
 getNextPage_ updateFcn gf gf' = updateFcn "Next Page" (MonadicFold $ to $ const gf'')

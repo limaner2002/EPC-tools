@@ -46,13 +46,13 @@ fullReview env revUsers fullReviewConf = do
       dispatchInitialReview RevCOMAD = withReviewConf $ flip comadInitialReview initial
       dispatchInitialReview _ = withReviewConf $ flip initialReview initial
 
-  runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) (trace "Initial Assign" reviewManager)
-    >>= mapErr manageAppealDeets
-    >>= mapErr (runItRetry (dispatchInitialReview $ reviewType initial) $ trace "Initial Review" initialReviewer)
-    >>= maybeFinal
-    >>= mapErr (runItRetry (assignment solix (solixReviewer ^. username . to AppianUsername)) (trace "Solix Assign" reviewManager))
-    >>= mapErr (runItRetry (withReviewConf $ finalReview solix) $ trace "Solix Review" solixReviewer)
-    >>= mapErr (runItRetry (assignment usac (usacReviewer ^. username . to AppianUsername)) (trace "Usac Assign" reviewManager))
+  -- runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) (trace "Initial Assign" reviewManager)
+  --   >>= mapErr manageAppealDeets
+  --   >>= mapErr (runItRetry (dispatchInitialReview $ reviewType initial) $ trace "Initial Review" initialReviewer)
+  --   >>= maybeFinal
+  --   >>= mapErr (runItRetry (assignment solix (solixReviewer ^. username . to AppianUsername)) (trace "Solix Assign" reviewManager))
+  --   >>= mapErr (runItRetry (withReviewConf $ finalReview solix) $ trace "Solix Review" solixReviewer)
+  runItRetry (assignment usac (usacReviewer ^. username . to AppianUsername)) (trace "Usac Assign" reviewManager)
     >>= mapErr (runItRetry (withReviewConf $ finalReview usac) $ trace "Usac Review" usacReviewer)
 
 mapErr :: Monad m => m (Either SomeException b) -> Either SomeException a -> m (Either SomeException b)
