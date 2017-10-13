@@ -28,8 +28,12 @@ editAdjustmentAmounts rid =
   viewRecordDashboard (PathPiece rid) (PathPiece $ Dashboard "summary")
     >>= flip viewRelatedActions rid
     >>= uncurry (executeRelatedAction "Edit Adjustment Amount")
-    >>= pageAdjustments
+--    >>= pageAdjustments
+    >>= forAdjustments
     >>= sendUpdates "Submit" (MonadicFold $ to $ buttonUpdate "Submit")
+
+forAdjustments :: Value -> Appian Value
+forAdjustments = forGridRows_ sendUpdates (^. gfIdentifiers . traverse) (MonadicFold $ getGridFieldCell . traverse) (\gfi _ v -> editAdjustment v gfi)
 
 pageAdjustments :: Value -> Appian Value
 pageAdjustments val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) editAdjustments val val
@@ -65,13 +69,16 @@ reviewComadRequest rid =
   viewRecordDashboard (PathPiece rid) (PathPiece $ Dashboard "summary")
     >>= flip viewRelatedActions rid
     >>= uncurry (executeRelatedAction "Review COMAD Request")
-    >>= pageViolations
+    >>= forViolations
     >>= sendUpdates' "Continue to 'Review FRN Decisions'" (MonadicFold (to $ buttonUpdate "Continue"))
     >>= handleDecisionValidation
-    >>= pageDecisions
+    >>= forDecisions
     >>= sendUpdates "Continue to 'Review Notes'" (MonadicFold $ to $ buttonUpdate "Continue")
     >>= addNotes
     >>= sendUpdates "Send to Next Reviewer" (MonadicFold $ to $ buttonUpdate "Send to Next Reviewer")
+
+forViolations :: Value -> Appian Value
+forViolations = forGridRows_ sendUpdates (^. gfIdentifiers . traverse) (MonadicFold $ getGridFieldCell . traverse) (\gfi _ v -> addViolation v gfi)
 
 pageViolations :: Value -> Appian Value
 pageViolations val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) addViolations val val
@@ -121,6 +128,9 @@ addDecisions :: Value -> GridField GridFieldCell -> Appian (Value, Value)
 addDecisions val gf = do
   v <- foldGridField' addDecision val gf
   return (v, v)
+
+forDecisions :: Value -> Appian Value
+forDecisions = forGridRows_ sendUpdates (^. gfIdentifiers . traverse) (MonadicFold $ getGridFieldCell . traverse) (\gfi _ v -> addDecision v gfi)
 
 addDecision :: Value -> GridFieldIdent -> Appian Value
 addDecision val ident = do

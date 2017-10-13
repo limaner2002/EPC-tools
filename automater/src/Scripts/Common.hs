@@ -5,7 +5,7 @@
 module Scripts.Common where
 
 import ClassyPrelude
-import Control.Lens
+import Control.Lens hiding (index)
 import Data.Aeson
 import Data.Aeson.Lens
 import Appian
@@ -71,7 +71,7 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
   where
     loop accum val = do
       gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
-      atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable)
+      atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf ^? pagingInfo)
       case nextPage gf gf of
         Nothing -> do
           (accum, _) <- f accum gf
@@ -79,12 +79,65 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
         Just _ -> do
           (accum', val') <- f accum gf
           gf' <- handleMissing "GridField" val' =<< (val' ^!? runMonadicFold fold)
-          atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf' ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable)
+          atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf' ^? pagingInfo)
           loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
--- forGridRows :: ReifiedMonadicFold Appian Value (GridField a) -> (GridField a -> b) -> Value -> Appian Value
--- forGridRows fold f v = do
-  
+forGridRows_ :: Updater -> (GridField a -> Vector b) -> ReifiedMonadicFold Appian Value (GridField a) -> (b -> GridField a -> Value -> Appian Value) -> Value -> Appian Value
+forGridRows_ updateFcn colFcn fold f v = loop v 0
+  where
+    loop val idx = do
+      gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
+      let mPagingInfo = gf ^? pagingInfo
+      case mPagingInfo of
+        Nothing -> return val
+        Just pi -> do
+          case gf ^. gfTotalCount <= idx of
+            True -> return val
+            False -> do
+              let pageNo = idx `div` pi ^. pgIBatchSize
+                  startIdx = pageNo * pi ^. pgIBatchSize + 1
+                  rowIdx = idx `rem` pi ^. pgIBatchSize
+              val' <- getPage updateFcn fold startIdx val
+              gf' <- handleMissing "GridField" val' =<< (val' ^!? runMonadicFold fold)
+              b <- handleMissing ("Row idx: " <> tshow rowIdx) val' $ flip index rowIdx $ colFcn gf'
+              val'' <- f b gf' val'
+              loop val'' (idx + 1)
+
+data BadPagingException = BadPagingException
+
+instance Show BadPagingException where
+  show _ = "It looks like paging is not working correctly!"
+
+instance Exception BadPagingException
+
+         -- Fetches the page with the given start index. Will throw an
+         -- error if the server responds with a start index that is
+         -- not the same as the given start index.
+getPage :: Updater -> ReifiedMonadicFold Appian Value (GridField a) -> Int -> Value -> Appian Value
+getPage updateFcn fold idx val = do
+  gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
+  case maybe False (== idx) (gf ^? pagingInfo . pgIStartIndex) of
+    True -> return val
+    False -> do
+      let gf' = setStartIndex idx gf
+          msg = "Getting page with startIndex: " <> tshow idx
+
+      val' <- updateFcn msg (MonadicFold $ to $ const $ Right $ toUpdate gf') val
+      gf'' <- handleMissing ("No GridField on the page with startIndex: " <> tshow idx) val' =<< (val' ^!? runMonadicFold fold)
+      case checkPaging idx gf'' of
+        True -> return val'
+        False -> throwM BadPagingException
+
+checkPaging :: Int -> GridField a -> Bool
+checkPaging idx gf = maybe False (== idx) si
+  where
+    si = gf ^? pagingInfo . pgIStartIndex
+
+pagingInfo :: Applicative f => (PagingInfo -> f PagingInfo) -> GridField a -> f (GridField a)
+pagingInfo = gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable
+
+setStartIndex :: Int -> GridField a -> GridField a
+setStartIndex idx = pagingInfo . pgIStartIndex .~ idx
 
 getNextPage_ :: Updater
              -> GridField a -> GridField a -> Value -> Appian Value
@@ -94,12 +147,12 @@ getNextPage_ updateFcn gf gf' = updateFcn "Next Page" (MonadicFold $ to $ const 
 
 nextPage :: GridField a -> GridField a -> Maybe (GridField a)
 nextPage gf gf' = do
-  pi <- gf ^? gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable
+  pi <- gf ^? pagingInfo
   let pi' = pgIStartIndex %~ (+batchSize) $ pi
       batchSize = pi ^. pgIBatchSize
   case pi' ^. pgIStartIndex > gf ^. gfTotalCount of
     True -> Nothing
-    False -> return $ gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable .~ pi' $ gf'
+    False -> return $ pagingInfo .~ pi' $ gf'
 
 getNumber :: Parser Text
 getNumber = takeTill (== '#') *> Data.Attoparsec.Text.take 1 *> takeTill (== ' ')

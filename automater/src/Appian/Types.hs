@@ -309,7 +309,7 @@ newtype GridWidget a = GridWidget
 
 data GridField a = GridField
   { _gfColumns :: HashMap Text a
-  , _gfIdentifiers :: Maybe [GridFieldIdent]
+  , _gfIdentifiers :: Maybe (Vector GridFieldIdent)
   , _gfSelection :: Maybe GridValue
   , _gfModel :: Value
   , _gfSaveInto :: [Text]
@@ -341,6 +341,18 @@ data GridFieldCell
   | ImageColumn (Vector ImageCell)
   | EmptyColumn
   deriving Show
+
+newtype GridFieldColumn a
+  = GridFieldColumn
+    { _colRows :: Vector a
+    }
+  deriving (Show, Eq, Functor, Monoid, Foldable)
+
+-- mapGridFieldCell :: (a -> b) -> GridFieldCell
+--   fmap f (TextCell v) = TextCell $ fmap f v
+--   fmap f (TextCellLink (n, v)) = TextCellLink $ (n, fmap f v)
+--   fmap f (TextCellDynLink (n, v)) = TextCellDynLink $ (n, fmap f v)
+--   fmap _ EmptyColumn = EmptyColumn
 
 data ImageCell = ImageCell
   { _imgDocument :: CollaborationDocument
@@ -405,6 +417,7 @@ makeLenses ''RadioButtonField
 makeLenses ''ImageCell
 makeLenses ''CollaborationDocument
 makeLenses ''CheckboxField
+makeLenses ''GridFieldColumn
 
 makePrisms ''GridFieldCell
 makePrisms ''GridValue

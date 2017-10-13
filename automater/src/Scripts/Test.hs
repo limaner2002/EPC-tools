@@ -124,8 +124,8 @@ gfSelect gf = do
   case gf ^. gfIdentifiers of
     Nothing -> fail "This grid is not selectable!"
     Just idents -> do
-      ident <- generate $ QC.elements idents
-      return $ gfSelection . _Just . _Selectable . gslSelected .~ [ident] $ gf
+      ident <- generate $ QC.elements $ toList idents
+      return $ gfSelection . _Just . _Selectable . gslSelected .~ singleton ident $ gf
 
 dropdownArbitraryUpdateF_ :: (MonadIO m, Plated s, AsValue s, AsJSON s) => (DropdownField -> m DropdownField) -> Text -> ReifiedMonadicFold m s (Either Text Update)
 dropdownArbitraryUpdateF_ selectFcn label = MonadicFold (dropdownArbitrary_ selectFcn label)
