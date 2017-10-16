@@ -30,6 +30,7 @@ library
                      , Scripts.AdminReview
                      , Scripts.Assignment
                      , Scripts.AdminIntake
+                     , Util.Parallel
   build-depends:       base
                      , lens
                      , aeson
