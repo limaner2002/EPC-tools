@@ -16,7 +16,7 @@ import Control.Lens.Action.Reified
 import Scripts.Test
 import Scripts.Common
 
-form486Intake :: AppianUsername -> Appian (Maybe Text)
+form486Intake :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => AppianUsername -> AppianT m (Maybe Text)
 form486Intake appianUN = do
   let un = Identifiers [appianUN]
   v <- myLandingPageAction "FCC Form 486"
@@ -58,7 +58,7 @@ radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Ju
   where
     rdg = maybeToEither ("Could not locate RadioButtonField " <> tshow label) $ v ^? getRadioButtonField label
 
-handleWaiver :: Value -> Appian Value
+handleWaiver :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
 handleWaiver v = do
   case v ^? getRadioButtonField "Waiver Clarification" of
     Nothing -> return v

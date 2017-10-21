@@ -15,11 +15,11 @@ import Appian.Lens
 import Appian.Client
 import Control.Monad.Random
 
-createCSCase :: Appian Text
+createCSCase :: (RunClient m, MonadLogger m, MonadIO m, MonadCatch m) => AppianT m Text
 createCSCase = do
   v <- actionsTab
     >>= (\v -> handleResult $ v ^. getTaskProcId "Create a Customer Service Case")
-    >>= landingPageActionEx . PathPiece
+    >>= landingPageActionEx
     >>= sendUpdates "Title, Description, and Topic" (MonadicFold (to (textUpdate "Title" "PerfTest2"))
                     <|> MonadicFold (to (paragraphUpdate "Description" "A description goes in here."))
                     <|> MonadicFold (to (dropdownUpdate "Topic" 11))
@@ -40,7 +40,7 @@ createCSCase = do
 getTaskProcId :: (Contravariant f, Applicative f, Plated s, AsValue s) => Text -> (Result ProcessModelId -> f (Result ProcessModelId)) -> s -> f s
 getTaskProcId label = hasKeyValue "displayLabel" label . key "processModelId" . to fromJSON . to (fmap ProcessModelId)
 
-handleResult :: Result a -> Appian a
+handleResult :: Monad m => Result a -> AppianT m a
 handleResult (Error err) = fail err
 handleResult (Success a) = pure a
 

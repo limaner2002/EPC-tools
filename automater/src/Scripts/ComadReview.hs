@@ -18,32 +18,32 @@ import Scripts.ReviewCommon
 import Scripts.Test
 import qualified Test.QuickCheck as QC
 
-comadInitialReview :: ReviewConf -> ReviewBaseConf -> Appian Value
+comadInitialReview :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewConf -> ReviewBaseConf -> AppianT m Value
 comadInitialReview conf baseConf = do
   (rid, v) <- myAssignedReport baseConf
   distributeLinks_ (\rid -> editAdjustmentAmounts rid >> reviewComadRequest rid) rid conf v
 
-editAdjustmentAmounts :: RecordRef -> Appian Value
+editAdjustmentAmounts :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => RecordRef -> AppianT m Value
 editAdjustmentAmounts rid =
-  viewRecordDashboard (PathPiece rid) (PathPiece $ Dashboard "summary")
+  viewRecordDashboard rid (Dashboard "summary")
     >>= flip viewRelatedActions rid
     >>= uncurry (executeRelatedAction "Edit Adjustment Amount")
 --    >>= pageAdjustments
     >>= forAdjustments
     >>= sendUpdates "Submit" (MonadicFold $ to $ buttonUpdate "Submit")
 
-forAdjustments :: Value -> Appian Value
+forAdjustments :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
 forAdjustments = forGridRows_ sendUpdates (^. gfIdentifiers . traverse) (MonadicFold $ getGridFieldCell . traverse) (\gfi _ v -> editAdjustment v gfi)
 
-pageAdjustments :: Value -> Appian Value
+pageAdjustments :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
 pageAdjustments val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) editAdjustments val val
 
-editAdjustments :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+editAdjustments :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 editAdjustments val gf = do
   v <- foldGridField' editAdjustment val gf
   return (v, v)
 
-editAdjustment :: Value -> GridFieldIdent -> Appian Value
+editAdjustment :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
 editAdjustment val ident = do
   gf <- handleMissing "FRN Adjustment Grid" val $ val ^? getGridFieldCell . traverse
   val' <- sendUpdates "Adjustments: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
@@ -64,9 +64,9 @@ editAdjustment val ident = do
                                          <|> MonadicFold (to $ buttonUpdate "Save")
                                        )
 
-reviewComadRequest :: RecordRef -> Appian Value
+reviewComadRequest :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => RecordRef -> AppianT m Value
 reviewComadRequest rid =
-  viewRecordDashboard (PathPiece rid) (PathPiece $ Dashboard "summary")
+  viewRecordDashboard rid (Dashboard "summary")
     >>= flip viewRelatedActions rid
     >>= uncurry (executeRelatedAction "Review COMAD Request")
     >>= forViolations
@@ -77,18 +77,18 @@ reviewComadRequest rid =
     >>= addNotes
     >>= sendUpdates "Send to Next Reviewer" (MonadicFold $ to $ buttonUpdate "Send to Next Reviewer")
 
-forViolations :: Value -> Appian Value
+forViolations :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
 forViolations = forGridRows_ sendUpdates (^. gfIdentifiers . traverse) (MonadicFold $ getGridFieldCell . traverse) (\gfi _ v -> addViolation v gfi)
 
-pageViolations :: Value -> Appian Value
+pageViolations :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
 pageViolations val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) addViolations val val
 
-addViolations :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+addViolations :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 addViolations val gf = do
   v <- foldGridField' addViolation val gf
   return (v, v)
 
-addViolation :: Value -> GridFieldIdent -> Appian Value
+addViolation :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
 addViolation val ident = do
   gf <- handleMissing "FRN Violation Grid" val $ val ^? getGridFieldCell . traverse
   sendUpdates' "Violations: Select FRN Checkbox & Review Violations" (selectGridfieldUpdateF ident gf
@@ -96,7 +96,7 @@ addViolation val ident = do
                                                         ) val
     >>= handleNoViolation
     
-handleNoViolation :: Either ValidationsException Value -> Appian Value
+handleNoViolation :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Either ValidationsException Value -> AppianT m Value
 handleNoViolation (Left ve) = case ve ^. validationsExc . _1 of
   ["You cannot add a Violation to an FRN that you have marked as \"No Violation\""] -> return $ ve ^. validationsExc . _2
     -- sendUpdates "Continue to 'Review FRN Decisions'" (MonadicFold (to $ buttonUpdate "Continue")) $ ve ^. validationsExc . _2
@@ -115,24 +115,24 @@ handleNoViolation (Right v) =
     >>= sendUpdates "Back to Violations" (MonadicFold $ to $ buttonUpdate "Back")
     >>= sendUpdates "Back to Review COMAD Request" (MonadicFold $ to $ buttonUpdate "Back")
 
-handleDecisionValidation :: Either ValidationsException Value -> Appian Value
+handleDecisionValidation :: MonadThrow m => Either ValidationsException Value -> AppianT m Value
 handleDecisionValidation (Left ve) = case ve ^. validationsExc . _1 . to (all $ isPrefixOf "You must select a Decision for FRN") of
   True -> return $ ve ^. validationsExc . _2
   False -> throwM ve
 handleDecisionValidation (Right v) = return v
 
-pageDecisions :: Value -> Appian Value
+pageDecisions :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
 pageDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) addDecisions val val
 
-addDecisions :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+addDecisions :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 addDecisions val gf = do
   v <- foldGridField' addDecision val gf
   return (v, v)
 
-forDecisions :: Value -> Appian Value
+forDecisions :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
 forDecisions = forGridRows_ sendUpdates (^. gfIdentifiers . traverse) (MonadicFold $ getGridFieldCell . traverse) (\gfi _ v -> addDecision v gfi)
 
-addDecision :: Value -> GridFieldIdent -> Appian Value
+addDecision :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
 addDecision val ident = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse
   eRes <- sendUpdates' "Decisions: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
@@ -153,7 +153,7 @@ data DecisionState
   | Retry
 
     -- Retries an arbitrary decision until one succeeds or there are none left to chose from.
-addDecision_ :: DecisionState -> GridFieldIdent -> Value -> [Int] -> Appian Value
+addDecision_ :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => DecisionState -> GridFieldIdent -> Value -> [Int] -> AppianT m Value
 addDecision_ decState ident val [] = throwM $ MissingComponentException ("There are no available decisions to make! ident: " <> tshow ident, val)
 addDecision_ decState ident val l = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse

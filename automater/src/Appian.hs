@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE TemplateHaskell    #-}
 
 module Appian where
 
@@ -14,42 +15,53 @@ import Servant.Client
 import Network.HTTP.Client (CookieJar)
 import Control.Monad.Catch
 import Control.Monad.Logger
+import Control.Monad.State
+import Control.Monad.State.Class
+import Servant.Client.Core
+import Servant.API
+import Control.Lens hiding (cons)
+import qualified Web.Cookie as WC
+import Data.CaseInsensitive
 
-type Appian = AppianT ClientM
+newtype Cookies = Cookies { _unCookies :: [(ByteString, ByteString)] }
+  deriving (Show, Semigroup, Monoid)
+
+makeLenses ''Cookies
+
+-- type Appian = AppianT ClientM
 
 newtype AppianT (m :: * -> *) a = AppianT
-  { unAppian :: CookieJar -> m a
-  } deriving Functor
+  { unAppian :: StateT Cookies m a
+  } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadTrans, MonadLogger, MonadMask, (MonadState Cookies))
 
-instance Applicative m => Applicative (AppianT m) where
-  pure = AppianT . const . pure
-  f <*> x = AppianT $ \cj -> unAppian f cj <*> unAppian x cj
+instance RunClient m => RunClient (AppianT m) where
+  runRequest req = do
+    cookies <- get
+    let cookieHeader = (mk "Cookie", cookies ^. unCookies . to renderCookieHeader) -- cookies ^.. unCookies . traverse . runFold ((,) <$> Fold (_1 . to mk) <*> Fold _2) & fromList
+        userAgentHeader = (mk "User-Agent", _unUserAgent defUserAgent)
+    lift $ runRequest
+      req { requestHeaders = userAgentHeader `cons` (cookieHeader `cons` requestHeaders req) }
+  throwServantError = lift . throwServantError
+  catchServantError m c = mkAppianT $ \cs -> execAppianT m cs `catchServantError` \e -> execAppianT (c e) cs
 
-instance Monad m => Monad (AppianT m) where
-  x >>= g = AppianT $ \cj -> do
-    x' <- unAppian x cj
-    unAppian (g x') cj
+execAppianT :: AppianT m a -> Cookies -> m (a, Cookies)
+execAppianT = runStateT . unAppian
 
-instance MonadIO m => MonadIO (AppianT m) where
-  liftIO f = AppianT $ \_ -> liftIO f
+mkAppianT :: (Cookies -> m (a, Cookies)) -> AppianT m a
+mkAppianT = AppianT . StateT
 
-instance MonadThrow m => MonadThrow (AppianT m) where
-  throwM e = AppianT $ \_ -> throwM e
+newtype UserAgent = UserAgent
+  { _unUserAgent :: ByteString
+  } deriving Show
 
-instance MonadCatch (AppianT ClientM) where
-  catch (AppianT f) c = AppianT $ \cj -> do
-    env <- ask
-    eRes <- liftIO $ runClientM (f cj) env
-    case eRes of
-      Left err -> throwM err `catch` \e -> unAppian (c e ) cj
-      Right res -> return res
+instance ToHttpApiData UserAgent where
+  toHeader (UserAgent agentStr) = agentStr
 
-instance MonadTrans AppianT where
-  lift = AppianT . const
+renderCookieHeader :: WC.Cookies -> ByteString
+renderCookieHeader = toStrict . builderToLazy . WC.renderCookies
 
-instance MonadLogger m => MonadLogger (AppianT m)
+instance ToHttpApiData Cookies where
+  toHeader (Cookies cookies) = renderCookieHeader cookies
 
-type AppianStack = AppianT (LoggingT ClientM)
-
--- instance Monad m => MonadBase ClientM (AppianT m) where
---   liftBase b = _
+defUserAgent :: UserAgent
+defUserAgent = UserAgent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36"

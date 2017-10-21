@@ -1,151 +1,351 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
 
-module Appian.Client where
+module Appian.Client
+  ( module Appian.Client
+  , Servant.Client.Core.RunClient
+  , Control.Monad.Logger.MonadLogger
+  ) where
 
-import ClassyPrelude
-import Servant
-import Servant.Client hiding (responseStatus)
-import Network.HTTP.Client.TLS
-import Network.HTTP.Client ( newManager, defaultManagerSettings, managerModifyRequest
-                           , managerModifyResponse, responseStatus, responseHeaders
-                           , responseCookieJar, CookieJar
-                           )
-import Control.Lens
-import Control.Lens.Action
+import Servant.API
+import Servant.Client hiding (responseStatus, HasClient, Client)
+import Servant.Client.Core hiding (ServantError, BaseUrl, Https)
+import Control.Lens hiding (cons)
 import Control.Lens.Action.Reified
+import Control.Lens.Action
+import ClassyPrelude
+import Data.Proxy
 import qualified Web.Cookie as WC
-import Network.HTTP.Media ((//), (/:))
+import qualified Network.HTTP.Client as C
+import qualified Network.HTTP.Client.TLS as TLS
+import Control.Monad.Logger
+import Control.Monad.State (put, get)
 import Data.Aeson
-import Data.Aeson.Lens
-import Appian
-import Appian.Types
 import Appian.Instances
+import Appian.Types
+import Appian
 import Appian.Lens
+import Data.Aeson.Lens
 import Data.Time (diffUTCTime, NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import System.IO.Unsafe (unsafePerformIO)
-
-       -- Horrible hack that will be removed once generalization of
-       -- ClientM is included in servant-client which will allow me to
-       -- replace this with monad-logger
-logChan :: TChan LogMessage
-logChan = unsafePerformIO newTChanIO
-
-data LogMessage
-  = Msg Text
-  | Done
-  deriving Show
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
-type TestAPI = Get '[HTML] CookieJar
-type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> Login :> LoginCj :> Post '[HTML] CookieJar
-type LogoutAPI = "suite" :> "logout" :> CookieJar :> Get '[HTML] ByteString
-type RecordsTab = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "view" :> "all" :> CookieJar :> Get '[AppianApplication] Value
-type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> RecordId :> "view" :> "all" :> CookieJar :> Get '[AppianApplication] Value
-type ViewRecordEntry = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "dashboards" :> PathPiece Dashboard :> CookieJar :> Get '[InlineSail] Value
--- type RecordActions = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "dashboards" :> PathPiece Dashboard :> AppianCsrfToken :> Get '[InlineSail] Value
-type TasksTab = "suite" :> "api" :> "feed" :> TaskParams :> QueryParam "b" UTCTime :> AppianCsrfToken :> Get '[JSON] Value
-type AcceptTask = "suite" :> "rest" :> "a" :> "task" :> "latest" :> PathPiece TaskId :> "accept" :> AppianCsrfToken :> Post '[JSON] NoContent
-type TaskStatus = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> PathPiece TaskId :> "status" :> ReqBody '[PlainText] Text :> AppianCsrfToken :> Put '[AppianTVUI] Value
-type TaskAttributes = "suite" :> "rest" :> "a" :> "task" :> "latest" :> PathPiece TaskId :> "attributes" :> AppianCsrfToken :> Get '[JSON] Value
+type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
+  :> Header "User-Agent" UserAgent :> Post '[HTML] (Headers '[Header "Set-Cookie" Text] ByteString)
+type RecordsTab = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "view" :> "all" :> Header "User-Agent" UserAgent :> Get '[AppianApplication] Value
+type LogoutAPI = "suite" :> "logout" :> Get '[HTML] ByteString
+type ReportsTab = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> "reports" :> Get '[AtomApplication, JSON] Value
+type TasksTab = "suite" :> "api" :> "feed" :> QueryParam "m" Text :> QueryParam "t" Text :> QueryParam "s" Text
+                :> QueryParam "defaultFacets" Text :> QueryParam "b" UTCTime :> Get '[JSON] Value
+type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> Capture "recordId" RecordId :> "view" :> "all" :> Get '[AppianApplication] Value
+type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Get '[InlineSail] Value
+type EditReport = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Capture "repordId" ReportId :> "view" :> Get '[AppianTVUI] Value
+type ReportUpdate update = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
+  :> Capture "recordId" ReportId :> "view" :> ReqBody '[AppianTV] (UiConfig update) :> Post '[AppianTVUI] Value
 type TaskUpdate update = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
-  :> PathPiece TaskId :> "form" :> ReqBody '[AppianTV] (UiConfig update) :> AppianCsrfToken :> Post '[AppianTVUI] Value
-type ReportsTab = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> "reports" :> AppianCsrfToken :> Get '[AtomApplication, JSON] Value
-type EditReport = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> PathPiece ReportId :> "view" :> AppianCsrfToken :> Get '[AppianTVUI] Value
-type UIUpdate update = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
-  :> PathPiece ReportId :> "view" :> ReqBody '[AppianTV] (UiConfig update) :> AppianCsrfToken :> Post '[AppianTVUI] Value
--- type RelatedActionEx = Header "X-Appian-Features" Text :> Url :> EmptyAppianTV :> AppianCsrfToken :> Post '[AppianTVUI] Value
-type AvailableActions = "suite" :> "api" :> "tempo" :> "open-a-case" :> "available-actions" :> Header "X-Appian-Features" Text :> AppianCsrfToken :> Get '[JSON] Value
-type LandingPageAction = "suite" :> "api" :> "tempo" :> "open-a-case" :> "action" :> PathPiece ActionId :> AppianCsrfToken :> Get '[JSON] ProcessModelId
-type LandingPageActionEx = "suite" :> "rest" :> "a" :> "model" :> "latest" :> PathPiece ProcessModelId :> EmptyAppianTV :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> AppianCsrfToken :> Post '[AppianTVUI] Value
-type RelatedActionEx = "suite" :> "rest" :> "a" :> "record" :> "latest" :> PathPiece RecordRef :> "action" :> PathPiece ActionId :> EmptyAppianTV
-   :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> AppianCsrfToken :> Post '[AppianTVUI] Value
+  :> Capture "taskId" TaskId :> "form" :> ReqBody '[AppianTV] (UiConfig update) :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
+type LandingPageAction = "suite" :> "api" :> "tempo" :> "open-a-case" :> "action" :> Capture "actionId" ActionId :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] ProcessModelId
+type LandingPageActionEx = "suite" :> "rest" :> "a" :> "model" :> "latest" :> Capture "processModelId" ProcessModelId :> ReqBody '[EmptyAppianTV] EmptyAppianTV :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
+type RelatedActionEx = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "action" :> Capture "actionId" ActionId :> ReqBody '[EmptyAppianTV] EmptyAppianTV
+   :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Post '[AppianTVUI] Value
+type ActionsTab = "suite" :> "api" :> "tempo" :> "open-a-case" :> "available-actions" :> Header "X-Appian-Features" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
 
-type API = TestAPI
-  :<|> LoginAPI
-  :<|> LogoutAPI
-  :<|> RecordsTab
-  :<|> ViewRecord
-  :<|> ViewRecordEntry
-  :<|> TasksTab
-  :<|> TaskAttributes
-  :<|> AcceptTask
-  :<|> TaskStatus
-  :<|> ReportsTab
-  :<|> EditReport
-  :<|> RelatedActionEx
-  :<|> AvailableActions
-  :<|> LandingPageAction
-  :<|> LandingPageActionEx
+getCookies :: (Applicative f, GetHeaders ls, Contravariant f) =>
+  ((ByteString, ByteString) -> f (ByteString, ByteString)) -> ls -> f ls
+getCookies = to getHeaders . traverse . traverse . to (splitSeq "\n") . traverse . to WC.parseCookies . to (take 1) . traverse
 
-api :: Proxy API
-api = Proxy
+toClient :: HasClient m api => Proxy m -> Proxy api -> Client m api
+toClient proxy = flip clientIn proxy
 
-navigateSite
-  :<|> login
-  :<|> logout
-  :<|> recordsTab_
-  :<|> viewRecord_
-  :<|> viewRecordEntry_
-  :<|> tasksTab_
-  :<|> taskAttributes_
-  :<|> acceptTask_
-  :<|> taskStatus_
-  :<|> reportsTab_
-  :<|> editReport_
-  :<|> relatedActionEx_
-  :<|> actionsTab_
-  :<|> landingPageAction_
-  :<|> landingPageActionEx_
-  = client api
+navigateSite :: RunClient m => m (Headers '[Header "Set-Cookie" Text] NoContent)
+navigateSite = toClient Proxy (Proxy :: Proxy HomepageAPI)
 
-recordsTab = AppianT recordsTab_
-viewRecordDashboard e dashboard = AppianT (viewRecordEntry_ e dashboard)
-viewRecord r = AppianT (viewRecord_ r)
-viewRecordEntry e = AppianT (viewRecordEntry_ e (PathPiece $ Dashboard "summary"))
-tasksTab mUtcTime = AppianT (tasksTab_ mUtcTime)
-taskAttributes tid = AppianT (taskAttributes_ tid)
-acceptTask tid = AppianT (acceptTask_ tid)
-taskStatus tid = AppianT (taskStatus_ (Just ("ceebc" :: Text)) (Just "stateful") (Just "TEMPO") tid ("accepted" :: Text))
-reportsTab = AppianT reportsTab_
-editReport rid = AppianT (editReport_ rid)
-recordActions rid = AppianT (viewRecordEntry_ rid (PathPiece $ Dashboard "actions"))
-relatedActionEx rid aid = AppianT (relatedActionEx_ rid aid (Just "ceebc") (Just "stateful") (Just "TEMPO"))
-actionsTab = AppianT (actionsTab_ (Just "e4bc"))
-landingPageAction aid = AppianT (landingPageAction_ aid)
-landingPageActionEx pid = AppianT (landingPageActionEx_ pid (Just "ceebc") (Just "stateful") (Just "TEMPO"))
+getCSRF :: (Contravariant f, Choice p, Applicative f) =>
+           p (ByteString, ByteString) (f (ByteString, ByteString))
+        -> p (ByteString, ByteString) (f (ByteString, ByteString))
+getCSRF = filtered (has $ _1 . only "__appianCsrfToken")
 
-taskUpdate :: ToJSON update => PathPiece TaskId -> UiConfig update -> Appian Value
-taskUpdate tid ui = AppianT (taskUpdate_ tid ui)
+remCSRF :: (Contravariant f, Choice p, Applicative f) =>
+           p (ByteString, ByteString) (f (ByteString, ByteString))
+        -> p (ByteString, ByteString) (f (ByteString, ByteString))
+remCSRF = filtered (hasn't $ _1 . only "__appianCsrfToken")
+
+login :: RunClient m => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
+login (Login un pw) = do
+  res <- navigateSite
+  let cj = res ^.. getCookies & Cookies
+  put cj
+  res' <- login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
+  put $ Cookies $ (cj ^.. unCookies . traverse . filtered removeNew) <> res' ^.. getCookies
+  return res'
   where
-    taskUpdate_ = client (Proxy :: ToJSON update => Proxy (TaskUpdate update)) (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO")
+    login_ = toClient Proxy (Proxy :: Proxy LoginAPI)
+    removeNew (n, _) = not (n == "JSESSIONID" || n == "__appianCsrfToken")
 
-uiUpdate :: ToJSON update => PathPiece ReportId -> UiConfig update -> Appian Value
-uiUpdate rid ui = AppianT (uiUpdate_ rid ui)
+recordsTab :: (RunClient m, MonadLogger m) => AppianT m Value
+recordsTab = logDebugN "Viewing records tab now!" >> recordsTab_ (Just defUserAgent)
   where
-    uiUpdate_ = client (Proxy :: ToJSON update => Proxy (UIUpdate update)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO")
+    recordsTab_ = toClient Proxy (Proxy :: Proxy RecordsTab)
 
-getCurrentTaskIds :: Appian [Text]
-getCurrentTaskIds = do
-  v <- tasksTab Nothing
-  return $ v ^.. getTaskIds
+reportsTab :: RunClient m => AppianT m Value
+reportsTab = toClient Proxy (Proxy :: Proxy ReportsTab)
 
-getTaskIds :: (Contravariant f, AsValue s, Plated s, Applicative f) => (Text -> f Text) -> s -> f s
-getTaskIds = deep (key "entries") . _Array . traverse . key "id" . _String . to (stripPrefix "t-") . _Just
+logout :: RunClient m => AppianT m ByteString
+logout = toClient Proxy (Proxy :: Proxy LogoutAPI)
 
-getRelatedActionId :: (Contravariant f, Applicative f, Plated s, AsValue s) => Text -> (ActionId -> f ActionId) -> s -> f s
-getRelatedActionId action = hasKeyValue "title" action . deep (hasKeyValue "title" "Execute related action") . key "href" . _String . to (lastMay . splitElem '/') . traverse . to ActionId
+tasksTab :: RunClient m => Maybe UTCTime -> AppianT m Value
+tasksTab mUtcTime = tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime
+  where
+    tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
 
-getCloseButton :: (Contravariant f, AsJSON s, AsValue s, Plated s, Applicative f) => (ButtonWidget -> f ButtonWidget) -> s -> f s
-getCloseButton = deep (filtered $ has $ key "label" . _String . filtered (\label -> label == "Close" || label == "Cancel" || label == "Reject" || label == "Discard Form" || label == "Discard Request" || label == "Delete Form")) . _JSON
+viewRecord :: RunClient m => RecordId -> AppianT m Value
+viewRecord rid = viewRecord_ rid
+  where
+    viewRecord_ = toClient Proxy (Proxy :: Proxy ViewRecord)
+
+editReport :: RunClient m => ReportId -> AppianT m Value
+editReport = toClient Proxy (Proxy :: Proxy EditReport)    
+
+reportUpdate :: (RunClient m, ToJSON update) => ReportId -> UiConfig update -> AppianT m Value
+reportUpdate rid upd = reportUpdate_ (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") rid upd
+  where
+    reportUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (ReportUpdate update))
+
+taskUpdate :: (RunClient m, ToJSON update) => TaskId -> UiConfig update -> AppianT m Value
+taskUpdate tid upd = do
+  cj <- get
+  taskUpdate_ (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") tid upd (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  where
+    taskUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (TaskUpdate update))
+
+landingPageAction :: RunClient m => ActionId -> AppianT m ProcessModelId
+landingPageAction aid = do
+  cj <- get
+  landingPageAction_ aid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+    where
+      landingPageAction_ = toClient Proxy (Proxy :: Proxy LandingPageAction)
+
+landingPageActionEx :: RunClient m => ProcessModelId -> AppianT m Value
+landingPageActionEx pid = do
+  cj <- get 
+  landingPageActionEx_ pid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+    where
+      landingPageActionEx_ = toClient Proxy (Proxy :: Proxy LandingPageActionEx)
+
+viewRecordDashboard :: RunClient m => RecordRef -> Dashboard -> AppianT m Value
+viewRecordDashboard = toClient Proxy (Proxy :: Proxy ViewRecordDashboard)
+
+relatedActionEx :: RunClient m => RecordRef -> ActionId -> AppianT m Value
+relatedActionEx ref aid = relatedActionEx_ ref aid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO")
+  where
+    relatedActionEx_ = toClient Proxy (Proxy :: Proxy RelatedActionEx)
+
+actionsTab :: RunClient m => AppianT m Value
+actionsTab = do
+  cj <- get
+  actionsTab_ (Just "e4bc") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+    where
+      actionsTab_ = toClient Proxy (Proxy :: Proxy ActionsTab)
+
+    -- Environments
+
+test3ClientEnvDbg = do
+  mgr <- C.newManager settings
+  return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
+    where
+      reqLoggerFunc req = print req >> return req
+      settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
+                                        , C.managerModifyResponse = respLoggerFunc
+                                        }
+      respLoggerFunc resp = do
+        print (C.responseStatus resp)
+        print (C.responseHeaders resp)
+        print (C.responseCookieJar resp)
+        cookieModifier resp
+
+cookieModifier :: C.Response C.BodyReader -> IO (C.Response C.BodyReader)
+cookieModifier resp = do
+  let multiPart = resp ^.. to C.responseCookieJar . getMultipartTok . to (\x -> ("Set-Cookie", x))
+  return $ resp { C.responseHeaders = C.responseHeaders resp <> multiPart }  
+
+getMultipartTok :: (Applicative f, Contravariant f) =>
+                   (ByteString -> f ByteString)
+                -> C.CookieJar -> f C.CookieJar
+getMultipartTok = to C.destroyCookieJar . traverse . filtered filterFcn . runFold ((,) <$> Fold (to C.cookie_name) <*> Fold (to C.cookie_value)) . to (\(n, v) -> n <> "=" <> v)
+  where
+    filterFcn c = C.cookie_name c == "__appianMultipartCsrfToken"
+      || C.cookie_name c == "JSESSIONID"
+      || C.cookie_name c == "__appianCsrfToken"
+
+preprodClientEnv = do
+  mgr <- C.newManager TLS.tlsManagerSettings
+  return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
+
+test3ClientEnv = do
+  mgr <- C.newManager settings
+  return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
+    where
+      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
+
+runAppianT :: AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either ServantError a)
+runAppianT f env creds = bracket (runClientM login' env) (\x -> runClientM (logout' x) env) (\x -> runClientM (execFun x) env)
+  where
+    login' = execAppianT (login creds) mempty
+    logout' (Right (_, cookies)) = do
+      execAppianT logout cookies
+      putStrLn "Successfully logged out!"
+    logout' (Left err) = print err
+    execFun (Right (_, cookies)) = do
+      (res, _) <- runStderrLoggingT $ execAppianT f cookies
+      return res
+    execFun (Left err) = throwM err
+
+    -- Update Functions
+
+buttonUpdate :: Text -> Value -> Either Text Update
+buttonUpdate label v = toUpdate <$> btn
+  where
+    btn = maybeToEither ("Could not locate button " <> tshow label) $ v ^? getButton label
+
+dropdownUpdate :: Text -> Int -> Value -> Either Text Update
+dropdownUpdate label n v = toUpdate <$> (_Right . dfValue .~ n $ dropdown)
+  where
+    dropdown = maybeToEither ("Could not locate dropdown " <> tshow label) $ v ^? getDropdown label
+
+textUpdate :: Text -> Text -> Value -> Either Text Update
+textUpdate label txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
+  where
+    tf = maybeToEither ("Could not find TextField " <> tshow label) $ v ^? getTextField label
+
+pickerUpdate :: (FromJSON b, ToJSON b) => Text -> AppianPickerData b -> Value -> Either Text Update
+pickerUpdate label uname v = toUpdate <$> (_Right . pwValue .~ Just (toJSON uname) $ apd)
+  where
+    apd = maybeToEither ("Could not find PickerField " <> tshow label) $ v ^? getPickerWidget label
+
+paragraphUpdate :: Text -> Text -> Value -> Either Text Update
+paragraphUpdate label txt v = toUpdate <$> (_Right . pgfValue .~ txt $ pgf)
+  where
+    pgf = maybeToEither ("Could not locate ParagraphField " <> tshow label) $ v ^? getParagraphField label
+
+datePickerUpdate :: Text -> AppianDate -> Value -> Either Text Update
+datePickerUpdate label date v = toUpdate <$> (_Right . dpwValue .~ date $ dpw)
+  where
+    dpw = maybeToEither ("Could not locate DatePicker " <> tshow label) $ v ^? getDatePicker label
+
+dynamicLinkUpdate :: Text -> Value -> Either Text Update
+dynamicLinkUpdate label v = toUpdate <$> dyl
+  where
+    dyl = maybeToEither ("Could not locate DynamicLinc " <> tshow label) $ v ^? getDynamicLink label
+
+gridFieldUpdate :: Int -> Value -> Either Text Update
+gridFieldUpdate index v = update
+  where
+    gf = v ^. getGridFieldCell
+    ident = bindGet gf $ gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i == index)
+    bindGet mx g = mx >>= \x -> x ^. g . to return
+    rUpdate = do
+      g <- gf
+      ident' <- ident
+      return $ toUpdate (gfSelection . _Just . _Selectable . gslSelected %~ (ident' :) $ g)
+    update = case rUpdate of
+      Error msg -> Left $ "gridFieldUpdate: " <> pack msg
+      Success upd -> Right upd
+
+textFieldCidUpdate :: Text -> Text -> Value -> Either Text Update
+textFieldCidUpdate cid txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
+  where
+    tf = maybeToEither ("Could not locate TextField with _cId " <> tshow cid) $ v ^? textFieldCid cid
+
+textFieldCid :: (Applicative f, Contravariant f) => Text -> (TextField -> f TextField) -> Value -> f Value
+textFieldCid cid = hasKeyValue "_cId" cid . _JSON
+
+checkboxGroupUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> [Int] -> Over (->) f s s (Either Text Update) (Either Text Update)
+checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find CheckboxField " <> tshow label)
+
+sendUpdate :: (RunClient m, MonadThrow m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m Value
+sendUpdate f update = do
+  eRes <- sendUpdate' f update
+  case eRes of
+    Left v -> throwM v
+    Right res -> return res
+
+sendUpdate' :: (RunClient m, MonadThrow m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either ValidationsException Value)
+sendUpdate' _ (Left msg) = throwM $ BadUpdateException msg Nothing
+sendUpdate' f (Right x) = do
+  eV <- tryAny $ f x
+  case eV of
+    Left exc -> throwM $ ServerException (exc, x)
+    Right v ->
+      case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
+        [] -> return $ Right v
+        l -> return $ Left $ ValidationsException (l, v, x)
+
+sendUpdates_ :: (RunClient m, MonadIO m, MonadLogger m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates_ updateFcn label f v = do
+  updates <- liftIO $ v ^!! runMonadicFold f
+  let errors = lefts updates
+      -- updates = v ^.. runFold f
+  case errors of
+    [] -> do
+      start <- liftIO $ getCurrentTime
+      res <- sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
+      end <- liftIO $ getCurrentTime
+      let elapsed = diffUTCTime end start
+      logInfoN $ intercalate ","
+        [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
+        , tshow (diffToMS elapsed)
+        , label
+        , "200"
+        ]
+      -- atomically $ writeTChan logChan $ Msg $ intercalate ","
+      --   [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
+      --   , tshow (diffToMS elapsed)
+      --   , label
+      --   , "200"
+      --   ]
+      return res
+    l -> throwM $ MissingComponentException (intercalate "\n" l, v)
+
+sendReportUpdates :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m Value
+sendReportUpdates reportId label f v = do
+  eRes <- sendReportUpdates' reportId label f v
+  case eRes of
+    Left v -> throwM v
+    Right res -> return res
+
+sendReportUpdates' :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
+
+sendUpdates :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m Value
+sendUpdates label f v = do
+  eRes <- sendUpdates' label f v
+  case eRes of
+    Left v -> throwM v
+    Right res -> return res
+
+sendUpdates' :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates' label f v = do
+  taskId <- getTaskId v
+  sendUpdates_ (taskUpdate taskId) label f v
+
+    -- Utility functions
+
+getTaskId :: MonadThrow m => Value -> AppianT m TaskId
+getTaskId v = handleMissing "taskId" v $ v ^? key "taskId" . _String . to TaskId
+
+diffToMS :: NominalDiffTime -> Int
+diffToMS elapsed = fromEnum elapsed `div` 1000000000
+
+resultToEither :: Result a -> Either Text a
+resultToEither (Error msg) = Left $ pack msg
+resultToEither (Success a) = Right a
+
+handleMissing :: MonadThrow (AppianT m) => Text -> Value -> Maybe a -> AppianT m a
+handleMissing label v Nothing = throwM $ BadUpdateException label (Just v)
+handleMissing label _ (Just component) = return component
 
 getReportLink :: Text -> Value -> Maybe Text
 getReportLink label v = v ^? deep (filtered $ has $ key "title" . _String . only label) . key "links" . _Array . traverse . filtered (has $ key "rel" . _String . only "edit") . key "href" . _String
@@ -153,8 +353,11 @@ getReportLink label v = v ^? deep (filtered $ has $ key "title" . _String . only
 parseReportId :: Text -> Maybe ReportId
 parseReportId = parseLinkId ReportId
 
-parseActionId :: Text -> Maybe ActionId
-parseActionId = parseLinkId ActionId
+getReportId :: MonadThrow m => Text -> Value -> AppianT m ReportId
+getReportId label v = handleMissing label v $ (getReportLink label >=> parseReportId) v
+
+landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
+landingPageLink label = deep (filtered $ has $ key "values" . key "values" . _Array . traverse . key "#v" . _String . only label) . key "link" . key "uri" . _String
 
 parseLinkId :: (Text -> a) -> Text -> Maybe a
 parseLinkId f url = fmap f . handleList . parseReportId' $ url
@@ -162,6 +365,19 @@ parseLinkId f url = fmap f . handleList . parseReportId' $ url
     handleList [x] = Just x
     handleList _ = Nothing
     parseReportId' = take 1 . reverse . splitElem '/'
+
+parseActionId :: Text -> Maybe ActionId
+parseActionId = parseLinkId ActionId
+
+mkUiUpdate :: [Update] -> Value -> Either Text (UiConfig (SaveRequestList Update))
+mkUiUpdate [] _ = Left "No updates to send!"
+mkUiUpdate saveList v = maybeToEither "Could not create UiUpdate" $ v ^? _JSON . to (id :: UiConfig (SaveRequestList Update) -> UiConfig (SaveRequestList Update)) . to (uiUpdates .~ (Just $ SaveRequestList saveList))
+
+maybeToEither :: a -> Maybe b -> Either a b
+maybeToEither c = maybe (Left c) Right
+
+
+-- Exception types
 
 data BadUpdateException = BadUpdateException
   { _badUpdateExceptionMsg :: Text
@@ -216,232 +432,4 @@ instance Show ClientException where
   show (ClientException exc) = "ClientException: " <> show (exc)
 
 instance Exception ClientException
-
-sendSelection :: PathPiece ReportId -> Text -> Int -> Value -> Appian Value
-sendSelection = sendSelection' uiUpdate
-
-sendSelection' :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> Int -> Value -> Appian Value
-sendSelection' f pathPiece label n v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
-  where
-    up = join $ mkUpdate <$> (_Just . dfValue .~ n $ dropdown) <*> pure v
-    dropdown = v ^? getDropdown label
-
-dropdownUpdate :: Text -> Int -> Value -> Either Text Update
-dropdownUpdate label n v = toUpdate <$> (_Right . dfValue .~ n $ dropdown)
-  where
-    dropdown = maybeToEither ("Could not locate dropdown " <> tshow label) $ v ^? getDropdown label
-
-clickButton :: PathPiece ReportId -> Text -> Value -> Appian Value
-clickButton = clickButton' uiUpdate
-
-clickButton' :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> Value -> Appian Value
-clickButton' f pathPiece label v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
-  where
-    up = join $ mkUpdate <$> btn <*> pure v
-    btn = v ^? getButton label
-
-buttonUpdate :: Text -> Value -> Either Text Update
-buttonUpdate label v = toUpdate <$> btn
-  where
-    btn = maybeToEither ("Could not locate button " <> tshow label) $ v ^? getButton label
-
-sendText :: PathPiece TaskId -> Text -> Text -> Value -> Appian Value
-sendText = sendText' taskUpdate
-
-sendText' :: (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> Text -> Value -> Appian Value
-sendText' f pathPiece label txt v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
-  where
-    up = join $ mkUpdate <$> (_Just . tfValue .~ txt $ tf) <*> pure v
-    tf = v ^? getTextField label
-
-textUpdate :: Text -> Text -> Value -> Either Text Update
-textUpdate label txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
-  where
-    tf = maybeToEither ("Could not find TextField " <> tshow label) $ v ^? getTextField label
-
--- sendPicker :: (FromJSON b, ToJSON b) => (PathPiece a -> UiConfig (SaveRequestList Update) -> Appian Value) -> PathPiece a -> Text -> AppianPickerData b -> Value -> Appian Value
--- sendPicker f pathPiece label uname v = handleMissing label v =<< (sequence $ f pathPiece <$> up)
---   where
---     up = join $ mkUpdate <$> (_Just . pwValue . _JSON .~ (Just uname) $ apd) <*> pure v
---     apd = v ^? getPickerWidget label
-
-pickerUpdate :: (FromJSON b, ToJSON b) => Text -> AppianPickerData b -> Value -> Either Text Update
-pickerUpdate label uname v = toUpdate <$> (_Right . pwValue .~ Just (toJSON uname) $ apd)
-  where
-    apd = maybeToEither ("Could not find PickerField " <> tshow label) $ v ^? getPickerWidget label
-
-paragraphUpdate :: Text -> Text -> Value -> Either Text Update
-paragraphUpdate label txt v = toUpdate <$> (_Right . pgfValue .~ txt $ pgf)
-  where
-    pgf = maybeToEither ("Could not locate ParagraphField " <> tshow label) $ v ^? getParagraphField label
-
-datePickerUpdate :: Text -> AppianDate -> Value -> Either Text Update
-datePickerUpdate label date v = toUpdate <$> (_Right . dpwValue .~ date $ dpw)
-  where
-    dpw = maybeToEither ("Could not locate DatePicker " <> tshow label) $ v ^? getDatePicker label
-
-dynamicLinkUpdate :: Text -> Value -> Either Text Update
-dynamicLinkUpdate label v = toUpdate <$> dyl
-  where
-    dyl = maybeToEither ("Could not locate DynamicLinc " <> tshow label) $ v ^? getDynamicLink label
-
-dynLinksUpdate :: Text -> Int -> Value -> Either Text Update
-dynLinksUpdate column idx v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? dropping idx (getGridWidgetDynLink column))
-
--- gridFieldDynLinkUpdate :: (Applicative f, Contravariant f) => Text -> (Update -> f Update) -> Value -> f Value
-gridFieldDynLinkUpdate :: Text -> Value -> Either Text Update
-gridFieldDynLinkUpdate column v = toUpdate <$> maybeToEither ("Could not locate any dynamic links in column " <> tshow column) (v ^? getGridFieldCell . traverse . gfColumns . at column . traverse . _TextCellDynLink . _2 . traverse)
-
-sendUpdate :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian Value
-sendUpdate f update = do
-  eRes <- sendUpdate' f update
-  case eRes of
-    Left v -> throwM v
-    Right res -> return res
-
-sendUpdate' :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Either Text (UiConfig (SaveRequestList Update)) -> Appian (Either ValidationsException Value)
-sendUpdate' _ (Left msg) = throwM $ BadUpdateException msg Nothing
-sendUpdate' f (Right x) = do
-  eV <- tryAny $ f x
-  case eV of
-    Left exc -> throwM $ ServerException (exc, x)
-    Right v ->
-      case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
-        [] -> return $ Right v
-        l -> return $ Left $ ValidationsException (l, v, x)
-
-handleMissing :: Text -> Value -> Maybe a -> Appian a
-handleMissing label v Nothing = throwM $ BadUpdateException label (Just v)
-handleMissing label _ (Just component) = return component
-
-makeSelection :: Value -> Text -> Int -> Maybe DropdownField
-makeSelection v label n = v ^? hasKeyValue "label" label . _JSON . to (dfValue .~ n)
-
-mkUpdate :: ToUpdate a => a -> Value -> Maybe (UiConfig (SaveRequestList Update))
-mkUpdate component v = v ^? _JSON . to (id :: UiConfig (SaveRequestList Update) -> UiConfig (SaveRequestList Update)) . to (uiUpdates .~ (Just . SaveRequestList . pure . toUpdate $ component))
-
-mkUiUpdate :: [Update] -> Value -> Either Text (UiConfig (SaveRequestList Update))
-mkUiUpdate [] _ = Left "No updates to send!"
-mkUiUpdate saveList v = maybeToEither "Could not create UiUpdate" $ v ^? _JSON . to (id :: UiConfig (SaveRequestList Update) -> UiConfig (SaveRequestList Update)) . to (uiUpdates .~ (Just $ SaveRequestList saveList))
-
-textFieldCidUpdate :: Text -> Text -> Value -> Either Text Update
-textFieldCidUpdate cid txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
-  where
-    tf = maybeToEither ("Could not locate TextField with _cId " <> tshow cid) $ v ^? textFieldCid cid
-
-textFieldCid :: (Applicative f, Contravariant f) => Text -> (TextField -> f TextField) -> Value -> f Value
-textFieldCid cid = hasKeyValue "_cId" cid . _JSON
-
-getReportId :: Text -> Value -> Appian ReportId
-getReportId label v = handleMissing label v $ (getReportLink label >=> parseReportId) v
-
-getTaskId :: Value -> Appian TaskId
-getTaskId v = handleMissing "taskId" v $ v ^? key "taskId" . _String . to TaskId
-
-landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
-landingPageLink label = deep (filtered $ has $ key "values" . key "values" . _Array . traverse . key "#v" . _String . only label) . key "link" . key "uri" . _String
-
-gridFieldUpdate :: Int -> Value -> Either Text Update
-gridFieldUpdate index v = update
-  where
-    gf = v ^. getGridFieldCell
-    ident = bindGet gf $ gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i == index)
-    bindGet mx g = mx >>= \x -> x ^. g . to return
-    rUpdate = do
-      g <- gf
-      ident' <- ident
-      return $ toUpdate (gfSelection . _Just . _Selectable . gslSelected %~ (ident' :) $ g)
-    update = case rUpdate of
-      Error msg -> Left $ "gridFieldUpdate: " <> pack msg
-      Success upd -> Right upd
-
-checkboxGroupUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> [Int] -> Over (->) f s s (Either Text Update) (Either Text Update)
-checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find CheckboxField " <> tshow label)
-
-componentUpdate :: ReifiedFold Value (Result Update) -> Value -> Either Text Update
-componentUpdate fold v = update
-  where
-    update = case component of
-      Error msg -> Left $ pack msg
-      Success comp -> Right $ comp
-    component = v ^. runFold fold
-
-resultToEither :: Result a -> Either Text a
-resultToEither (Error msg) = Left $ pack msg
-resultToEither (Success a) = Right a
-
--- uiUpdateList :: ReifiedFold Value Update -> Value -> Appian (UiConfig (SaveRequestList Update))
--- uiUpdateList f v = do
---   taskId <- getTaskId v
---   let tid = PathPiece taskId
---       updates = v ^.. runFold f
---   handleMissing "UpdateList" $ mkUiUpdate (SaveRequestList updates) v
-
-                             -- This is a horrible hack until I can figure out a better way to handle this.
-sendUpdates :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value
-sendUpdates label f v = do
-  eRes <- sendUpdates' label f v
-  case eRes of
-    Left v -> throwM v
-    Right res -> return res
-
-sendUpdates' :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT ClientM (Either ValidationsException Value)
-sendUpdates' label f v = do
-  taskId <- getTaskId v
-  let tid = PathPiece taskId
-  sendUpdates_ (taskUpdate tid) label f v
-
-sendReportUpdates :: ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value
-sendReportUpdates reportId label f v = do
-  eRes <- sendReportUpdates' reportId label f v
-  case eRes of
-    Left v -> throwM v
-    Right res -> return res
-
-sendReportUpdates' :: ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT ClientM (Either ValidationsException Value)
-sendReportUpdates' reportId label f v = sendUpdates_ (uiUpdate rid) label f v
-  where
-    rid = PathPiece reportId
-
-sendUpdates_ :: (UiConfig (SaveRequestList Update) -> Appian Value) -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian (Either ValidationsException Value)
-sendUpdates_ updateFcn label f v = do
-  updates <- liftIO $ v ^!! runMonadicFold f
-  let errors = lefts updates
-      -- updates = v ^.. runFold f
-  case errors of
-    [] -> do
-      start <- liftIO $ getCurrentTime
-      res <- sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
-      end <- liftIO $ getCurrentTime
-      let elapsed = diffUTCTime end start
-      atomically $ writeTChan logChan $ Msg $ intercalate ","
-        [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
-        , tshow (diffToMS elapsed)
-        , label
-        , "200"
-        ]
-      return res
-    l -> throwM $ MissingComponentException (intercalate "\n" l, v)
-
-diffToMS :: NominalDiffTime -> Int
-diffToMS elapsed = fromEnum elapsed `div` 1000000000
-
-maybeToEither :: a -> Maybe b -> Either a b
-maybeToEither c = maybe (Left c) Right
-
-runAppian :: Appian a -> ClientEnv -> Login -> IO (Either SomeException a)
-runAppian f env creds = runAppian' f env creds >>= pure . bimap toException id
-
-runAppian' :: Appian a -> ClientEnv -> Login -> IO (Either ServantError a)
-runAppian' f env creds = bracket (runClientM login' env) (\cj -> runClientM (logout' cj) env) runF
-  where
-    login' = do
-      cj <- navigateSite
-      login (Just ("tempo" :: Text)) creds $ LoginCj cj
-    logout' (Left exc) = return $ Left exc
-    logout' (Right session) = do
-      _ <- logout session
-      return $ Right ()
-    runF (Left exc) = return $ Left exc
-    runF (Right session) = runClientM (unAppian f session) env
 

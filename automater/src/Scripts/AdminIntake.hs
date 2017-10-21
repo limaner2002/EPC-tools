@@ -17,7 +17,7 @@ import Scripts.Common
 import Scripts.Test
 import Scripts.ReviewCommon
 
-adminIntake :: AppianUsername -> Appian (Maybe Text)
+adminIntake :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianUsername -> AppianT m (Maybe Text)
 adminIntake un = do
   let user = Identifiers [un]
 
