@@ -32,6 +32,10 @@ import Scripts.FCCForm471
 import Scripts.Opts
 import Options.Applicative (execParser)
 
+test2ClientEnv = do
+  mgr <- newManager tlsManagerSettings
+  return $ ClientEnv mgr (BaseUrl Https "portal-test2.appiancloud.com" 443 "")
+
 test3ClientEnv = do
   mgr <- newManager tlsManagerSettings
   return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")

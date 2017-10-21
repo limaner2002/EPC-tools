@@ -159,6 +159,14 @@ preprodComadUsers = ReviewUsers
   (Login "joseph.moryl@sl.universalservice.org" "EPCPassword123!")
   (Login "rama.tangirala@usac.org" "EPCPassword123!")
 
+test3ComadUsers :: ReviewUsers
+test3ComadUsers = ReviewUsers
+  (Login "comadmanager1@mailinator.com" "USACuser123$")
+  (Login "comadinitialreviewer1@testmail.usac.org" "USACuser123$")
+  (Login "comadfinalreviewer1@testmail.usac.org" "USACuser123$")
+  (Login "solixqareviewer@mailinator.com" "USACuser123$")
+  (Login "comadusacqareviewer@mailinator.com" "USACuser123$")
+
 comadReview env revUsers = fullReview env revUsers comadReviewConf
 
-comadReviewConf = FullReviewConf comadInitial2016 comadFinal2016 comadSolix2016 comadUsac2016
+comadReviewConf = FullReviewConf comadInitial2017 comadFinal2017 comadSolix2017 comadUsac2017

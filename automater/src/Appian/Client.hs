@@ -370,13 +370,6 @@ resultToEither :: Result a -> Either Text a
 resultToEither (Error msg) = Left $ pack msg
 resultToEither (Success a) = Right a
 
--- uiUpdateList :: ReifiedFold Value Update -> Value -> Appian (UiConfig (SaveRequestList Update))
--- uiUpdateList f v = do
---   taskId <- getTaskId v
---   let tid = PathPiece taskId
---       updates = v ^.. runFold f
---   handleMissing "UpdateList" $ mkUiUpdate (SaveRequestList updates) v
-
                              -- This is a horrible hack until I can figure out a better way to handle this.
 sendUpdates :: Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> Appian Value
 sendUpdates label f v = do
