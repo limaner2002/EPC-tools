@@ -72,7 +72,6 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
     loop accum val = do
       gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
       logDebugN $ "PagingInfo: " <> (tshow $ gf ^? pagingInfo)
---      atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf ^? pagingInfo)
       case nextPage gf gf of
         Nothing -> do
           (accum, _) <- f accum gf
@@ -81,7 +80,6 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
           (accum', val') <- f accum gf
           gf' <- handleMissing "GridField" val' =<< (val' ^!? runMonadicFold fold)
           logDebugN $ "PagingInfo: " <> (tshow $ gf' ^? pagingInfo)
---           atomically $ writeTChan logChan $ Msg $ "PagingInfo: " <> (tshow $ gf' ^? pagingInfo)
           loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
 forGridRows_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
@@ -206,20 +204,6 @@ openReport reportName = do
   rid <- getReportId reportName v
   v' <- editReport rid
   return (rid, v')
-
---     -- This needs to be replaced as soon as ClientM is generalized in servant-client
--- loggingFunc :: (MonadIO m, MonadThrow m, MonadBaseControl IO m) => FilePath -> m ()
--- loggingFunc fp = S.takeWhile isMsg
---   >>> S.map unpackMsg
--- --   >>> S.writeFile fp
---   >>> S.mapM_ (liftIO . print)
---   >>> runResourceT
---     $ S.repeatM (atomically $ readTChan logChan)
---   where
---     isMsg (Msg _) = True
---     isMsg _ = False
---     unpackMsg (Msg t) = unpack t
---     unpackMsg _ = error "The impossible happened unpacking the log Message!"
 
 viewRelatedActions :: (RunClient m, MonadThrow m) => Value -> RecordRef -> AppianT m (RecordRef, Value)
 viewRelatedActions v recordRef = do

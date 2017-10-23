@@ -7,6 +7,7 @@
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE Rank2Types    #-}
 
 module Appian where
 
@@ -28,6 +29,7 @@ newtype Cookies = Cookies { _unCookies :: [(ByteString, ByteString)] }
 
 makeLenses ''Cookies
 
+type Appian = AppianT (LoggingT ClientM)
 -- type Appian = AppianT ClientM
 
 newtype AppianT (m :: * -> *) a = AppianT

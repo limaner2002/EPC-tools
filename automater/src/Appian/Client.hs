@@ -181,8 +181,10 @@ getMultipartTok = to C.destroyCookieJar . traverse . filtered filterFcn . runFol
       || C.cookie_name c == "__appianCsrfToken"
 
 preprodClientEnv = do
-  mgr <- C.newManager TLS.tlsManagerSettings
+  mgr <- C.newManager settings
   return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
+    where
+      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
 
 test3ClientEnv = do
   mgr <- C.newManager settings
@@ -190,8 +192,14 @@ test3ClientEnv = do
     where
       settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
 
-runAppianT :: AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either ServantError a)
-runAppianT f env creds = bracket (runClientM login' env) (\x -> runClientM (logout' x) env) (\x -> runClientM (execFun x) env)
+forumClientEnv = do
+  mgr <- C.newManager settings
+  return $ ClientEnv mgr (BaseUrl Https "forum.appian.com" 443 "")
+    where
+      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
+
+runAppianT :: AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
+runAppianT f env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)
   where
     login' = execAppianT (login creds) mempty
     logout' (Right (_, cookies)) = do
@@ -202,6 +210,9 @@ runAppianT f env creds = bracket (runClientM login' env) (\x -> runClientM (logo
       (res, _) <- runStderrLoggingT $ execAppianT f cookies
       return res
     execFun (Left err) = throwM err
+    runClientM' act = do
+      res <- runClientM act env
+      return $ bimap toException id $ res
 
     -- Update Functions
 
