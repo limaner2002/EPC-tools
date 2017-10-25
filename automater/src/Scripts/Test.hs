@@ -21,6 +21,10 @@ module Scripts.Test
   , intFieldArbitraryUpdateF_
   , fillIntField_
   , dropdownArbitrarySelect_
+  , QC.getPositive
+  , QC.Arbitrary (..)
+  , QC.choose
+  , QC.shuffle
   ) where 
 
 import Test.QuickCheck hiding (generate)

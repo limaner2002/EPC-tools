@@ -22,39 +22,39 @@ import Scripts.ComadReview
 import Servant.Client
 
 fullReview :: ClientEnv -> ReviewUsers -> FullReviewConf -> IO (Either SomeException Value)
-fullReview = error "Full Review is broken due to the backend re-write!"
--- fullReview env revUsers fullReviewConf = do
---   let reviewManager = userReviewerManager revUsers
---       initialReviewer = userInitialReviewer revUsers
---       finalReviewer = userFinalReviewer revUsers
---       solixReviewer = userSolixReviewer revUsers
---       usacReviewer = userUsacReviewer revUsers
---       runIt act login = runAppianT act env login
---       runItRetry action login = retryIt (login ^! act (runIt action) . to join)
---       initial = initialReviewConf fullReviewConf
---       final = finalReviewConf fullReviewConf
---       solix = solixReviewConf fullReviewConf
---       usac = usacReviewConf fullReviewConf
---       manageAppealDeets = case reviewType initial of
---                             RevAdminCorrection -> runItRetry (withReviewConf $ flip manageAppealDetails initial) initialReviewer
---                             RevAppeals -> runItRetry (withReviewConf $ flip manageAppealDetails initial) initialReviewer
---                             _ -> return $ Right Null
+-- fullReview = error "Full Review is broken due to the backend re-write!"
+fullReview env revUsers fullReviewConf = do
+  let reviewManager = userReviewerManager revUsers
+      initialReviewer = userInitialReviewer revUsers
+      finalReviewer = userFinalReviewer revUsers
+      solixReviewer = userSolixReviewer revUsers
+      usacReviewer = userUsacReviewer revUsers
+      runIt act login = tryAny $ runAppianT act env login
+      runItRetry action login = retryIt (login ^! act (runIt action) . to join)
+      initial = initialReviewConf fullReviewConf
+      final = finalReviewConf fullReviewConf
+      solix = solixReviewConf fullReviewConf
+      usac = usacReviewConf fullReviewConf
+      manageAppealDeets = case reviewType initial of
+                            RevAdminCorrection -> runItRetry (withReviewConf $ flip manageAppealDetails initial) initialReviewer
+                            RevAppeals -> runItRetry (withReviewConf $ flip manageAppealDetails initial) initialReviewer
+                            _ -> return $ Right Null
 
---       maybeFinal res = case reviewType final of
---                          RevForm486 -> return res
---                          _ -> mapErr (runItRetry (assignment final (finalReviewer ^. username . to AppianUsername)) $ trace "Final Assign" reviewManager) res
---                                 >>= mapErr (runItRetry (withReviewConf $ finalReview final) $ trace "Final Review" finalReviewer)
---       dispatchInitialReview RevCOMAD = withReviewConf $ flip comadInitialReview initial
---       dispatchInitialReview _ = withReviewConf $ flip initialReview initial
+      maybeFinal res = case reviewType final of
+                         RevForm486 -> return res
+                         _ -> mapErr (runItRetry (assignment final (finalReviewer ^. username . to AppianUsername)) $ trace "Final Assign" reviewManager) res
+                                >>= mapErr (runItRetry (withReviewConf $ finalReview final) $ trace "Final Review" finalReviewer)
+      dispatchInitialReview RevCOMAD = withReviewConf $ flip comadInitialReview initial
+      dispatchInitialReview _ = withReviewConf $ flip initialReview initial
 
---   runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) (trace "Initial Assign" reviewManager)
---     >>= mapErr manageAppealDeets
---     >>= mapErr (runItRetry (dispatchInitialReview $ reviewType initial) $ trace "Initial Review" initialReviewer)
---     >>= maybeFinal
---     >>= mapErr (runItRetry (assignment solix (solixReviewer ^. username . to AppianUsername)) (trace "Solix Assign" reviewManager))
---     >>= mapErr (runItRetry (withReviewConf $ finalReview solix) $ trace "Solix Review" solixReviewer)
---     >>= mapErr (runItRetry (assignment usac (usacReviewer ^. username . to AppianUsername)) (trace "Usac Assign" reviewManager))
---     >>= mapErr (runItRetry (withReviewConf $ finalReview usac) $ trace "Usac Review" usacReviewer)
+  -- runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) reviewManager
+  --   >>= mapErr manageAppealDeets
+  --   >>= mapErr (runItRetry (dispatchInitialReview $ reviewType initial) initialReviewer)
+  maybeFinal (Right Null)
+    >>= mapErr (runItRetry (assignment solix (solixReviewer ^. username . to AppianUsername)) reviewManager)
+    >>= mapErr (runItRetry (withReviewConf $ finalReview solix) solixReviewer)
+    >>= mapErr (runItRetry (assignment usac (usacReviewer ^. username . to AppianUsername)) reviewManager)
+    >>= mapErr (runItRetry (withReviewConf $ finalReview usac) usacReviewer)
 
 mapErr :: Monad m => m (Either SomeException b) -> Either SomeException a -> m (Either SomeException b)
 mapErr _ (Left exc) = return $ Left exc
@@ -160,6 +160,14 @@ preprodComadUsers = ReviewUsers
   (Login "joseph.moryl@sl.universalservice.org" "EPCPassword123!")
   (Login "rama.tangirala@usac.org" "EPCPassword123!")
 
+test3ComadUsers :: ReviewUsers
+test3ComadUsers = ReviewUsers
+  (Login "comadmanager1@mailinator.com" "USACuser123$")
+  (Login "comadinitialreviewer1@testmail.usac.org" "USACuser123$")
+  (Login "comadfinalreviewer1@testmail.usac.org" "USACuser123$")
+  (Login "solixqareviewer@mailinator.com" "USACuser123$")
+  (Login "comadusacqareviewer@mailinator.com" "USACuser123$")
+
 comadReview env revUsers = fullReview env revUsers comadReviewConf
 
-comadReviewConf = FullReviewConf comadInitial2016 comadFinal2016 comadSolix2016 comadUsac2016
+comadReviewConf = FullReviewConf comadInitial2017 comadFinal2017 comadSolix2017 comadUsac2017

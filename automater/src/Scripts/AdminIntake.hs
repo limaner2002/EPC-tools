@@ -29,12 +29,15 @@ adminIntake un = do
                                                 <|> MonadicFold (to (buttonUpdate "Create Appeal"))
                                                 ) v
   sendUpdates "Appeal Details & Contact"
-          (MonadicFold (textFieldArbitrary "Nickname" 255)
-            <|> MonadicFold (to $ dropdownUpdate "Funding Year" 3)
+--           (MonadicFold (textFieldArbitrary "Nickname" 255) -- Prefix should be perf_comad.*
+             (MonadicFold (to $ textUpdate "Nickname" "perf_comad.*")
+            <|> MonadicFold (to $ dropdownUpdate "Funding Year" 2)
             <|> dropdownArbitraryUpdateF "What type of decision would you like to appeal?"
-            <|> dropdownArbitraryUpdateF "Appeal Category"
+--             <|> dropdownArbitraryUpdateF "Appeal Category"
+            <|> (MonadicFold (to $ dropdownUpdate "Appeal Category" 10))
 --            <|> dropdownUpdateF' "Appeal Type" RevAdminCorrection
-            <|> dropdownArbitraryUpdateF "Appeal Type"
+--            <|> dropdownArbitraryUpdateF "Appeal Type" -- COMAD/RIDF and FCC Remand COMAD
+            <|> (MonadicFold (to $ dropdownUpdate "Appeal Type" 11))
             <|> MonadicFold (to $ pickerUpdate "Main Contact Person" user)
             <|> MonadicFold (to $ buttonUpdate "Continue")
           ) v'

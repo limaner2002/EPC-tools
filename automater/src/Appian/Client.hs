@@ -38,19 +38,19 @@ type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> Que
 type RecordsTab = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "view" :> "all" :> Header "User-Agent" UserAgent :> Get '[AppianApplication] Value
 type LogoutAPI = "suite" :> "logout" :> Get '[HTML] ByteString
 type ReportsTab = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> "reports" :> Get '[AtomApplication, JSON] Value
-type TasksTab = "suite" :> "api" :> "feed" :> QueryParam "m" Text :> QueryParam "t" Text :> QueryParam "s" Text
-                :> QueryParam "defaultFacets" Text :> QueryParam "b" UTCTime :> Get '[JSON] Value
+type TasksTab = "suite" :> "api" :> "feed" :> "tempo" :> QueryParam "m" Text :> QueryParam "t" Text :> QueryParam "s" Text
+                :> QueryParam "defaultFacets" Text :> QueryParam "b" UTCTime :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
 type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> Capture "recordId" RecordId :> "view" :> "all" :> Get '[AppianApplication] Value
 type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Get '[InlineSail] Value
-type EditReport = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Capture "repordId" ReportId :> "view" :> Get '[AppianTVUI] Value
+type EditReport = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Capture "repordId" ReportId :> "view" :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[AppianTVUI] Value
 type ReportUpdate update = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
-  :> Capture "recordId" ReportId :> "view" :> ReqBody '[AppianTV] (UiConfig update) :> Post '[AppianTVUI] Value
+  :> Capture "recordId" ReportId :> "view" :> ReqBody '[AppianTV] (UiConfig update) :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 type TaskUpdate update = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
   :> Capture "taskId" TaskId :> "form" :> ReqBody '[AppianTV] (UiConfig update) :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 type LandingPageAction = "suite" :> "api" :> "tempo" :> "open-a-case" :> "action" :> Capture "actionId" ActionId :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] ProcessModelId
 type LandingPageActionEx = "suite" :> "rest" :> "a" :> "model" :> "latest" :> Capture "processModelId" ProcessModelId :> ReqBody '[EmptyAppianTV] EmptyAppianTV :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 type RelatedActionEx = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "action" :> Capture "actionId" ActionId :> ReqBody '[EmptyAppianTV] EmptyAppianTV
-   :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Post '[AppianTVUI] Value
+   :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 type ActionsTab = "suite" :> "api" :> "tempo" :> "open-a-case" :> "available-actions" :> Header "X-Appian-Features" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
 
 getCookies :: (Applicative f, GetHeaders ls, Contravariant f) =>
@@ -97,7 +97,9 @@ logout :: RunClient m => AppianT m ByteString
 logout = toClient Proxy (Proxy :: Proxy LogoutAPI)
 
 tasksTab :: RunClient m => Maybe UTCTime -> AppianT m Value
-tasksTab mUtcTime = tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime
+tasksTab mUtcTime = do
+  cj <- get
+  tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
 
@@ -107,12 +109,16 @@ viewRecord rid = viewRecord_ rid
     viewRecord_ = toClient Proxy (Proxy :: Proxy ViewRecord)
 
 editReport :: RunClient m => ReportId -> AppianT m Value
-editReport = toClient Proxy (Proxy :: Proxy EditReport)    
+editReport rid = do
+  cj <- get
+  toClient Proxy (Proxy :: Proxy EditReport) rid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
 
 reportUpdate :: (RunClient m, ToJSON update) => ReportId -> UiConfig update -> AppianT m Value
-reportUpdate rid upd = reportUpdate_ (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") rid upd
-  where
-    reportUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (ReportUpdate update))
+reportUpdate rid upd = do
+  cj <- get
+  reportUpdate_ (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") rid upd (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+    where
+      reportUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (ReportUpdate update))
 
 taskUpdate :: (RunClient m, ToJSON update) => TaskId -> UiConfig update -> AppianT m Value
 taskUpdate tid upd = do
@@ -139,9 +145,11 @@ viewRecordDashboard :: RunClient m => RecordRef -> Dashboard -> AppianT m Value
 viewRecordDashboard = toClient Proxy (Proxy :: Proxy ViewRecordDashboard)
 
 relatedActionEx :: RunClient m => RecordRef -> ActionId -> AppianT m Value
-relatedActionEx ref aid = relatedActionEx_ ref aid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO")
-  where
-    relatedActionEx_ = toClient Proxy (Proxy :: Proxy RelatedActionEx)
+relatedActionEx ref aid = do
+  cj <- get
+  relatedActionEx_ ref aid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+    where
+      relatedActionEx_ = toClient Proxy (Proxy :: Proxy RelatedActionEx)
 
 actionsTab :: RunClient m => AppianT m Value
 actionsTab = do
@@ -189,6 +197,12 @@ preprodClientEnv = do
 test3ClientEnv = do
   mgr <- C.newManager settings
   return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
+    where
+      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
+
+test2ClientEnv = do
+  mgr <- C.newManager settings
+  return $ ClientEnv mgr (BaseUrl Https "portal-test2.appiancloud.com" 443 "")
     where
       settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
 

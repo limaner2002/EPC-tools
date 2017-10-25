@@ -110,6 +110,18 @@ comadSolix2016 = ReviewBaseConf RevCOMAD RevSolix FY2016
 comadUsac2016 :: ReviewBaseConf
 comadUsac2016 = ReviewBaseConf RevCOMAD RevUsac FY2016
 
+comadInitial2017 :: ReviewBaseConf
+comadInitial2017 = ReviewBaseConf RevCOMAD RevInitial FY2017
+
+comadFinal2017 :: ReviewBaseConf
+comadFinal2017 = ReviewBaseConf RevCOMAD RevFinal FY2017
+
+comadSolix2017 :: ReviewBaseConf
+comadSolix2017 = ReviewBaseConf RevCOMAD RevSolix FY2017
+
+comadUsac2017 :: ReviewBaseConf
+comadUsac2017 = ReviewBaseConf RevCOMAD RevUsac FY2017
+
 data ReviewType
   = RevSelect
   | RevAppeals
