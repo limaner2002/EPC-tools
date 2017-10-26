@@ -7,7 +7,6 @@ module Scripts.Opts -- where
   ( commandsInfo
   , runScript
   , Script (..)
-  , loggingFunc
   , setTimeout
   ) where
 
@@ -23,7 +22,7 @@ import Scripts.InitialReview
 import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
-import Appian.Client (runAppian, LogMessage(..), logChan)
+import Appian.Client (runAppianT)
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
 import Servant.Client
@@ -48,26 +47,16 @@ runScript (CSScript script) baseUrl username fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
   let login = Login (pack username) (pack password)
-  (_, res) <- concurrently (loggingFunc fp)
-              ( do
-                  atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (const $ tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
-                  atomically $ writeTChan logChan Done
-                  return results
-              )
-  dispResults res
+
+  results <- mapConcurrently (const $ tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
+
+  dispResults results
 runScript (Form471 script) baseUrl username fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
   logins <- S.fst' <$> (csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv")
-  (_, res) <- concurrently (loggingFunc fp)
-              ( do
-                  atomically $ writeTChan logChan $ Msg $ "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (\login -> tryAny $ runAppian script (ClientEnv mgr baseUrl) login) $ take nThreads logins
-                  atomically $ writeTChan logChan Done
-                  return results
-              )
-  dispResults res
+  results <- mapConcurrently (\login -> tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ take nThreads logins
+  dispResults results
 runScript (Form486 script userFile) baseUrl _ fp nThreads = do
   stderrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
   stderrLn "\n********************************************************************************\n"
@@ -76,14 +65,10 @@ runScript (Form486 script userFile) baseUrl _ fp nThreads = do
   stderrLn "Starting 486 intake now!"
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
-  (_, res) <- concurrently (loggingFunc fp)
-              (do
-                  atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (\login -> tryAny $ runAppian (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
-                  atomically $ writeTChan logChan Done
-                  return results
-              )
-  dispResults res
+
+  results <- mapConcurrently (\login -> tryAny $ runAppianT (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
+
+  dispResults results
 
 runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> FilePath -> IO ()
 runSPINIntake script userFile nThreads baseUrl fp = do
@@ -94,20 +79,13 @@ runSPINIntake script userFile nThreads baseUrl fp = do
   stderrLn "Starting SPIN Change intake now!"
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   chan <- newTChanIO
-  (_, _) <- concurrently (concurrently
-                            (loggingFunc fp)
-                            (loginProducer userFile chan)
-                           )
-              (do
-                  atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
-                  results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
-                  atomically $ writeTChan logChan Done
-                  return results
-              )
+
+  results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
+
   putStrLn "Finished with SPIN Change Intake!"
     where
       runIt mgr login = do
-        res <- tryAny $ runAppian script (ClientEnv mgr baseUrl) login
+        res <- tryAny $ runAppianT script (ClientEnv mgr baseUrl) login
         print res
 
 runMultiple :: (FilePath -> Int -> IO ()) -> FilePath -> Int -> [Int] -> IO ()
@@ -129,13 +107,9 @@ runInitialReview baseUrl username fp nThreads = do
   conf <- newReviewConf
   let actions = take nThreads $ repeat (initialReview conf adminInitial2017)
       login = Login (pack username) $ pack password
-  atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
 
-  results <- runConcurrently
-    $  Concurrently (loggingFunc fp)
-    *> Concurrently (mapConcurrently (\f -> tryAny $ runAppian f (ClientEnv mgr baseUrl) login) actions)
-  atomically $ writeTChan logChan Done
+  results <- mapConcurrently (\f -> tryAny $ runAppianT f (ClientEnv mgr baseUrl) login) actions
 
   dispResults results
 
@@ -143,10 +117,7 @@ runReview :: BaseUrl -> FilePath -> Int -> IO ()
 runReview baseUrl fp nThreads = do
   stderrLn $ "Running review on " <> tshow baseUrl <> " for " <> tshow nThreads <> " threads."
   mgr <- newManager tlsManagerSettings
-  results <- runConcurrently
-    $  Concurrently (loggingFunc fp)
-    *> Concurrently (mapConcurrently (const $ dispatchReview RevSpinChange (ClientEnv mgr baseUrl)) [1..nThreads])
-  atomically $ writeTChan logChan Done
+  results <- mapConcurrently (const $ dispatchReview RevSpinChange (ClientEnv mgr baseUrl)) [1..nThreads]
 
   dispResults results
 
@@ -159,20 +130,11 @@ runConsumer :: (Login -> Appian a) -> BaseUrl -> FilePath -> FilePath -> Int -> 
 runConsumer f baseUrl fp userFile nThreads = do
   chan <- atomically newTChan
   mgr <- liftIO $ newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
-  _ <- concurrently (concurrently
-                      (loggingFunc fp)
-                      (loginProducer userFile chan)
-                    )
-           (do
-               atomically $ writeTChan logChan $ Msg "timeStamp,elapsed,label,responseCode"
-               results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
-               atomically $ writeTChan logChan Done
-               return results
-           )
+  results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
   putStrLn "Done!"
     where
       runIt mgr login = do
-        res <- join <$> (tryAny $ runAppian (f login) (ClientEnv mgr baseUrl) login)
+        res <- join <$> (tryAny $ runAppianT (f login) (ClientEnv mgr baseUrl) login)
         case res of
           Left exc -> print exc
           Right _ -> putStrLn "Success!"

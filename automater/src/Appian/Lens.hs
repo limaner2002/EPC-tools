@@ -11,6 +11,7 @@ import Data.Aeson.Lens
 import Appian.Types
 import Data.Aeson
 import Data.Monoid (Endo)
+import Appian.Instances (ActionId (..))
 
 hasKey :: (AsValue s, Plated s, Applicative f) => Text -> Over (->) f s s s s
 hasKey label = deep (filtered $ has $ key label) 
@@ -252,3 +253,6 @@ infixl 8 ^&..
 
 testF :: (Applicative f, Choice p) => t -> (t -> t -> Bool) -> p () (f ()) -> p t (f t)
 testF a f = prism' (\() -> a) $ guard . (f a)
+
+getRelatedActionId :: (Contravariant f, Applicative f, Plated s, AsValue s) => Text -> (ActionId -> f ActionId) -> s -> f s
+getRelatedActionId action = hasKeyValue "title" action . deep (hasKeyValue "title" "Execute related action") . key "href" . _String . to (lastMay . splitElem '/') . traverse . to ActionId

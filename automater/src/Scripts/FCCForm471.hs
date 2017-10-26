@@ -21,17 +21,18 @@ import Control.Lens.Action.Reified
 import Scripts.Common
 import qualified Data.Foldable as F
 import qualified Data.Csv as Csv
+import Control.Monad.Logger
 
-form471Intake :: Form471Conf -> Appian Value
+form471Intake :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Form471Conf -> AppianT m Value
 form471Intake conf = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
-  v' <- editReport (PathPiece rid)
+  v' <- editReport rid
   form471Link <- handleMissing "FCC Form 471" v' $ v' ^? landingPageLink "FCC Form 471"
   aid <- handleMissing "Action ID" v' $ parseActionId form471Link
-  pid <- landingPageAction $ PathPiece aid
+  pid <- landingPageAction aid
   v'' <- ( do
-             v <- landingPageActionEx $ PathPiece pid
+             v <- landingPageActionEx pid
              v' <- case v ^? isMultipleEntities of
                Nothing -> return v
                Just "FormLayout" -> sendUpdates "Apply for Funding Now" (gridFieldArbitrarySelect -- MonadicFold (to (gridFieldUpdate 0))
@@ -50,7 +51,6 @@ form471Intake conf = do
               ) v''
     >>= sendUpdates "Contact Info" (    MonadicFold (to (buttonUpdate "Yes"))
                      <|> paragraphArbitraryUpdate "Enter Holiday Contact Information" 4000
-                     -- <|> MonadicFold (to (paragraphUpdate "Enter Holiday Contact Information" (pack $ ClassyPrelude.take 3999 $ repeat '\SYN')))
                      <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                     )
     >>= sendUpdates "Choose Category" (    MonadicFold (to (buttonUpdate "Category 1"))
@@ -62,50 +62,48 @@ form471Intake conf = do
     False -> selectMembers membersPage
 
   sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
-            >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
-            >>= createFRN (conf ^. nFRNs) (conf ^. spin)
-    >>= pageLineItems
+    >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
+    >>= createFRN (conf ^. nFRNs) (conf ^. spin)
+    >>= forLineItems (conf ^. nLineItems)
     >>= ifContinueToCertification
     >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
 
-selectMembers :: Value -> Appian Value
+selectMembers :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
 selectMembers v = do
   (v', rGridField) <- validMemberCheckboxes v
   case rGridField of
     Error msg -> throwM $ MissingComponentException ("selectMembers: " <> pack msg, v')
     Success gridField -> do
       taskId <- getTaskId v'
-      let tid = PathPiece taskId
-          updates = toUpdate gridField
-      checked <- sendUpdate (taskUpdate tid) $ mkUiUpdate [updates] v'
+      let updates = toUpdate gridField
+      checked <- sendUpdate (taskUpdate taskId) $ mkUiUpdate [updates] v'
 
       sendUpdates "Add Members" (MonadicFold (to (buttonUpdate "Add"))) checked
         >>= sendUpdates "Click Save & Continue" (MonadicFold (to (buttonUpdate "Save & Continue")))
 
-validMemberCheckboxes :: Value -> Appian (Value, Result (GridField GridFieldCell))
+validMemberCheckboxes :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m (Value, Result (GridField GridFieldCell))
 validMemberCheckboxes v = do
-  liftIO $ putStrLn "Getting valid member checkboxes."
-  let mRefs = v ^.. getGridFieldRecordRefs "BEN Name" . traverse . to PathPiece
+  logDebugN "Getting valid member checkboxes."
+  let mRefs = v ^.. getGridFieldRecordRefs "BEN Name" . traverse
   case mRefs of
     [] -> throwM $ BadUpdateException "There are no entity members!" (Just v)
     refs -> do
       discountRates <- mapM (\r -> (,) <$> pure r <*> viewDiscountRates r) refs
       taskId <- getTaskId v
       let validRefs = discountRates ^.. traverse . filtered (has $ _2 . to insufficientDiscountRate . only False) . _1
-          tid = PathPiece taskId
           updates = v ^.. to (buttonUpdate "No") . traverse
-      v' <- sendUpdate (taskUpdate tid) $ mkUiUpdate updates v
+      v' <- sendUpdate (taskUpdate taskId) $ mkUiUpdate updates v
       let gf = v' ^. getGridField
-          refs' = gf ^.. traverse . gfColumns . at "BEN Name" . traverse . _TextCellLink . _2 . traverse . to PathPiece
+          refs' = gf ^.. traverse . gfColumns . at "BEN Name" . traverse . _TextCellLink . _2 . traverse
           idents = gf ^.. traverse . gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i `elem` indices)
           indices = refs ^.. ifolded . filtered (\r -> r `elem` validRefs) . withIndex . _1
       return (v', _Success . gfSelection . _Just . _Selectable . gslSelected .~ idents $ gf)
 
-viewDiscountRates :: PathPiece RecordRef -> Appian Value
+viewDiscountRates :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => RecordRef -> AppianT m Value
 viewDiscountRates rid = do
-  v <- viewRecordDashboard rid (PathPiece $ Dashboard "summary")
+  v <- viewRecordDashboard rid (Dashboard "summary")
   dashboard <- handleMissing "Discount Rate" v $ v ^? getRecordDashboard "Discount Rate"
-  viewRecordDashboard rid $ PathPiece dashboard
+  viewRecordDashboard rid dashboard
 
 insufficientDiscountRate :: Value -> Bool
 insufficientDiscountRate v = any (checkResult . parseResult) msgs
@@ -144,12 +142,12 @@ selectConsortiumMembers v = case v ^? getButton "Select an Entity by Consortium 
   Nothing -> False
   Just _ -> True
 
-selectEntities :: Value -> Appian Value
+selectEntities :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
 selectEntities v = case selectConsortiumMembers v of
   True -> selectEntitiesReceivingService v
   False -> sendUpdates "Manage Recipients of Service" (MonadicFold (to (buttonUpdate "Save & Continue"))) v
 
-selectEntitiesReceivingService :: Value -> Appian Value
+selectEntitiesReceivingService :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
 selectEntitiesReceivingService v
       = sendUpdates "Select Consortia Members" (MonadicFold (to (buttonUpdate "Select an Entity by Consortium Members"))) v
     >>= foldDropdown "Select Consortium Member Entity Type"
@@ -166,7 +164,7 @@ isEmpty470Grid v = case v ^? hasType "GridField" . key "numRowsToDisplay" . _Num
   Just _ -> True
   Nothing -> False
 
-select470 :: Value -> Appian Value
+select470 :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
 select470 v = case isEmpty470Grid v of
   True -> sendUpdates "No Form 470" (MonadicFold (to (buttonUpdate "No"))
                                     <|> MonadicFold (to (buttonUpdate "Continue"))
@@ -175,13 +173,13 @@ select470 v = case isEmpty470Grid v of
                              <|> MonadicFold (to (buttonUpdate "Continue"))
                             ) v
 
-ifContinueToCertification :: Value -> Appian Value
+ifContinueToCertification :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
 ifContinueToCertification v = case v ^? getButton "Review FCC Form 471" of
   Just _ -> return v
   Nothing -> sendUpdates "Click Continue to Certification" (MonadicFold (to (buttonUpdate "Continue to Certification"))) v
 
     -- Discards the result of f
-foldDropdown :: Text -> (Value -> Appian Value) -> Text -> Value -> Appian Value
+foldDropdown :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Text -> (Value -> AppianT m Value) -> Text -> Value -> AppianT m Value
 foldDropdown label f dfLabel val = foldM go Null indices
   where
     go _ n = do
@@ -204,9 +202,10 @@ getAddAllButton label
   || label == "Add All Libraries and Dependent NIFs "
   || label == "Add All Dependent Libraries and NIFs "
 
-createFRN :: Int -> Text -> Value -> Appian Value
+createFRN :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Text -> Value -> AppianT m Value
 createFRN 0 _ val = return val
 createFRN n spin val = do
+  logDebugN $ "Creating FRN with " <> tshow (n - 1) <> " to go."
   dates <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
             >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
                                                <|> MonadicFold (to (buttonUpdate "No"))
@@ -246,23 +245,58 @@ createFRN n spin val = do
                          ) narrative
   createFRN (n - 1) spin frnList
 
-pageLineItems :: Value -> Appian Value
-pageLineItems val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) createFRNLineItems val val
+forLineItems :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> AppianT m Value
+forLineItems nLineItems = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' nLineItems dyl v)
 
-createFRNLineItems :: Value -> GridField GridFieldCell -> Appian (Value, Value)
-createFRNLineItems val gf = do
-  v <- foldGridField createFRNLineItem "FRN" val gf
+pageLineItems :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> AppianT m Value
+pageLineItems nLineItems val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) (createFRNLineItems nLineItems) val val
+
+createFRNLineItems :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> GridField GridFieldCell -> AppianT m (Value, Value)
+createFRNLineItems nLineItems val gf = do
+  v <- foldGridField (createFRNLineItem nLineItems) "FRN" val gf
   return (v, v)
 
-createFRNLineItem :: Value -> GridFieldCell -> Appian Value
-createFRNLineItem val gf = F.foldlM f val [0..nRows - 1]
+createFRNLineItem :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> GridFieldCell -> AppianT m Value
+createFRNLineItem nLineItems val gf = F.foldlM (addLineItem nLineItems) val [0..nRows - 1]
   where
     nRows = length $ gf ^.. _TextCellDynLink . _2 . traverse
-    f val' idx = do
-      writeFile "/tmp/response1.json" $ toStrict $ encode val'
-      dyl <- handleMissing "FRN Link" val' $ val' ^? getGridFieldCell . traverse . gfColumns . at "FRN" . traverse . _TextCellDynLink . _2 . to (flip index idx) . traverse
-      sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) val'
-        >>= sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item")))
+
+addLineItem :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> Int -> AppianT m Value
+addLineItem 0 val' _ = return val'
+addLineItem n val' idx = do
+  writeFile "/tmp/response1.json" $ toStrict $ encode val'
+  dyl <- handleMissing "FRN Link" val' $ val' ^? getGridFieldCell . traverse . gfColumns . at "FRN" . traverse . _TextCellDynLink . _2 . to (flip index idx) . traverse
+  sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) val'
+    >>= sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item")))
+    >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
+    >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
+                                                               <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                             )
+    >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
+                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
+                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt <*> pure v))
+                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt <*> pure v))
+                                                             <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+                                                           )
+    >>= selectEntities
+    >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
+    >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
+    >>= (\v -> addLineItem (n - 1) v idx)
+
+addLineItem' :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> DynamicLink -> Value -> AppianT m Value
+-- addLineItem' 0 dyl val' = return val'
+addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
+  >>= addLineItem'' nLineItems
+  >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
+  where
+    addLineItem'' 0 val = return val
+    addLineItem'' n val = do
+      -- writeFile "/tmp/response1.json" $ toStrict $ encode val'
+      -- dyl <- handleMissing "FRN Link" val' $ val' ^? getGridFieldCell . traverse . gfColumns . at "FRN" . traverse . _TextCellDynLink . _2 . to (flip index idx) . traverse
+      logDebugN $ "Creating line item " <> tshow (nLineItems - n + 1)
+      sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item"))) val
         >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
         >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
                                                                   <|> MonadicFold (to (buttonUpdate "Continue"))
@@ -277,10 +311,11 @@ createFRNLineItem val gf = F.foldlM f val [0..nRows - 1]
                                                                )
         >>= selectEntities
         >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
-        >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
+        >>= (\v -> addLineItem'' (n - 1) v)
 
 data Form471Conf = Form471Conf
   { _nFRNs :: Int
+  , _nLineItems :: Int
   , _spin :: Text
   , _applicant :: Login
   } deriving Show
@@ -288,6 +323,7 @@ data Form471Conf = Form471Conf
 instance Csv.FromNamedRecord Form471Conf where
   parseNamedRecord r = Form471Conf
     <$> r Csv..: "nFRNs"
+    <*> r Csv..: "nLineItems"
     <*> r Csv..: "spin"
     <*> Csv.parseNamedRecord r
 
@@ -296,6 +332,12 @@ nFRNs = lens get update
   where
     get = _nFRNs
     update conf v = conf { _nFRNs = v }
+
+nLineItems :: Functor f => (Int -> f Int) -> Form471Conf -> f Form471Conf
+nLineItems = lens get update
+  where
+    get = _nLineItems
+    update conf v = conf { _nLineItems = v }
 
 spin :: Functor f => (Text -> f Text) -> Form471Conf -> f Form471Conf
 spin = lens get update

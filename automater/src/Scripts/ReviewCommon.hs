@@ -223,36 +223,36 @@ retryIt act = retrying reviewRetryPolicy shouldRetry (const act)
 reviewRetryPolicy :: Monad m => RetryPolicyM m
 reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 1
 
-distributeLinks_ :: (RecordRef -> Appian Value) -> ReportId -> ReviewConf -> Value -> Appian Value
+distributeLinks_ :: (MonadThrow m, RunClient m, MonadIO m, MonadLogger m, MonadCatch m) => (RecordRef -> AppianT m Value) -> ReportId -> ReviewConf -> Value -> AppianT m Value
 distributeLinks_ action rid conf v = do
   gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
   mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) action
   handleMissing "Could not select FRN!" v mVal
 
-distributeLinks :: Text -> ReportId -> ReviewConf -> Value -> Appian Value
+distributeLinks :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Text -> ReportId -> ReviewConf -> Value -> AppianT m Value
 distributeLinks actionName rid conf v = distributeLinks_ (viewRelatedActions v >=> uncurry (executeRelatedAction actionName)) rid conf v
 
-getAllLinks :: ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) Appian ()
+getAllLinks :: (RunClient m, MonadLogger m, MonadThrow m, MonadIO m, MonadCatch m) => ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) (AppianT m) ()
 getAllLinks rid v = do
   mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
   case mIdents of
     Nothing -> throwM $ MissingComponentException ("There are no identifiers!", v)
     Just idents -> S.each $ fmap Item idents <> pure Finished
 
-accumLinks :: Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> Appian (Maybe (Vector RecordRef), Value)
+accumLinks :: Monad m => Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> AppianT m (Maybe (Vector RecordRef), Value)
 accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-addNotes :: Value -> Appian Value
+addNotes :: (RunClient m, MonadLogger m, MonadIO m, MonadThrow m, MonadCatch m) => Value -> AppianT m Value
 addNotes val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeNotes val val
 
-makeNotes :: Value -> GridField GridFieldCell -> Appian (Value, Value)
+makeNotes :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 makeNotes val gf = do
   v <- foldGridField' makeNote val gf
   return (v, v)
 
-makeNote :: Value -> GridFieldIdent -> Appian Value
+makeNote :: (MonadThrow m, RunClient m, MonadIO m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
 makeNote val ident = do
   gf <- handleMissing "FRN Note Grid" val $ val ^? getGridFieldCell . traverse
   val' <- sendUpdates "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
@@ -268,13 +268,13 @@ makeNote val ident = do
                                          <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
                                         )
 
-myAssignedReport :: ReviewBaseConf -> Appian (ReportId, Value)
+myAssignedReport :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> AppianT m (ReportId, Value)
 myAssignedReport conf = do
   (rid, v) <- openReport "My Assigned Post-Commit Assignments"
-  res <- editReport (PathPiece rid)
+  res <- editReport rid
     >>= sendReportUpdates rid "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType conf))
     >>= sendReportUpdates rid "Select Reviewer Type" (dropdownUpdateF' "Reviewer Type" (reviewerType conf))
-    >>= sendReportUpdates rid "Select Reviewer Type" (dropdownUpdateF' "Funding Year" (fundingYear conf))
+    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Funding Year" (fundingYear conf))
     >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
     >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
   return (rid, res)

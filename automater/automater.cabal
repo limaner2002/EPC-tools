@@ -37,7 +37,7 @@ library
                      , lens-aeson
                      , classy-prelude
                      , servant-client
-                     , servant-server
+                     , servant-client-core
                      , cookie
                      , http-client
                      , http-media
