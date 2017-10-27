@@ -47,10 +47,10 @@ fullReview env revUsers fullReviewConf = do
       dispatchInitialReview RevCOMAD = withReviewConf $ flip comadInitialReview initial
       dispatchInitialReview _ = withReviewConf $ flip initialReview initial
 
-  -- runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) reviewManager
-  --   >>= mapErr manageAppealDeets
-  --   >>= mapErr (runItRetry (dispatchInitialReview $ reviewType initial) initialReviewer)
-  maybeFinal (Right Null)
+  runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) reviewManager
+    >>= mapErr manageAppealDeets
+    >>= mapErr (runItRetry (dispatchInitialReview $ reviewType initial) initialReviewer)
+    >>= maybeFinal
     >>= mapErr (runItRetry (assignment solix (solixReviewer ^. username . to AppianUsername)) reviewManager)
     >>= mapErr (runItRetry (withReviewConf $ finalReview solix) solixReviewer)
     >>= mapErr (runItRetry (assignment usac (usacReviewer ^. username . to AppianUsername)) reviewManager)
@@ -170,4 +170,4 @@ test3ComadUsers = ReviewUsers
 
 comadReview env revUsers = fullReview env revUsers comadReviewConf
 
-comadReviewConf = FullReviewConf comadInitial2017 comadFinal2017 comadSolix2017 comadUsac2017
+comadReviewConf = FullReviewConf comadInitial2016 comadFinal2016 comadSolix2016 comadUsac2016

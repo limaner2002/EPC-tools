@@ -35,22 +35,37 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
   :> Header "User-Agent" UserAgent :> Post '[HTML] (Headers '[Header "Set-Cookie" Text] ByteString)
+
 type RecordsTab = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "view" :> "all" :> Header "User-Agent" UserAgent :> Get '[AppianApplication] Value
+
 type LogoutAPI = "suite" :> "logout" :> Get '[HTML] ByteString
+
 type ReportsTab = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> "reports" :> Get '[AtomApplication, JSON] Value
+
 type TasksTab = "suite" :> "api" :> "feed" :> "tempo" :> QueryParam "m" Text :> QueryParam "t" Text :> QueryParam "s" Text
                 :> QueryParam "defaultFacets" Text :> QueryParam "b" UTCTime :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
+
 type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> Capture "recordId" RecordId :> "view" :> "all" :> Get '[AppianApplication] Value
+
 type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Get '[InlineSail] Value
+
 type EditReport = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Capture "repordId" ReportId :> "view" :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[AppianTVUI] Value
+
 type ReportUpdate update = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
   :> Capture "recordId" ReportId :> "view" :> ReqBody '[AppianTV] (UiConfig update) :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
+
 type TaskUpdate update = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text
   :> Capture "taskId" TaskId :> "form" :> ReqBody '[AppianTV] (UiConfig update) :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
+
+type TaskAccept = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Capture "taskId" TaskId :> "accept" :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[JSON] NoContent
+
 type LandingPageAction = "suite" :> "api" :> "tempo" :> "open-a-case" :> "action" :> Capture "actionId" ActionId :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] ProcessModelId
+
 type LandingPageActionEx = "suite" :> "rest" :> "a" :> "model" :> "latest" :> Capture "processModelId" ProcessModelId :> ReqBody '[EmptyAppianTV] EmptyAppianTV :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
+
 type RelatedActionEx = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "action" :> Capture "actionId" ActionId :> ReqBody '[EmptyAppianTV] EmptyAppianTV
    :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
+
 type ActionsTab = "suite" :> "api" :> "tempo" :> "open-a-case" :> "available-actions" :> Header "X-Appian-Features" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
 
 getCookies :: (Applicative f, GetHeaders ls, Contravariant f) =>
@@ -126,6 +141,13 @@ taskUpdate tid upd = do
   taskUpdate_ (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") tid upd (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (TaskUpdate update))
+
+taskAccept :: RunClient m => TaskId -> AppianT m NoContent
+taskAccept tid = do
+  cj <- get
+  taskAccept_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  where
+    taskAccept_ = toClient Proxy (Proxy :: Proxy TaskAccept)
 
 landingPageAction :: RunClient m => ActionId -> AppianT m ProcessModelId
 landingPageAction aid = do
@@ -289,6 +311,9 @@ textFieldCid cid = hasKeyValue "_cId" cid . _JSON
 
 checkboxGroupUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> [Int] -> Over (->) f s s (Either Text Update) (Either Text Update)
 checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find CheckboxField " <> tshow label)
+
+radioButtonUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> AppianInteger -> Over (->) f s s (Either Text Update) (Either Text Update)
+radioButtonUpdate label selection = failing (getRadioButtonField label . to (rdgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find RadioButtonField " <> tshow label)
 
 sendUpdate :: (RunClient m, MonadThrow m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m Value
 sendUpdate f update = do

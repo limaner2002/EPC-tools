@@ -209,7 +209,7 @@ createFRN n spin val = do
   dates <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
             >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
                                                <|> MonadicFold (to (buttonUpdate "No"))
-                                               <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 2))
+                                               <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 3))
                                                <|> MonadicFold (to (buttonUpdate "Continue"))
                                               )
             >>= sendUpdates "Select Purchase Type" (MonadicFold (to (buttonUpdate "Tariff"))
@@ -236,9 +236,15 @@ createFRN n spin val = do
               <|> MonadicFold (to (buttonUpdate "Continue"))
               ) dates
 
-  narrative <- sendUpdates "Price Confidentiality and Continue" (MonadicFold (to (buttonUpdate "No"))
+  res <- sendUpdates "Price Confidentiality and Continue" (MonadicFold (to (buttonUpdate "No"))
                <|> MonadicFold (to (buttonUpdate "Continue"))
               ) pricing
+
+  narrative <- case res ^? hasKeyValue "label" "Fiber Request Key Information" of
+    Nothing -> return res
+    Just _ -> sendUpdates "Fiber Request Key Information" (MonadicFold (to $ buttonUpdate "No")
+                                                          <|> MonadicFold (to $ buttonUpdate "Continue")
+                                                          ) res
 
   frnList <- sendUpdates "Enter narrative and Continue" (paragraphArbitraryUpdate "Provide a brief explanation of the products and services that you are requesting, or provide any other relevant information regarding this Funding Request. You should also use this field to describe any updates to your entity data, such as revised student counts, entity relationships, etc, that you were unable to make after the close of the Administrative filing window for profile updates. These changes will be addressed during the application review process." 4000
                            <|> MonadicFold (to (buttonUpdate "Save & Continue"))

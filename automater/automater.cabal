@@ -30,6 +30,7 @@ library
                      , Scripts.AdminReview
                      , Scripts.Assignment
                      , Scripts.AdminIntake
+                     , Scripts.ComadReview
                      , Util.Parallel
   build-depends:       base
                      , lens

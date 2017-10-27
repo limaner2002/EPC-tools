@@ -25,6 +25,8 @@ module Scripts.Test
   , QC.Arbitrary (..)
   , QC.choose
   , QC.shuffle
+  , radioArbitrary
+  , radioArbitraryF
   ) where 
 
 import Test.QuickCheck hiding (generate)
@@ -158,3 +160,27 @@ dropdownArbitrarySelect :: MonadIO m => DropdownField -> m DropdownField
 dropdownArbitrarySelect df = dropdownArbitrarySelect_ (choose (2, max)) df
   where
     max = df ^. dfChoices . to length
+
+radioArbitrarySelect_ :: MonadIO m => Gen Int -> RadioButtonField -> m RadioButtonField
+radioArbitrarySelect_ gen rf = do
+  n <- generate gen
+  return $ rdgValue .~ Just (AppianInteger n) $ rf
+
+radioArbitrarySelect :: MonadIO m => RadioButtonField -> m RadioButtonField
+radioArbitrarySelect df = radioArbitrarySelect_ (choose (2, max)) df
+  where
+    max = df ^. rdgChoices . to length
+
+radioArbitrary_ :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) =>
+                     (RadioButtonField -> m RadioButtonField) -> Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+radioArbitrary_ selectFn label = getIt
+  where
+    getIt = getRadioButtonField label . act selectFn . to toUpdate . to Right
+    err = Left ("Could not find Radio Button Field " <> tshow label)
+
+radioArbitrary :: (Applicative f, Effective m r f, MonadIO m, Plated s, AsValue s, AsJSON s) =>
+                     Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+radioArbitrary = radioArbitrary_ radioArbitrarySelect
+
+radioArbitraryF :: (MonadIO m, Plated s, AsValue s, AsJSON s) => Text -> ReifiedMonadicFold m s (Either Text Update)
+radioArbitraryF label = MonadicFold (radioArbitrary label)
