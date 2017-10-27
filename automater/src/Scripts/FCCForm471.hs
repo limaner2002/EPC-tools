@@ -254,43 +254,6 @@ createFRN n spin val = do
 forLineItems :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> AppianT m Value
 forLineItems nLineItems = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' nLineItems dyl v)
 
-pageLineItems :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> AppianT m Value
-pageLineItems nLineItems val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) (createFRNLineItems nLineItems) val val
-
-createFRNLineItems :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> GridField GridFieldCell -> AppianT m (Value, Value)
-createFRNLineItems nLineItems val gf = do
-  v <- foldGridField (createFRNLineItem nLineItems) "FRN" val gf
-  return (v, v)
-
-createFRNLineItem :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> GridFieldCell -> AppianT m Value
-createFRNLineItem nLineItems val gf = F.foldlM (addLineItem nLineItems) val [0..nRows - 1]
-  where
-    nRows = length $ gf ^.. _TextCellDynLink . _2 . traverse
-
-addLineItem :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> Int -> AppianT m Value
-addLineItem 0 val' _ = return val'
-addLineItem n val' idx = do
-  writeFile "/tmp/response1.json" $ toStrict $ encode val'
-  dyl <- handleMissing "FRN Link" val' $ val' ^? getGridFieldCell . traverse . gfColumns . at "FRN" . traverse . _TextCellDynLink . _2 . to (flip index idx) . traverse
-  sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) val'
-    >>= sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item")))
-    >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
-    >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
-                                                               <|> MonadicFold (to (buttonUpdate "Continue"))
-                                                             )
-    >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
-                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
-                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt <*> pure v))
-                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt <*> pure v))
-                                                             <|> MonadicFold (to (buttonUpdate "Save & Continue"))
-                                                           )
-    >>= selectEntities
-    >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
-    >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
-    >>= (\v -> addLineItem (n - 1) v idx)
-
 addLineItem' :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> DynamicLink -> Value -> AppianT m Value
 -- addLineItem' 0 dyl val' = return val'
 addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
@@ -299,14 +262,14 @@ addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (c
   where
     addLineItem'' 0 val = return val
     addLineItem'' n val = do
-      -- writeFile "/tmp/response1.json" $ toStrict $ encode val'
-      -- dyl <- handleMissing "FRN Link" val' $ val' ^? getGridFieldCell . traverse . gfColumns . at "FRN" . traverse . _TextCellDynLink . _2 . to (flip index idx) . traverse
       logDebugN $ "Creating line item " <> tshow (nLineItems - n + 1)
       sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item"))) val
-        >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
-        >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 2))
+        >>= sendUpdates "Select Function" (dropdownArbitraryUpdateF "Function")
+        >>= sendUpdates "Select Type of Connection and Continue" (dropdownArbitraryUpdateF "Type of Connection"
+                                                                  <|> radioArbitraryF "Purpose"
                                                                   <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                  )
+        >>= handleDataQuestions
         >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
                                                                 <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
                                                                 <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
@@ -318,6 +281,18 @@ addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (c
         >>= selectEntities
         >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
         >>= (\v -> addLineItem'' (n - 1) v)
+
+handleDataQuestions :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
+handleDataQuestions v = do
+  logDebugN "Handling Data Questions"
+  case v ^? hasKeyValue "value" "Please enter Bandwidth Speed Information for this Data Transmission and/or Internet Access Line Item" of
+    Nothing -> return $ trace "No bandwidth questions" v
+    Just _ -> sendUpdates "Not Burstable & Continue" (MonadicFold (to (buttonUpdate "No"))
+                                                     <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                     ) v
+                >>= sendUpdates "Select All No & Continue" (MonadicFold (getButtonWith (\l -> l == "No" || l == "No ✓") . to toUpdate . to Right)
+                                                           <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                           )
 
 data Form471Conf = Form471Conf
   { _nFRNs :: Int

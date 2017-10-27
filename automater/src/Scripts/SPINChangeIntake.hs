@@ -20,7 +20,7 @@ import qualified Data.Foldable as F
 
 spinChangeIntake :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianT m (Maybe Text)
 spinChangeIntake = do
-  let un = Identifiers [AppianUsername "kyle.davie@fwisd.org"]
+  let un = Identifiers [AppianUsername "app.full.right@testmail.usac.org"]
 
   v <- myLandingPageAction "SPIN Change"
 
@@ -30,18 +30,20 @@ spinChangeIntake = do
                                                 <|> MonadicFold (to (buttonUpdate "Create SPIN Change"))
                                                 ) v
 
-  sendUpdates' "Nickname" (MonadicFold (textFieldArbitrary "Nickname" 255)
-                                <|> MonadicFold (to (dropdownUpdate "Funding Year" 2))
-                                <|> MonadicFold (to (pickerUpdate "Main Contact Person" un))
-                                <|> MonadicFold (to (buttonUpdate "Continue"))
-                               ) v'
+  sendUpdates "Nickname & SPIN Change Type" (MonadicFold (textFieldArbitrary "Nickname" 255)
+                          <|> MonadicFold (to (dropdownUpdate "SPIN Change Type" 2))
+                          ) v'
+    >>= sendUpdates' "Funding Year & Main Contact & Continue" (MonadicFold (to (dropdownUpdate "Funding Year" 2))
+                                                               <|> MonadicFold (to (pickerUpdate "Main Contact Person" un))
+                                                               <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                              )
     >>= handleValidations
     >>= selectOldSPIN
     >>= sendUpdates "Add All FRNs Button & Continue" (addAllFRNsButtonUpdate
                                                       <|> MonadicFold (to (buttonUpdate "Continue"))
                                                      )
     >>= \v -> foldGridFieldPages (MonadicFold (getGridFieldCell . traverse)) printFRNs v v
-    >>= selectNewSPIN 143000824
+    >>= selectNewSPIN 143999999
     >>= sendUpdates "Click Preview" (MonadicFold (to (dropdownUpdate "Please select the reason why you would like to change the service provider on the FRN(s)" 2))
                                       <|> MonadicFold (to (buttonUpdate "Preview"))
                                     )

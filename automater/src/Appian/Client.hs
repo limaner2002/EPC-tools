@@ -58,6 +58,9 @@ type TaskUpdate update = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Heade
   :> Capture "taskId" TaskId :> "form" :> ReqBody '[AppianTV] (UiConfig update) :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 
 type TaskAccept = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Capture "taskId" TaskId :> "accept" :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[JSON] NoContent
+type TaskOpen = "suite" :> "api" :> "feed" :> "tempo" :> Capture "t-taskId" TTaskId :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
+type TaskStatus = "suite" :> "rest" :> "a" :> "task" :> "latest" :> Capture "taskId" TaskId :> "status" :> ReqBody '[PlainText] Text :>
+  Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Header "x-http-method-override" Text :> Post '[AppianTVUI] Value
 
 type LandingPageAction = "suite" :> "api" :> "tempo" :> "open-a-case" :> "action" :> Capture "actionId" ActionId :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] ProcessModelId
 
@@ -148,6 +151,20 @@ taskAccept tid = do
   taskAccept_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskAccept_ = toClient Proxy (Proxy :: Proxy TaskAccept)
+
+taskOpen :: RunClient m => TTaskId -> AppianT m Value
+taskOpen tid = do
+  cj <- get
+  taskOpen_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  where
+    taskOpen_ = toClient Proxy (Proxy :: Proxy TaskOpen)
+
+taskStatus :: RunClient m => TaskId -> AppianT m Value
+taskStatus tid = do
+  cj <- get
+  taskStatus_ tid "accepted" (Just "ceebc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just "PUT")
+  where
+    taskStatus_ = toClient Proxy (Proxy :: Proxy TaskStatus)
 
 landingPageAction :: RunClient m => ActionId -> AppianT m ProcessModelId
 landingPageAction aid = do

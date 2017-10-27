@@ -113,6 +113,12 @@ newtype TaskId = TaskId Text
 instance ToHttpApiData TaskId where
   toUrlPiece (TaskId id) = id
 
+newtype TTaskId = TTaskId TaskId
+  deriving (Show, Eq)
+
+instance ToHttpApiData TTaskId where
+  toUrlPiece (TTaskId tid) = "t-" <> toUrlPiece tid
+
 newtype ActionId = ActionId Text
   deriving (Show, Eq)
 
