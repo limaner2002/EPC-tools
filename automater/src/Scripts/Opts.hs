@@ -22,7 +22,7 @@ import Scripts.InitialReview
 import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
-import Appian.Client (runAppianT)
+import Appian.Client (runAppianT, cookieModifier)
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
 import Servant.Client
@@ -38,6 +38,8 @@ import Appian
 import Stats.CsvStream
 import Control.Monad.Logger
 import Scripts.Common
+import Control.Monad.Trans.Resource (runResourceT)
+import Control.Arrow ((>>>))
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -51,12 +53,12 @@ runScript (CSScript script) baseUrl username fp nThreads = do
   results <- mapConcurrently (const $ tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
 
   dispResults results
-runScript (Form471 script) baseUrl username fp nThreads = do
-  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
-  password <- getPassword
-  logins <- S.fst' <$> (csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv")
-  results <- mapConcurrently (\login -> tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ take nThreads logins
-  dispResults results
+-- runScript (Form471 script) baseUrl username fp nThreads = do
+--   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+--   password <- getPassword
+--   logins <- S.fst' <$> (csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv")
+--   results <- mapConcurrently (\login -> tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ take nThreads logins
+--   dispResults results
 runScript (Form486 script userFile) baseUrl _ fp nThreads = do
   stderrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
   stderrLn "\n********************************************************************************\n"
@@ -160,6 +162,13 @@ loginProducer fp chan = do
   csvStreamByName >>> S.map Item >>> S.mapM_ (atomically . writeTChan chan) >>> runResourceT >>> runNoLoggingT $ fp
   atomically $ writeTChan chan Finished
 
+run471Intake :: BaseUrl -> FilePath -> FilePath -> IO ()
+run471Intake baseUrl fpPrefix csvInput = do
+  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  let env = ClientEnv mgr baseUrl
+  res <- csvStreamByName >>> S.mapM (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))  >>> S.toList >>> runResourceT >>> runStderrLoggingT $ csvInput
+  dispResults $ S.fst' res
+
 run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
 run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
   where
@@ -188,12 +197,13 @@ commandsInfo = info (helper <*> parseCommands)
 
 parseCommands :: Parser (IO ())
 parseCommands = subparser
-  (  command "scripts" scriptsInfo
-  <> command "form486Intake" form486Info
-  <> command "spinChangeIntake" spinChangeInfo
-  <> command "initialReview" initialReviewInfo
-  <> command "review" reviewInfo
-  <> command "adminIntake" adminIntakeInfo
+  (  command "form471Intake" form471IntakeInfo
+  -- <> command "scripts" scriptsInfo
+  -- <> command "form486Intake" form486Info
+  -- <> command "spinChangeIntake" spinChangeInfo
+  -- <> command "initialReview" initialReviewInfo
+  -- <> command "review" reviewInfo
+  -- <> command "adminIntake" adminIntakeInfo
   )
 
 scriptsInfo :: ParserInfo (IO ())
@@ -257,6 +267,22 @@ scriptParser = do
     "cscase" -> return $ CSScript createCSCase
     "form471" -> return $ Form471 (form471Intake conf)
     _ -> fail $ show name <> " is not a valid script name!"
+
+form471IntakeInfo :: ParserInfo (IO ())
+form471IntakeInfo = info (helper <*> form471Parser)
+  (  fullDesc
+  <> progDesc "Runs the FCC Form 471 intake performance script"
+  )
+
+form471Parser :: Parser (IO ())
+form471Parser = run471Intake
+  <$> urlParser
+  <*> logFileParser
+  <*> strOption
+  (  long "csv-conf"
+  <> short 'i'
+  <> help "The csv config file for 471 intake."
+  )
 
 form486Info :: ParserInfo (IO ())
 form486Info = info (helper <*> form486Parser)

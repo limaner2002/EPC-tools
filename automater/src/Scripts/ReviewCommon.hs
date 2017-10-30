@@ -224,13 +224,13 @@ retryIt act = retrying reviewRetryPolicy shouldRetry (const act)
 reviewRetryPolicy :: Monad m => RetryPolicyM m
 reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 1
 
-distributeLinks_ :: (MonadThrow m, RunClient m, MonadIO m, MonadLogger m, MonadCatch m) => (RecordRef -> AppianT m Value) -> ReportId -> ReviewConf -> Value -> AppianT m Value
+distributeLinks_ :: (MonadThrow m, RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadIO m) => (RecordRef -> AppianT m Value) -> ReportId -> ReviewConf -> Value -> AppianT m Value
 distributeLinks_ action rid conf v = do
   gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
   mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) action
   handleMissing "Could not select FRN!" v mVal
 
-distributeLinks :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Text -> ReportId -> ReviewConf -> Value -> AppianT m Value
+distributeLinks :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadIO m) => Text -> ReportId -> ReviewConf -> Value -> AppianT m Value
 distributeLinks actionName rid conf v = distributeLinks_ (viewRelatedActions v >=> uncurry (executeRelatedAction actionName)) rid conf v
 
 getAllLinks :: (RunClient m, MonadLogger m, MonadThrow m, MonadTime m, MonadCatch m) => ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) (AppianT m) ()
@@ -245,10 +245,10 @@ accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-addNotes :: (RunClient m, MonadLogger m, MonadTime m, MonadThrow m, MonadCatch m) => Value -> AppianT m Value
+addNotes :: (RunClient m, MonadLogger m, MonadTime m, MonadThrow m, MonadCatch m, MonadGen m) => Value -> AppianT m Value
 addNotes val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeNotes val val
 
-makeNotes :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
+makeNotes :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadGen m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 makeNotes val gf = do
   v <- foldGridField' makeNote val gf
   return (v, v)

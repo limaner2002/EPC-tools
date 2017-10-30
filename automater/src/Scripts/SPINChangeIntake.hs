@@ -17,8 +17,9 @@ import Control.Lens.Action.Reified
 import Scripts.Test
 import Scripts.Common
 import qualified Data.Foldable as F
+import Control.Monad.Time
 
-spinChangeIntake :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianT m (Maybe Text)
+spinChangeIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianT m (Maybe Text)
 spinChangeIntake = do
   let un = Identifiers [AppianUsername "app.full.right@testmail.usac.org"]
 
@@ -50,12 +51,12 @@ spinChangeIntake = do
     >>= sendUpdates "Click Submit" (MonadicFold (to (buttonUpdate "Submit")))
     >>= \res -> return (res ^? deep (filtered $ has $ key "#v" . _String . suffixed "has been successfully created") . key "#v" . _String . to parseNumber . traverse)
 
-printFRNs :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
+printFRNs :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 printFRNs val gf = do
   v <- foldGridField (printFRN val) "FRN" val gf
   return (v, v)
 
-printFRN :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> Value -> GridFieldCell -> AppianT m Value
+printFRN :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> Value -> GridFieldCell -> AppianT m Value
 printFRN val _ gf = (F.foldlM . F.foldlM) f val $ gf ^.. _TextCellDynLink . _2
   where
     f _ dyl =   sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) val
@@ -63,13 +64,13 @@ printFRN val _ gf = (F.foldlM . F.foldlM) f val $ gf ^.. _TextCellDynLink . _2
                                               <|> MonadicFold (to $ buttonUpdate "Continue")
                                             )
 
-selectNewSPIN :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Int -> Value -> AppianT m Value
+selectNewSPIN :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Int -> Value -> AppianT m Value
 selectNewSPIN spin val = do
   v <- sendUpdates "SPIN Search" (MonadicFold (to (pickerUpdate "New Service Provider Information Number (SPIN)" (TypedText (tshow spin) :: AppianPickerData Text)))) val
   (ident :: AppianInt) <- handleMissing "SPIN Picker" v $ v ^? getPickerWidget "New Service Provider Information Number (SPIN)" . pwSuggestions . traverse . plate . key "identifier" . _JSON
   sendUpdates "Select SPIN" (MonadicFold (to (pickerUpdate "New Service Provider Information Number (SPIN)" (Identifiers [ident])))) v
 
-selectOldSPIN :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
+selectOldSPIN :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
 selectOldSPIN v = do
   spin <- handleMissing "SPIN Column" v $ v ^? getGridFieldCell . traverse . gfColumns . at "SPIN" . traverse . _TextCell . traverse . _Just
   sendUpdates "Search for FRNs with SPIN" (MonadicFold (to (textUpdate "SPIN" spin))

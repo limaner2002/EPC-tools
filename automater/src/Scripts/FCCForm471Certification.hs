@@ -21,8 +21,9 @@ import Control.Monad.Logger
 import Scripts.FCCForm471Common
 import Data.Attoparsec.Text
 import Servant (NoContent)
+import Control.Monad.Time
 
-form471Certification :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Form471Num -> AppianT m Form471Num
+form471Certification :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => Form471Num -> AppianT m Form471Num
 form471Certification formNum = do
   tasksList <- tasksTab Nothing
   taskId <- handleMissing ("Cannot find task for " <> tshow formNum) tasksList $ tasksList ^? hasKeyValueWith (reviewTask formNum) "content" . key "id" . _String . to (stripPrefix "t-") . traverse . to TaskId

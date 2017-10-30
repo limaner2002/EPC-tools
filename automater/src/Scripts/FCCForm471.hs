@@ -259,9 +259,9 @@ addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (c
     addLineItem'' n val = do
       logDebugN $ "Creating line item " <> tshow (nLineItems - n + 1)
       sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item"))) val
-        >>= sendUpdates "Select Function" (dropdownArbitraryUpdateF "Function")
-        >>= sendUpdates "Select Type of Connection and Continue" (dropdownArbitraryUpdateF "Type of Connection"
-                                                                  <|> radioArbitraryF "Purpose"
+        >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
+        >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 13))
+                                                                  <|> MonadicFold (radioButtonUpdate "Purpose" 1)
                                                                   <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                  )
         >>= handleDataQuestions
@@ -286,6 +286,7 @@ handleDataQuestions v = do
                                                      <|> MonadicFold (to (buttonUpdate "Continue"))
                                                      ) v
                 >>= sendUpdates "Select All No & Continue" (MonadicFold (getButtonWith (\l -> l == "No" || l == "No ✓") . to toUpdate . to Right)
+                                                           <|> MonadicFold (to (dropdownUpdate "Connection used by" 2))
                                                            <|> MonadicFold (to (buttonUpdate "Continue"))
                                                            )
 

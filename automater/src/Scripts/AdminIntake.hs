@@ -16,8 +16,9 @@ import Control.Lens.Action.Reified
 import Scripts.Common
 import Scripts.Test
 import Scripts.ReviewCommon
+import Control.Monad.Time
 
-adminIntake :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianUsername -> AppianT m (Maybe Text)
+adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianUsername -> AppianT m (Maybe Text)
 adminIntake un = do
   let user = Identifiers [un]
 

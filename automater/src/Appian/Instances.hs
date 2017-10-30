@@ -23,6 +23,7 @@ import Appian
 import Appian.Types
 import Data.Proxy
 import qualified Data.Csv as Csv
+import Control.Monad.Time
 
 data Login = Login
   { _username :: Text
@@ -161,3 +162,5 @@ instance Accept InlineSail where
 instance ToHttpApiData RecordRef where
   toUrlPiece (RecordRef ref) = toUrlPiece ref
 
+instance MonadTime ClientM where
+  currentTime = liftIO currentTime
