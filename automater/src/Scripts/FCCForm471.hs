@@ -22,8 +22,9 @@ import Scripts.Common
 import qualified Data.Foldable as F
 import qualified Data.Csv as Csv
 import Control.Monad.Logger
+import Control.Monad.Time
 
-form471Intake :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Form471Conf -> AppianT m Value
+form471Intake :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> AppianT m Value
 form471Intake conf = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
@@ -68,7 +69,7 @@ form471Intake conf = do
     >>= ifContinueToCertification
     >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
 
-selectMembers :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
+selectMembers :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 selectMembers v = do
   (v', rGridField) <- validMemberCheckboxes v
   case rGridField of
@@ -81,7 +82,7 @@ selectMembers v = do
       sendUpdates "Add Members" (MonadicFold (to (buttonUpdate "Add"))) checked
         >>= sendUpdates "Click Save & Continue" (MonadicFold (to (buttonUpdate "Save & Continue")))
 
-validMemberCheckboxes :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m (Value, Result (GridField GridFieldCell))
+validMemberCheckboxes :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m (Value, Result (GridField GridFieldCell))
 validMemberCheckboxes v = do
   logDebugN "Getting valid member checkboxes."
   let mRefs = v ^.. getGridFieldRecordRefs "BEN Name" . traverse
@@ -99,7 +100,7 @@ validMemberCheckboxes v = do
           indices = refs ^.. ifolded . filtered (\r -> r `elem` validRefs) . withIndex . _1
       return (v', _Success . gfSelection . _Just . _Selectable . gslSelected .~ idents $ gf)
 
-viewDiscountRates :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => RecordRef -> AppianT m Value
+viewDiscountRates :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => RecordRef -> AppianT m Value
 viewDiscountRates rid = do
   v <- viewRecordDashboard rid (Dashboard "summary")
   dashboard <- handleMissing "Discount Rate" v $ v ^? getRecordDashboard "Discount Rate"
@@ -123,14 +124,8 @@ selectFirst :: Applicative f =>
      (GridFieldIdent -> f GridFieldIdent) -> GridField a0 -> f (GridField a0)
 selectFirst = gfIdentifiers . traverse . taking 1 traverse
 
-logIt :: MonadIO m => Text -> (a -> ByteString) -> a -> m a
-logIt label f x = do
-  let fp = "/tmp/" <> unpack label <> ".log"
-  writeFile fp $ f x
-  return x
-
-arbTextInt :: MonadIO m => m Text
-arbTextInt = generate (QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
+arbTextInt :: MonadGen m => m Text
+arbTextInt = genArbitrary (QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
 
 membersCompleted :: Value -> Bool
 membersCompleted v = case v ^? deep (filtered $ has $ key "value" . _String . prefixed "We've completed this section of the form based on information from your applicant entity's profile.") of
@@ -142,12 +137,12 @@ selectConsortiumMembers v = case v ^? getButton "Select an Entity by Consortium 
   Nothing -> False
   Just _ -> True
 
-selectEntities :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
+selectEntities :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 selectEntities v = case selectConsortiumMembers v of
   True -> selectEntitiesReceivingService v
   False -> sendUpdates "Manage Recipients of Service" (MonadicFold (to (buttonUpdate "Save & Continue"))) v
 
-selectEntitiesReceivingService :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
+selectEntitiesReceivingService :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 selectEntitiesReceivingService v
       = sendUpdates "Select Consortia Members" (MonadicFold (to (buttonUpdate "Select an Entity by Consortium Members"))) v
     >>= foldDropdown "Select Consortium Member Entity Type"
@@ -164,7 +159,7 @@ isEmpty470Grid v = case v ^? hasType "GridField" . key "numRowsToDisplay" . _Num
   Just _ -> True
   Nothing -> False
 
-select470 :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
+select470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 select470 v = case isEmpty470Grid v of
   True -> sendUpdates "No Form 470" (MonadicFold (to (buttonUpdate "No"))
                                     <|> MonadicFold (to (buttonUpdate "Continue"))
@@ -173,13 +168,13 @@ select470 v = case isEmpty470Grid v of
                              <|> MonadicFold (to (buttonUpdate "Continue"))
                             ) v
 
-ifContinueToCertification :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
+ifContinueToCertification :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 ifContinueToCertification v = case v ^? getButton "Review FCC Form 471" of
   Just _ -> return v
   Nothing -> sendUpdates "Click Continue to Certification" (MonadicFold (to (buttonUpdate "Continue to Certification"))) v
 
     -- Discards the result of f
-foldDropdown :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Text -> (Value -> AppianT m Value) -> Text -> Value -> AppianT m Value
+foldDropdown :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Text -> (Value -> AppianT m Value) -> Text -> Value -> AppianT m Value
 foldDropdown label f dfLabel val = foldM go Null indices
   where
     go _ n = do
@@ -202,7 +197,7 @@ getAddAllButton label
   || label == "Add All Libraries and Dependent NIFs "
   || label == "Add All Dependent Libraries and NIFs "
 
-createFRN :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Text -> Value -> AppianT m Value
+createFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Int -> Text -> Value -> AppianT m Value
 createFRN 0 _ val = return val
 createFRN n spin val = do
   logDebugN $ "Creating FRN with " <> tshow (n - 1) <> " to go."
@@ -251,10 +246,10 @@ createFRN n spin val = do
                          ) narrative
   createFRN (n - 1) spin frnList
 
-forLineItems :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> Value -> AppianT m Value
+forLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Int -> Value -> AppianT m Value
 forLineItems nLineItems = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' nLineItems dyl v)
 
-addLineItem' :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Int -> DynamicLink -> Value -> AppianT m Value
+addLineItem' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Int -> DynamicLink -> Value -> AppianT m Value
 -- addLineItem' 0 dyl val' = return val'
 addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' nLineItems
@@ -282,7 +277,7 @@ addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (c
         >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
         >>= (\v -> addLineItem'' (n - 1) v)
 
-handleDataQuestions :: (MonadCatch m, MonadLogger m, MonadIO m, RunClient m) => Value -> AppianT m Value
+handleDataQuestions :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 handleDataQuestions v = do
   logDebugN "Handling Data Questions"
   case v ^? hasKeyValue "value" "Please enter Bandwidth Speed Information for this Data Transmission and/or Internet Access Line Item" of

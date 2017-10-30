@@ -19,6 +19,7 @@ import Scripts.Test
 import Control.Retry
 import qualified Streaming.Prelude as S
 import qualified Data.Foldable as F
+import Control.Monad.Time
 
 data ReviewBaseConf = ReviewBaseConf
   { reviewType :: ReviewType
@@ -232,7 +233,7 @@ distributeLinks_ action rid conf v = do
 distributeLinks :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Text -> ReportId -> ReviewConf -> Value -> AppianT m Value
 distributeLinks actionName rid conf v = distributeLinks_ (viewRelatedActions v >=> uncurry (executeRelatedAction actionName)) rid conf v
 
-getAllLinks :: (RunClient m, MonadLogger m, MonadThrow m, MonadIO m, MonadCatch m) => ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) (AppianT m) ()
+getAllLinks :: (RunClient m, MonadLogger m, MonadThrow m, MonadTime m, MonadCatch m) => ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) (AppianT m) ()
 getAllLinks rid v = do
   mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
   case mIdents of
@@ -244,7 +245,7 @@ accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-addNotes :: (RunClient m, MonadLogger m, MonadIO m, MonadThrow m, MonadCatch m) => Value -> AppianT m Value
+addNotes :: (RunClient m, MonadLogger m, MonadTime m, MonadThrow m, MonadCatch m) => Value -> AppianT m Value
 addNotes val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeNotes val val
 
 makeNotes :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
@@ -252,7 +253,7 @@ makeNotes val gf = do
   v <- foldGridField' makeNote val gf
   return (v, v)
 
-makeNote :: (MonadThrow m, RunClient m, MonadIO m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
+makeNote :: (MonadThrow m, RunClient m, MonadTime m, MonadGen m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
 makeNote val ident = do
   gf <- handleMissing "FRN Note Grid" val $ val ^? getGridFieldCell . traverse
   val' <- sendUpdates "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
@@ -268,7 +269,7 @@ makeNote val ident = do
                                          <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
                                         )
 
-myAssignedReport :: (RunClient m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> AppianT m (ReportId, Value)
+myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> AppianT m (ReportId, Value)
 myAssignedReport conf = do
   (rid, v) <- openReport "My Assigned Post-Commit Assignments"
   res <- editReport rid

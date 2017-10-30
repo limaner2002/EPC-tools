@@ -14,8 +14,9 @@ import Appian.Instances
 import Appian.Lens
 import Appian.Client
 import Control.Monad.Random
+import Control.Monad.Time
 
-createCSCase :: (RunClient m, MonadLogger m, MonadIO m, MonadCatch m) => AppianT m Text
+createCSCase :: (RunClient m, MonadLogger m, MonadTime m, MonadCatch m) => AppianT m Text
 createCSCase = do
   v <- actionsTab
     >>= (\v -> handleResult $ v ^. getTaskProcId "Create a Customer Service Case")

@@ -22,6 +22,7 @@ import qualified Data.Attoparsec.Text as A
 import qualified Streaming.Prelude as S
 import Control.Monad.Logger
 import Control.Arrow
+import Control.Monad.Time
 
 import Control.Monad.Trans.Resource hiding (throwM)
 
@@ -58,13 +59,13 @@ foldGridField' f b gf = do
   let boxes = gf ^.. gfIdentifiers . traverse . traverse
   F.foldlM f b boxes
 
-type Updater m = (Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m Value)
+type Updater m = (Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value)
 
     -- Make this use state as soon as the new servant can be used. 
-foldGridFieldPagesReport :: (MonadLogger m, RunClient m, MonadIO m, MonadCatch m) => ReportId -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
+foldGridFieldPagesReport :: (MonadLogger m, RunClient m, MonadTime m, MonadCatch m) => ReportId -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
 foldGridFieldPagesReport rid = foldGridFieldPages_ (sendReportUpdates rid)
 
-foldGridFieldPages :: (MonadLogger m, RunClient m, MonadIO m, MonadCatch m) => ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
+foldGridFieldPages :: (MonadLogger m, RunClient m, MonadTime m, MonadCatch m) => ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
 foldGridFieldPages = foldGridFieldPages_ sendUpdates
 
 foldGridFieldPages_ :: (MonadLogger m, RunClient m, MonadThrow m) => Updater m -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> (AppianT m (b, Value))) -> b -> Value -> AppianT m b
@@ -96,11 +97,11 @@ forGridRows_ updateFcn colFcn fold f v = do
             val' <- f b gf val'
             loop total val' (idx + 1)
 
-getArbitraryPagedItems :: (RunClient m, MonadThrow m, MonadIO m) => Int -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)
+getArbitraryPagedItems :: (RunClient m, MonadThrow m, MonadGen m) => Int -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)
 getArbitraryPagedItems nItems updateFcn colFcn fold v = do
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
   let total = gf ^. gfTotalCount
-  indices <- liftIO $ generate $ take nItems <$> shuffle [0 .. total - 1]
+  indices <- genArbitrary $ take nItems <$> shuffle [0 .. total - 1]
   getArbitraryPagedItems_ indices updateFcn colFcn fold v
 
 getArbitraryPagedItems_ :: (RunClient m, MonadThrow m) => [Int] -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)

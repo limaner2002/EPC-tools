@@ -31,6 +31,7 @@ import Appian.Lens
 import Data.Aeson.Lens
 import Data.Time (diffUTCTime, NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Control.Monad.Time
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
@@ -350,16 +351,16 @@ sendUpdate' f (Right x) = do
         [] -> return $ Right v
         l -> return $ Left $ ValidationsException (l, v, x)
 
-sendUpdates_ :: (RunClient m, MonadIO m, MonadLogger m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendUpdates_ updateFcn label f v = do
-  updates <- liftIO $ v ^!! runMonadicFold f
+  updates <- lift $ v ^!! runMonadicFold f
   let errors = lefts updates
       -- updates = v ^.. runFold f
   case errors of
     [] -> do
-      start <- liftIO $ getCurrentTime
+      start <- currentTime
       res <- sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
-      end <- liftIO $ getCurrentTime
+      end <- currentTime
       let elapsed = diffUTCTime end start
       logInfoN $ intercalate ","
         [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
@@ -367,33 +368,27 @@ sendUpdates_ updateFcn label f v = do
         , label
         , "200"
         ]
-      -- atomically $ writeTChan logChan $ Msg $ intercalate ","
-      --   [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
-      --   , tshow (diffToMS elapsed)
-      --   , label
-      --   , "200"
-      --   ]
       return res
     l -> throwM $ MissingComponentException (intercalate "\n" l, v)
 
-sendReportUpdates :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m Value
+sendReportUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendReportUpdates reportId label f v = do
   eRes <- sendReportUpdates' reportId label f v
   case eRes of
     Left v -> throwM v
     Right res -> return res
 
-sendReportUpdates' :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendReportUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
 
-sendUpdates :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m Value
+sendUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendUpdates label f v = do
   eRes <- sendUpdates' label f v
   case eRes of
     Left v -> throwM v
     Right res -> return res
 
-sendUpdates' :: (RunClient m, MonadThrow m, MonadIO m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold IO Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendUpdates' label f v = do
   taskId <- getTaskId v
   sendUpdates_ (taskUpdate taskId) label f v
