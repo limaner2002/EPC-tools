@@ -243,6 +243,12 @@ preprodClientEnv = do
     where
       settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
 
+testClientEnv = do
+  mgr <- C.newManager settings
+  return $ ClientEnv mgr (BaseUrl Https "portal-test.usac.org" 443 "")
+    where
+      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
+
 test3ClientEnv = do
   mgr <- C.newManager settings
   return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
@@ -335,6 +341,9 @@ textFieldCidUpdate cid txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
 
 textFieldCid :: (Applicative f, Contravariant f) => Text -> (TextField -> f TextField) -> Value -> f Value
 textFieldCid cid = hasKeyValue "_cId" cid . _JSON
+
+dropdownFieldCid :: (Applicative f, Contravariant f, Plated s, AsValue s, AsJSON s) => Text -> (DropdownField -> f DropdownField) -> s -> f s
+dropdownFieldCid cid = hasKeyValue "_cId" cid . _JSON
 
 checkboxGroupUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> [Int] -> Over (->) f s s (Either Text Update) (Either Text Update)
 checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find CheckboxField " <> tshow label)

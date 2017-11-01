@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes #-}
 -- {-# LANGUAGE KindSignatures #-}
 -- {-# LANGUAGE MultiParamTypeClasses #-}
 
@@ -32,6 +33,7 @@ module Scripts.Test
   , radioArbitrary
   , radioArbitraryF
   , MonadGen (..)
+  , dropdownCidArbitraryUpdateF
   ) where 
 
 import Test.QuickCheck hiding (generate)
@@ -142,22 +144,26 @@ gfSelect gf = do
       return $ gfSelection . _Just . _Selectable . gslSelected .~ singleton ident $ gf
 
 dropdownArbitraryUpdateF_ :: (MonadGen m, Plated s, AsValue s, AsJSON s) => (DropdownField -> m DropdownField) -> Text -> ReifiedMonadicFold m s (Either Text Update)
-dropdownArbitraryUpdateF_ selectFcn label = MonadicFold (dropdownArbitrary_ selectFcn label)
+dropdownArbitraryUpdateF_ selectFcn label = MonadicFold (dropdownArbitrary_ (getDropdown label) selectFcn)
 
 dropdownArbitraryUpdateF :: (MonadGen m, Plated s, AsValue s, AsJSON s) =>
   Text -> ReifiedMonadicFold m s (Either Text Update)
-dropdownArbitraryUpdateF label = MonadicFold (dropdownArbitrary_ dropdownArbitrarySelect label)
+dropdownArbitraryUpdateF label = MonadicFold (dropdownArbitrary_ (getDropdown label) dropdownArbitrarySelect)
+
+dropdownCidArbitraryUpdateF :: (MonadGen m, Plated s, AsValue s, AsJSON s) =>
+                               Text -> ReifiedMonadicFold m s (Either Text Update)
+dropdownCidArbitraryUpdateF cid = MonadicFold (dropdownArbitrary_ (dropdownFieldCid cid) dropdownArbitrarySelect)
 
 dropdownArbitrary_ :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) =>
-                     (DropdownField -> m DropdownField) -> Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
-dropdownArbitrary_ selectFn label = getIt
+                     LensLike' f s DropdownField -> (DropdownField -> m DropdownField) -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+dropdownArbitrary_ lens selectFn = getIt
   where
-    getIt = getDropdown label . act selectFn . to toUpdate . to Right
-    err = Left ("Could not find dropdown " <> tshow label)
+    getIt = lens . act selectFn . to toUpdate . to Right
+--    err = Left ("Could not find dropdown " <> tshow label)
 
 dropdownArbitrary :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) =>
                      Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
-dropdownArbitrary = dropdownArbitrary_ dropdownArbitrarySelect
+dropdownArbitrary label = dropdownArbitrary_ (getDropdown label) dropdownArbitrarySelect
 
 dropdownArbitrarySelect_ :: MonadGen m => Gen Int -> DropdownField -> m DropdownField
 dropdownArbitrarySelect_ gen df = do
