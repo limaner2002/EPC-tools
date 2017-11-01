@@ -45,7 +45,7 @@ getButtonWith :: (AsJSON s, AsValue s, Plated s, Applicative f) => (Text -> Bool
 getButtonWith f = deep (filtered (has $ runFold ((,) <$> Fold (key "confirmButtonStyle" . to (const ())) <*> Fold (filtered $ anyOf (key "label" . _String) f)))) . _JSON
 
 getDropdown :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (DropdownField -> f DropdownField) -> s -> f s
-getDropdown = hasLabel
+getDropdown = hasTypeAndLabel "DropdownField"
 
 getTextField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (TextField -> f TextField) -> s -> f s
 getTextField = hasLabel
@@ -57,11 +57,14 @@ getPickerWidget label = failing byLabel byTestLabel . _JSON
     byTestLabel = deep (filtered $ has $ runFold ((,) <$> Fold (filtered $ anyOf (key "#t" . _String) pickerType) <*> Fold (key "testLabel" . _String . only ("test-" <> label)))) -- hasTypeAnd "PickerWidget" (key "testLabel" . _String . only ("test-" <> label))
     pickerType t = isSuffixOf "PickerWidget" t || isSuffixOf "PickerField" t
 
+hasTypeAndLabel :: (AsJSON s, AsValue s, Plated s, Applicative f, FromJSON t, ToJSON t) => Text -> Text -> (t -> f t) -> s -> f s
+hasTypeAndLabel typ label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . suffixed typ) <*> Fold (key "label" . _String . only label))) . _JSON
+
 getParagraphField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (ParagraphField -> f ParagraphField) -> s -> f s
-getParagraphField = hasLabel
+getParagraphField label = hasTypeAndLabel "ParagraphField" label
 
 getCheckboxGroup :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (CheckboxGroup -> f CheckboxGroup) -> s -> f s
-getCheckboxGroup label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . suffixed "CheckboxField") <*> Fold (key "label" . _String . only label))) . _JSON
+getCheckboxGroup label = hasTypeAndLabel "CheckboxField" label
 
 getRadioButtonField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (RadioButtonField -> f RadioButtonField) -> s -> f s
 getRadioButtonField label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . only "RadioButtonField") <*> Fold (key "label" . _String . only label))) . _JSON
@@ -85,7 +88,7 @@ getGridWidgetDynLink :: (Contravariant f, Applicative f) => Text -> (DynamicLink
 getGridWidgetDynLink column = getGridWidgetValue . gwVal . traverse . _2 . at column . traverse . key "links" . plate . _JSON
 
 getDynamicLink :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (DynamicLink -> f DynamicLink) -> s -> f s
-getDynamicLink label = hasLabel label
+getDynamicLink label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . only "DynamicLink") <*> Fold (key "label" . _String . only label))) . _JSON
 
 getGridField :: (FromJSON a, Contravariant f, Applicative f) => (Result (GridField a) -> f (Result (GridField a))) -> Value -> f Value
 getGridField = hasTypeWith (isSuffixOf "GridField")

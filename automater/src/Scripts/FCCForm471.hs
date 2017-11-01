@@ -54,7 +54,7 @@ form471Intake conf = do
                      <|> paragraphArbitraryUpdate "Enter Holiday Contact Information" 4000
                      <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                     )
-    >>= sendUpdates "Choose Category" (    MonadicFold (to (buttonUpdate "Category 1"))
+    >>= sendUpdates "Choose Category" (    MonadicFold (to (buttonUpdate (conf ^. category . to tshow)))
                      <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                     )
 
@@ -65,7 +65,7 @@ form471Intake conf = do
   sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
     >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
     >>= createFRN (conf ^. nFRNs) (conf ^. spin)
-    >>= forLineItems (conf ^. nLineItems)
+    >>= forLineItems conf
     >>= ifContinueToCertification
     >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
 
@@ -124,8 +124,9 @@ selectFirst :: Applicative f =>
      (GridFieldIdent -> f GridFieldIdent) -> GridField a0 -> f (GridField a0)
 selectFirst = gfIdentifiers . traverse . taking 1 traverse
 
-arbTextInt :: MonadGen m => m Text
-arbTextInt = genArbitrary (QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
+arbTextInt :: MonadGen m => LineItemSize -> m Text
+arbTextInt Small = genArbitrary (resize 1 $ QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
+arbTextInt Regular = genArbitrary (QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
 
 membersCompleted :: Value -> Bool
 membersCompleted v = case v ^? deep (filtered $ has $ key "value" . _String . prefixed "We've completed this section of the form based on information from your applicant entity's profile.") of
@@ -246,18 +247,17 @@ createFRN n spin val = do
                          ) narrative
   createFRN (n - 1) spin frnList
 
-forLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Int -> Value -> AppianT m Value
-forLineItems nLineItems = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' nLineItems dyl v)
+forLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> Value -> AppianT m Value
+forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' conf dyl v)
 
-addLineItem' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Int -> DynamicLink -> Value -> AppianT m Value
--- addLineItem' 0 dyl val' = return val'
-addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
-  >>= addLineItem'' nLineItems
+addLineItem' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
+addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
+  >>= addLineItem'' (conf ^. nLineItems)
   >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
   where
     addLineItem'' 0 val = return val
     addLineItem'' n val = do
-      logDebugN $ "Creating line item " <> tshow (nLineItems - n + 1)
+      logDebugN $ "Creating line item " <> tshow (conf ^. nLineItems - n + 1)
       sendUpdates "Add New FRN Line Item" (MonadicFold (to (buttonUpdate "Add New FRN Line Item"))) val
         >>= sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2)))
         >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 13))
@@ -265,12 +265,12 @@ addLineItem' nLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (c
                                                                   <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                  )
         >>= handleDataQuestions
-        >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt <*> pure v))
+        >>= sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
                                                                 <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
                                                                 <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt <*> pure v))
+                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
                                                                 <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                                                                )
         >>= selectEntities
@@ -285,16 +285,26 @@ handleDataQuestions v = do
     Just _ -> sendUpdates "Not Burstable & Continue" (MonadicFold (to (buttonUpdate "No"))
                                                      <|> MonadicFold (to (buttonUpdate "Continue"))
                                                      ) v
-                >>= sendUpdates "Select All No & Continue" (MonadicFold (getButtonWith (\l -> l == "No" || l == "No ✓") . to toUpdate . to Right)
-                                                           <|> MonadicFold (to (dropdownUpdate "Connection used by" 2))
-                                                           <|> MonadicFold (to (buttonUpdate "Continue"))
-                                                           )
+                >>= handleConnections
+
+handleConnections :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
+handleConnections v = do
+  case has (getDropdown "Connection used by") v of
+    True -> sendUpdates "Select All No & Continue" (MonadicFold (getButtonWith (\l -> l == "No" || l == "No ✓") . to toUpdate . to Right)
+                                                     <|> MonadicFold (to (dropdownUpdate "Connection used by" 2))
+                                                     <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                   ) v
+    False -> sendUpdates "Select All No & Continue" (MonadicFold (getButtonWith (\l -> l == "No" || l == "No ✓") . to toUpdate . to Right)
+                                                     <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                   ) v
 
 data Form471Conf = Form471Conf
   { _nFRNs :: Int
   , _nLineItems :: Int
   , _spin :: Text
+  , _category :: Category
   , _applicant :: Login
+  , _lineItemSize :: LineItemSize
   } deriving Show
 
 instance Csv.FromNamedRecord Form471Conf where
@@ -302,7 +312,33 @@ instance Csv.FromNamedRecord Form471Conf where
     <$> r Csv..: "nFRNs"
     <*> r Csv..: "nLineItems"
     <*> r Csv..: "spin"
+    <*> r Csv..: "category"
     <*> Csv.parseNamedRecord r
+    <*> r Csv..: "lineItemSize"
+
+data LineItemSize
+  = Small
+  | Regular
+  deriving (Show, Read)
+
+data Category
+  = Cat1
+  | Cat2
+
+instance Show Category where
+  show Cat1 = "Category 1"
+  show Cat2 = "Category 2"
+
+instance Csv.FromField LineItemSize where
+  parseField bs = case readMay (decodeUtf8 bs) of
+    Nothing -> fail $ show bs <> " does not appear to be a valid Line Item Size. Use only 'Small' or 'Regular'"
+    Just size -> return size
+
+instance Csv.FromField Category where
+  parseField bs = case decodeUtf8 bs of
+    "1" -> return Cat1
+    "2" -> return Cat2
+    _ -> fail $ show bs <> " does not appear to be a valid category. Use only '1' or '2'"
 
 nFRNs :: Functor f => (Int -> f Int) -> Form471Conf -> f Form471Conf
 nFRNs = lens get update
@@ -327,3 +363,15 @@ applicant = lens get update
   where
     get = _applicant
     update conf v = conf { _applicant = v }
+
+lineItemSize :: Functor f => (LineItemSize -> f LineItemSize) -> Form471Conf -> f Form471Conf
+lineItemSize = lens get update
+  where
+    get = _lineItemSize
+    update conf v = conf { _lineItemSize = v }
+
+category :: Functor f => (Category -> f Category) -> Form471Conf -> f Form471Conf
+category = lens get update
+  where
+    get = _category
+    update conf v = conf { _category = v }

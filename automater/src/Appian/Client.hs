@@ -71,6 +71,8 @@ type RelatedActionEx = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Captu
    :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 
 type ActionsTab = "suite" :> "api" :> "tempo" :> "open-a-case" :> "available-actions" :> Header "X-Appian-Features" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
+type ActionEx = "suite" :> "rest" :> "a" :> "model" :> "latest" :> Capture "processModelId" ProcessModelId
+  :> ReqBody '[EmptyAppianTV] EmptyAppianTV :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 
 getCookies :: (Applicative f, GetHeaders ls, Contravariant f) =>
   ((ByteString, ByteString) -> f (ByteString, ByteString)) -> ls -> f ls
@@ -199,6 +201,13 @@ actionsTab = do
       actionsTab_ = toClient Proxy (Proxy :: Proxy ActionsTab)
 
     -- Environments
+
+actionEx :: RunClient m => ProcessModelId -> AppianT m Value
+actionEx pid = do
+  cj <- get
+  actionEx_ pid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+    where
+      actionEx_ = toClient Proxy (Proxy :: Proxy ActionEx)
 
 test3ClientEnvDbg = do
   mgr <- C.newManager settings
@@ -355,7 +364,7 @@ sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m) => (UiCo
 sendUpdates_ updateFcn label f v = do
   updates <- lift $ v ^!! runMonadicFold f
   let errors = lefts updates
-      -- updates = v ^.. runFold f
+
   case errors of
     [] -> do
       start <- currentTime

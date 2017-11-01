@@ -277,3 +277,39 @@ selectGridfieldUpdateF ident gf = MonadicFold (failing (to (const (selectCheckbo
 
 selectCheckbox :: GridFieldIdent -> GridField a -> GridField a
 selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]
+
+dropdownUpdate' :: (AsJSON t, AsValue t, Plated t, IsString s, Eq s, Contravariant f, Applicative f)
+                => Text -> s -> Over (->) f t t (Either Text Update) (Either Text Update)
+dropdownUpdate' label s = failing mkUpdate err
+  where
+    fetchSet = getDropdown label . to (dropdownSelect s) . traverse
+    mkUpdate = fetchSet . to toUpdate . to Right
+    err = to $ const $ Left "Could not set dropdown!"
+
+dropdownUpdateF' :: (Eq t, IsString t, Plated s, AsValue s, AsJSON s) =>
+                    Text -> t -> ReifiedMonadicFold m s (Either Text Update)
+dropdownUpdateF' label s = MonadicFold $ dropdownUpdate' label s
+
+dropdownIndex :: (IsString s, Eq s) => s -> DropdownField -> Maybe Int
+dropdownIndex s df = df ^? dfChoices . itraversed . to (fromString . unpack) . ifiltered filter . withIndex . _1 . to (+1)
+  where
+    filter _ v = v == s
+
+dropdownSelect :: (IsString s, Eq s) => s -> DropdownField -> Maybe DropdownField
+dropdownSelect s df = do
+  idx <- dropdownIndex s df
+  return $ dfValue .~ idx $ df
+
+data FundingYear
+  = FYSelect
+  | FY2016
+  | FY2017
+  | FY2018
+  | FYInvalid Text
+  deriving (Show, Eq, Read)
+
+instance IsString FundingYear where
+  fromString "-- Select a Funding Year --" = FYSelect
+  fromString "2016" = FY2016
+  fromString "2017" = FY2017
+  fromString s = FYInvalid $ pack s

@@ -87,8 +87,8 @@ arbitraryPrintable = arbitrary `suchThat` isPrint
 paragraphArbitraryUpdate :: (MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> ReifiedMonadicFold m s (Either Text Update)
 paragraphArbitraryUpdate label size = MonadicFold (paragraphArbitrary label size)
 
-paragraphArbitrary :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> (Either a Update -> f (Either a Update)) -> s -> f s
-paragraphArbitrary label size = getParagraphField label . act (fillParagraph size) . to toUpdate . to Right
+paragraphArbitrary :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+paragraphArbitrary label size = failing (getParagraphField label . to Right) (to $ const $ Left $ "Could not find paragraph field " <> tshow label) . act (mapM $ fillParagraph size) . to (fmap toUpdate)
 
 fillParagraph :: MonadGen m => Int -> ParagraphField -> m ParagraphField
 fillParagraph size pgf = do
