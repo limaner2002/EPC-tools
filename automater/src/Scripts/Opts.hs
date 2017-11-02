@@ -40,6 +40,7 @@ import Control.Monad.Logger
 import Scripts.Common
 import Control.Monad.Trans.Resource (runResourceT)
 import Control.Arrow ((>>>))
+import qualified Data.Csv as Csv
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -157,16 +158,22 @@ dispatchReview typ _ = throwM $ UnsupportedReviewException $ tshow typ
 loginConsumer :: MonadIO m => TChan (ThreadControl a) -> (a -> m ()) -> m ()
 loginConsumer chan f = S.mapM_ f $ S.map tcItem $ S.takeWhile notFinished $ S.repeatM (atomically $ readTChan chan)
 
-loginProducer :: (MonadIO m, MonadBaseControl IO m, MonadThrow m) => FilePath -> TChan (ThreadControl Login) -> m ()
+loginConsumer' :: MonadIO m => TChan (ThreadControl a) -> (a -> m b) -> m (S.Of [b] ())
+loginConsumer' chan f = S.toList $ S.mapM f $ S.map tcItem $ S.takeWhile notFinished $ S.repeatM (atomically $ readTChan chan)
+
+loginProducer :: (MonadIO m, MonadBaseControl IO m, MonadThrow m, Csv.FromNamedRecord a) => FilePath -> TChan (ThreadControl a) -> m ()
 loginProducer fp chan = do
   csvStreamByName >>> S.map Item >>> S.mapM_ (atomically . writeTChan chan) >>> runResourceT >>> runNoLoggingT $ fp
   atomically $ writeTChan chan Finished
 
-run471Intake :: BaseUrl -> FilePath -> FilePath -> IO ()
-run471Intake baseUrl fpPrefix csvInput = do
+run471Intake :: BaseUrl -> FilePath -> FilePath -> Int -> IO ()
+run471Intake baseUrl fpPrefix csvInput nThreads = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  chan <- newTChanIO
   let env = ClientEnv mgr baseUrl
-  res <- csvStreamByName >>> S.mapM (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))  >>> S.toList >>> runResourceT >>> runStderrLoggingT $ csvInput
+      consume channel = loginConsumer' channel (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))
+  -- res <- csvStreamByName >>> S.mapM (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))  >>> S.toList >>> runResourceT >>> runStderrLoggingT $ csvInput
+  res <- runConcurrently $ Concurrently (loginProducer csvInput chan) *> Concurrently (fmap sequence $ mapConcurrently consume $ take nThreads $ repeat chan)
   dispResults $ S.fst' res
 
 run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
@@ -282,6 +289,10 @@ form471Parser = run471Intake
   (  long "csv-conf"
   <> short 'i'
   <> help "The csv config file for 471 intake."
+  )
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
   )
 
 form486Info :: ParserInfo (IO ())
