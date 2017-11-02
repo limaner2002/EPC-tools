@@ -41,6 +41,7 @@ import Scripts.Common
 import Control.Monad.Trans.Resource (runResourceT)
 import Control.Arrow ((>>>))
 import qualified Data.Csv as Csv
+import Scripts.ProducerConsumer
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -166,15 +167,23 @@ loginProducer fp chan = do
   csvStreamByName >>> S.map Item >>> S.mapM_ (atomically . writeTChan chan) >>> runResourceT >>> runNoLoggingT $ fp
   atomically $ writeTChan chan Finished
 
+data MissingItemException = MissingItemException
+
+instance Show MissingItemException where
+  show _ = "There was nothing provided to this consumer!"
+
+instance Exception MissingItemException
+
 run471Intake :: BaseUrl -> FilePath -> FilePath -> Int -> IO ()
-run471Intake baseUrl fpPrefix csvInput nThreads = do
+run471Intake baseUrl fpPrefix csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   chan <- newTChanIO
   let env = ClientEnv mgr baseUrl
       consume channel = loginConsumer' channel (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))
   -- res <- csvStreamByName >>> S.mapM (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))  >>> S.toList >>> runResourceT >>> runStderrLoggingT $ csvInput
-  res <- runConcurrently $ Concurrently (loginProducer csvInput chan) *> Concurrently (fmap sequence $ mapConcurrently consume $ take nThreads $ repeat chan)
-  dispResults $ S.fst' res
+  -- res <- runConcurrently $ Concurrently (loginProducer csvInput chan) *> Concurrently (fmap sequence $ mapConcurrently consume $ take nThreads $ repeat chan)
+  res <- runResourceT $ runNoLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))
+  dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
 run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
