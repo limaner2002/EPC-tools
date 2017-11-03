@@ -64,7 +64,7 @@ form471Intake conf = do
 
   sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
     >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
-    >>= createFRN (conf ^. nFRNs) (conf ^. spin)
+    >>= createFRN conf (conf ^. nFRNs) (conf ^. spin)
     >>= forLineItems conf
     >>= ifContinueToCertification
     >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
@@ -200,12 +200,12 @@ getAddAllButton label
   || label == "Add All Libraries and Dependent NIFs "
   || label == "Add All Dependent Libraries and NIFs "
 
-createFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Int -> Text -> Value -> AppianT m Value
-createFRN 0 _ val = return val
-createFRN n spin val = do
+createFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> Int -> Text -> Value -> AppianT m Value
+createFRN _ 0 _ val = return val
+createFRN conf n spin val = do
   logDebugN $ "Creating FRN with " <> tshow (n - 1) <> " to go."
   dates <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
-            >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
+            >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 10)
                                                <|> MonadicFold (to (buttonUpdate "No"))
                                                <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 3))
                                                <|> MonadicFold (to (buttonUpdate "Continue"))
@@ -216,7 +216,9 @@ createFRN n spin val = do
             >>= sendUpdates "Enter number of Bids" ( MonadicFold (intFieldArbitrary "How many bids were received?") -- (to (textUpdate "How many bids were received?" "3"))
                                      <|> MonadicFold (to (buttonUpdate "Yes"))
                                    )
-            >>= sendUpdates "Search for 470" (MonadicFold $ to (buttonUpdate "Search"))
+            >>= sendUpdates "Search for 470" (MonadicFold (to $ textUpdate "Search by BEN" (conf ^. ben))
+                                               <|> MonadicFold (to (buttonUpdate "Search"))
+                                             )
             >>= select470
             -- >>= sendUpdates "Select 470 and Continue" (MonadicFold (to (gridFieldUpdate 0))
             --                  <|> MonadicFold (to (buttonUpdate "Continue"))
@@ -247,7 +249,7 @@ createFRN n spin val = do
   frnList <- sendUpdates "Enter narrative and Continue" (paragraphArbitraryUpdate "Provide a brief explanation of the products and services that you are requesting, or provide any other relevant information regarding this Funding Request. You should also use this field to describe any updates to your entity data, such as revised student counts, entity relationships, etc, that you were unable to make after the close of the Administrative filing window for profile updates. These changes will be addressed during the application review process." 4000
                            <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                          ) narrative
-  createFRN (n - 1) spin frnList
+  createFRN conf (n - 1) spin frnList
 
 forLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> Value -> AppianT m Value
 forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' conf dyl v)
@@ -333,6 +335,7 @@ data Form471Conf = Form471Conf
   , _category :: Category
   , _applicant :: Login
   , _lineItemSize :: LineItemSize
+  , _ben :: Text
   } deriving Show
 
 instance Csv.FromNamedRecord Form471Conf where
@@ -343,6 +346,7 @@ instance Csv.FromNamedRecord Form471Conf where
     <*> r Csv..: "category"
     <*> Csv.parseNamedRecord r
     <*> r Csv..: "lineItemSize"
+    <*> r Csv..: "BEN to Copy 470"
 
 data LineItemSize
   = Small
@@ -403,3 +407,9 @@ category = lens get update
   where
     get = _category
     update conf v = conf { _category = v }
+
+ben :: Functor f => (Text -> f Text) -> Form471Conf -> f Form471Conf
+ben = lens get update
+  where
+    get = _ben
+    update conf v = conf { _ben = v }

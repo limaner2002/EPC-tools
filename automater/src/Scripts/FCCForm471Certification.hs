@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Scripts.FCCForm471Certification where
 
@@ -22,6 +23,19 @@ import Scripts.FCCForm471Common
 import Data.Attoparsec.Text
 import Servant (NoContent)
 import Control.Monad.Time
+import qualified Data.Csv as Csv
+
+data CertConf = CertConf
+  { _certFormNum :: Form471Num
+  , _certLogin :: Login
+  } deriving Show
+
+makeLenses ''CertConf
+
+instance Csv.FromNamedRecord CertConf where
+  parseNamedRecord r = CertConf
+    <$> r Csv..: "formNum"
+    <*> Csv.parseNamedRecord r
 
 form471Certification :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => Form471Num -> AppianT m Form471Num
 form471Certification formNum = do
@@ -53,5 +67,8 @@ selectAllDropdownsUpdateF :: (Plated s, AsValue s, AsJSON s) => ReifiedMonadicFo
 selectAllDropdownsUpdateF = MonadicFold (failing (hasType "DropdownField" . _JSON . to (dfValue .~ 3) . to toUpdate . to Right) (to $ const $ Left "Could not find any dropdowns!"))
 
 checkResult :: MonadThrow m => Value -> AppianT m Form471Num
-checkResult v = handleMissing "It appears the 471 was not created successfully?" v $ v ^? hasKeyValueWith (isPrefixOf "You have successfully filed FCC Form 471") "label" . key "label" . _String . to (parseOnly parse471Number) . traverse
+checkResult v = do
+  num <- handleMissing "It appears the 471 was not created successfully?" v $ v ^? hasKeyValueWith (isPrefixOf "You have successfully filed FCC Form 471") "label" . key "label" . _String . to (parseOnly parse471Number) . traverse
+  sendUpdates "Click Close" (MonadicFold $ to $ buttonUpdate "Close")
+  return num
 

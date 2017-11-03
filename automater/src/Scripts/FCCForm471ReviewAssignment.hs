@@ -1,8 +1,9 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module FCCForm471ReviewAssignment where
+module Scripts.FCCForm471ReviewAssignment where
 
 import ClassyPrelude
 import Appian
@@ -19,6 +20,7 @@ import Scripts.Test
 import Control.Monad.Time
 import Scripts.ReviewCommon
 import Scripts.FCCForm471Common
+import qualified Data.Csv as Csv
 
 data PIAReviewerType
   = PIAInitial
@@ -41,20 +43,50 @@ instance IsString PIAReviewerType where
   fromString "USAC QA Reviewer" = PIAUsacQA
   fromString "USAC Heightened Scrutiny Reviewer" = PIAUsacHS
 
+instance Csv.FromField PIAReviewerType where
+  parseField = pure . fromString . unpack . decodeUtf8
+
 newtype BEN = BEN Int
   deriving (Show, Eq, Num)
+
+instance Csv.FromField BEN where
+  parseField bs = BEN <$> Csv.parseField bs
+
+instance Csv.FromField FundingYear where
+  parseField = pure . fromString . unpack . decodeUtf8
+
+data Form471ReviewConf = Form471ReviewConf
+  { _confFormNum :: Form471Num
+  , _confBen :: BEN
+  , _confFY :: FundingYear
+  , _confReviewType :: PIAReviewerType
+  , _confReviewMgr :: Login
+  , _confReviewer :: Login
+  } deriving Show
+
+makeLenses ''Form471ReviewConf
+
+instance Csv.FromNamedRecord Form471ReviewConf where
+  parseNamedRecord r = Form471ReviewConf
+    <$> r Csv..: "formNum"
+    <*> r Csv..: "ben"
+    <*> r Csv..: "fy"
+    <*> r Csv..: "revType"
+    <*> Csv.parseNamedRecord r
+    <*> Csv.parseNamedRecord r
 
 benToText :: BEN -> Text
 benToText (BEN n) = tshow n
 
-form471Assign :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => FundingYear -> PIAReviewerType -> BEN -> AppianUsername -> AppianT m Value
-form471Assign fy revType ben username = do
-  let un = Identifiers [username]
+form471Assign :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Form471ReviewConf -> AppianT m Value
+form471Assign conf = do
+  let un = Identifiers [conf ^. confReviewer . username]
   (rid, v) <- openReport "471 Reviews Assignment "
   editReport rid
-    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" fy)
-    >>= sendReportUpdates rid "Enter BEN && Apply Filters" (MonadicFold (to $ textUpdate "BEN" $ benToText ben)
-                                                           <|> MonadicFold (to $ buttonUpdate "Apply Filters")
+    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
+    >>= sendReportUpdates rid "Enter BEN && Apply Filters" (dropdownUpdateF' "Reviewer Type" (conf ^. confReviewType)
+                                                             <|> MonadicFold (to $ textUpdate "BEN" $ benToText $ conf ^. confBen)
+                                                             <|> MonadicFold (to $ buttonUpdate "Apply Filters")
                                                            )
     >>= sendReportUpdates rid "Sort by Application Number" (MonadicFold $ getGridFieldCell . traverse . to setAppNumSort . to toUpdate . to Right)
     >>= sendReportUpdates rid "Select Application" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [1]) . to toUpdate . to Right)
@@ -74,17 +106,17 @@ gridSelection idxs gf = gfSelection . traverse . _Selectable . gslSelected .~ id
 form471NumToText :: Form471Num -> Text
 form471NumToText (Form471Num n) = tshow n
 
-form471Review :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => FundingYear -> PIAReviewerType -> Form471Num -> AppianT m Value
-form471Review fy revType form471Num = do
+form471Review :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => Form471ReviewConf -> AppianT m Value
+form471Review conf = do
   (rid, v) <- openReport "My Assigned 471 Applications"
   editReport rid
-    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" fy)
-    >>= sendReportUpdates rid "Enter Application Number & Apply Filters" (MonadicFold (to $ textUpdate "Application Number" (form471NumToText form471Num))
+    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
+    >>= sendReportUpdates rid "Enter Application Number & Apply Filters" (MonadicFold (to $ textUpdate "Application Number" (form471NumToText $ conf ^. confFormNum))
                                                                          <|> MonadicFold (to $ buttonUpdate "Apply Filters")
                                                                          )
     >>= clickApplication
     >>= clearAllExceptions
-    >>= addDecision revType
+    >>= addDecision (conf ^. confReviewType)
     >>= sendUpdates "Complete Review Step" (MonadicFold $ getButtonWith (\l -> l == "Complete PIA Review" || l == "Complete HS Review") . to toUpdate . to Right)
 
 clearAllExceptions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => Value -> AppianT m Value

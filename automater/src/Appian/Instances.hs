@@ -164,3 +164,6 @@ instance ToHttpApiData RecordRef where
 
 instance MonadTime ClientM where
   currentTime = liftIO currentTime
+
+instance Csv.FromField AppianUsername where
+  parseField bs = AppianUsername <$> Csv.parseField bs

@@ -21,7 +21,7 @@ import Control.Monad.Time
 
 spinChangeIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianT m (Maybe Text)
 spinChangeIntake = do
-  let un = Identifiers [AppianUsername "app.full.right@testmail.usac.org"]
+  let un = Identifiers [AppianUsername "kyle.davie@fwisd.org"]
 
   v <- myLandingPageAction "SPIN Change"
 

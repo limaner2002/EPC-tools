@@ -19,6 +19,8 @@ library
                      , Appian.Lens
                      , Appian.Client
                      , Scripts.FCCForm471
+                     , Scripts.FCCForm471ReviewAssignment
+                     , Scripts.FCCForm471Common
                      , Scripts.Opts
                      , Scripts.CreateCSCase
                      , Scripts.Test

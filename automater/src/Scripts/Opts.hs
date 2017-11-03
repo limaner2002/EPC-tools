@@ -8,6 +8,7 @@ module Scripts.Opts -- where
   , runScript
   , Script (..)
   , setTimeout
+  , module Scripts.Opts
   ) where
 
 import ClassyPrelude
@@ -15,6 +16,7 @@ import Options.Applicative
 import Options.Applicative.Types
 
 import Scripts.FCCForm471
+import Scripts.FCCForm471ReviewAssignment
 import Scripts.CreateCSCase
 import Scripts.FCCForm486
 import Scripts.SPINChangeIntake
@@ -177,13 +179,27 @@ instance Exception MissingItemException
 run471Intake :: BaseUrl -> FilePath -> FilePath -> Int -> IO ()
 run471Intake baseUrl fpPrefix csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
-  chan <- newTChanIO
   let env = ClientEnv mgr baseUrl
-      consume channel = loginConsumer' channel (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))
-  -- res <- csvStreamByName >>> S.mapM (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))  >>> S.toList >>> runResourceT >>> runStderrLoggingT $ csvInput
-  -- res <- runConcurrently $ Concurrently (loginProducer csvInput chan) *> Concurrently (fmap sequence $ mapConcurrently consume $ take nThreads $ repeat chan)
+
   res <- runResourceT $ runNoLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
+
+run471Assign :: BaseUrl -> FilePath -> Int -> IO ()
+run471Assign baseUrl csvInput n = do
+  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  let env = ClientEnv mgr baseUrl
+
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Assign conf) env (conf ^. confReviewMgr))
+  dispResults $ fmap (maybe (throwM MissingItemException) id) res
+
+run471Review :: String -> FilePath -> Int -> Login -> IO ()
+run471Review hostUrl csvInput n reviewer = do
+  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Review conf) env reviewer)
+  dispResults $ fmap (maybe (throwM MissingItemException) id) res
+  
 
 run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
 run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
