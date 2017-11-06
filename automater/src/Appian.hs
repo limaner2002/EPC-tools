@@ -23,33 +23,40 @@ import Servant.API
 import Control.Lens hiding (cons)
 import qualified Web.Cookie as WC
 import Data.CaseInsensitive
+import Data.Aeson
 
 newtype Cookies = Cookies { _unCookies :: [(ByteString, ByteString)] }
   deriving (Show, Semigroup, Monoid)
 
 makeLenses ''Cookies
 
-type Appian = AppianT (LoggingT ClientM)
--- type Appian = AppianT ClientM
+data AppianState = AppianState
+  { _appianCookies :: Cookies
+  , _appianValue :: Value
+  }
+
+makeLenses ''AppianState
+
+-- type Appian = AppianT (LoggingT ClientM)
 
 newtype AppianT (m :: * -> *) a = AppianT
-  { unAppian :: StateT Cookies m a
-  } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadTrans, MonadLogger, MonadMask, (MonadState Cookies))
+  { unAppian :: StateT AppianState m a
+  } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadTrans, MonadLogger, MonadMask, (MonadState AppianState))
 
 instance RunClient m => RunClient (AppianT m) where
   runRequest req = do
-    cookies <- get
-    let cookieHeader = (mk "Cookie", cookies ^. unCookies . to renderCookieHeader) -- cookies ^.. unCookies . traverse . runFold ((,) <$> Fold (_1 . to mk) <*> Fold _2) & fromList
+    cookies <- use appianCookies
+    let cookieHeader = (mk "Cookie", cookies ^. unCookies . to renderCookieHeader)
         userAgentHeader = (mk "User-Agent", _unUserAgent defUserAgent)
     lift $ runRequest
       req { requestHeaders = userAgentHeader `cons` (cookieHeader `cons` requestHeaders req) }
   throwServantError = lift . throwServantError
   catchServantError m c = mkAppianT $ \cs -> execAppianT m cs `catchServantError` \e -> execAppianT (c e) cs
 
-execAppianT :: AppianT m a -> Cookies -> m (a, Cookies)
+execAppianT :: AppianT m a -> AppianState -> m (a, AppianState)
 execAppianT = runStateT . unAppian
 
-mkAppianT :: (Cookies -> m (a, Cookies)) -> AppianT m a
+mkAppianT :: (AppianState -> m (a, AppianState)) -> AppianT m a
 mkAppianT = AppianT . StateT
 
 newtype UserAgent = UserAgent

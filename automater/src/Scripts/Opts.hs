@@ -200,6 +200,13 @@ run471Review hostUrl csvInput n reviewer = do
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Review conf) env reviewer)
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
   
+-- run471Certify :: String -> FilePath -> Int -> Login -> IO ()
+-- run471Certify hostUrl csvInput n reviewer = do
+--   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+--   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+
+--   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Certification conf) env (conf ^. applicant))
+--   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
 run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList

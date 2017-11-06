@@ -98,9 +98,9 @@ login :: RunClient m => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] 
 login (Login un pw) = do
   res <- navigateSite
   let cj = res ^.. getCookies & Cookies
-  put cj
+  assign appianCookies cj
   res' <- login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
-  put $ Cookies $ (cj ^.. unCookies . traverse . filtered removeNew) <> res' ^.. getCookies
+  assign appianCookies $ Cookies $ (cj ^.. unCookies . traverse . filtered removeNew) <> res' ^.. getCookies
   return res'
   where
     login_ = toClient Proxy (Proxy :: Proxy LoginAPI)
@@ -119,7 +119,7 @@ logout = toClient Proxy (Proxy :: Proxy LogoutAPI)
 
 tasksTab :: RunClient m => Maybe UTCTime -> AppianT m Value
 tasksTab mUtcTime = do
-  cj <- get
+  cj <- use appianCookies
   tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
@@ -131,54 +131,54 @@ viewRecord rid = viewRecord_ rid
 
 editReport :: RunClient m => ReportId -> AppianT m Value
 editReport rid = do
-  cj <- get
+  cj <- use appianCookies
   toClient Proxy (Proxy :: Proxy EditReport) rid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
 
 reportUpdate :: (RunClient m, ToJSON update) => ReportId -> UiConfig update -> AppianT m Value
 reportUpdate rid upd = do
-  cj <- get
+  cj <- use appianCookies
   reportUpdate_ (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") rid upd (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       reportUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (ReportUpdate update))
 
 taskUpdate :: (RunClient m, ToJSON update) => TaskId -> UiConfig update -> AppianT m Value
 taskUpdate tid upd = do
-  cj <- get
+  cj <- use appianCookies
   taskUpdate_ (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") tid upd (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (TaskUpdate update))
 
 taskAccept :: RunClient m => TaskId -> AppianT m NoContent
 taskAccept tid = do
-  cj <- get
+  cj <- use appianCookies
   taskAccept_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskAccept_ = toClient Proxy (Proxy :: Proxy TaskAccept)
 
 taskOpen :: RunClient m => TTaskId -> AppianT m Value
 taskOpen tid = do
-  cj <- get
+  cj <- use appianCookies
   taskOpen_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskOpen_ = toClient Proxy (Proxy :: Proxy TaskOpen)
 
 taskStatus :: RunClient m => TaskId -> AppianT m Value
 taskStatus tid = do
-  cj <- get
+  cj <- use appianCookies
   taskStatus_ tid "accepted" (Just "ceebc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just "PUT")
   where
     taskStatus_ = toClient Proxy (Proxy :: Proxy TaskStatus)
 
 landingPageAction :: RunClient m => ActionId -> AppianT m ProcessModelId
 landingPageAction aid = do
-  cj <- get
+  cj <- use appianCookies
   landingPageAction_ aid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       landingPageAction_ = toClient Proxy (Proxy :: Proxy LandingPageAction)
 
 landingPageActionEx :: RunClient m => ProcessModelId -> AppianT m Value
 landingPageActionEx pid = do
-  cj <- get 
+  cj <- use appianCookies 
   landingPageActionEx_ pid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       landingPageActionEx_ = toClient Proxy (Proxy :: Proxy LandingPageActionEx)
@@ -188,14 +188,14 @@ viewRecordDashboard = toClient Proxy (Proxy :: Proxy ViewRecordDashboard)
 
 relatedActionEx :: RunClient m => RecordRef -> ActionId -> AppianT m Value
 relatedActionEx ref aid = do
-  cj <- get
+  cj <- use appianCookies
   relatedActionEx_ ref aid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       relatedActionEx_ = toClient Proxy (Proxy :: Proxy RelatedActionEx)
 
 actionsTab :: RunClient m => AppianT m Value
 actionsTab = do
-  cj <- get
+  cj <- use appianCookies
   actionsTab_ (Just "e4bc") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       actionsTab_ = toClient Proxy (Proxy :: Proxy ActionsTab)
@@ -204,7 +204,7 @@ actionsTab = do
 
 actionEx :: RunClient m => ProcessModelId -> AppianT m Value
 actionEx pid = do
-  cj <- get
+  cj <- use appianCookies
   actionEx_ pid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       actionEx_ = toClient Proxy (Proxy :: Proxy ActionEx)
@@ -270,7 +270,7 @@ forumClientEnv = do
 runAppianT :: AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
 runAppianT f env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)
   where
-    login' = execAppianT (login creds) mempty
+    login' = execAppianT (login creds) (AppianState mempty Null)
     logout' (Right (_, cookies)) = do
       execAppianT logout cookies
       putStrLn "Successfully logged out!"

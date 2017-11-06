@@ -84,18 +84,22 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
           logDebugN $ "PagingInfo: " <> (tshow $ gf' ^? pagingInfo)
           loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
-forGridRows_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
-forGridRows_ updateFcn colFcn fold f v = do
+forGridRows_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRows_ updateFcn colFcn fold f = do
+  v <- use appianValue
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
-  loop (gf ^. gfTotalCount) v 0
+  loop (gf ^. gfTotalCount) 0
     where
-      loop total val idx = do
+      loop total idx = do
+        val <- use appianValue
         case total <= idx of
-          True -> return val
+          True -> assign appianValue val
           False -> do
             (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
-            val' <- f b gf val'
-            loop total val' (idx + 1)
+            res <- deltaUpdate val val'
+            assign appianValue res
+            f b gf
+            loop total (idx + 1)
 
 getArbitraryPagedItems :: (RunClient m, MonadThrow m, MonadGen m) => Int -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)
 getArbitraryPagedItems nItems updateFcn colFcn fold v = do
@@ -151,7 +155,9 @@ getRowIdx :: Int -> PagingInfo -> (StartIndex, RowIndex)
 getRowIdx idx pi = (startIdx, rowIdx)
   where
     pageNo = idx `div` pi ^. pgIBatchSize
-    startIdx = StartIndex $ pageNo * pi ^. pgIBatchSize + 1
+    startIdx
+      | pi ^. pgIBatchSize == (-1) = StartIndex 1
+      | otherwise = StartIndex $ pageNo * pi ^. pgIBatchSize + 1
     rowIdx = RowIndex (idx `rem` pi ^. pgIBatchSize)
 
 data BadPagingException = BadPagingException
@@ -313,3 +319,26 @@ instance IsString FundingYear where
   fromString "2016" = FY2016
   fromString "2017" = FY2017
   fromString s = FYInvalid $ pack s
+
+sendUpdates1 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendUpdates1 msg fold = do
+  previousVal <- use appianValue
+  newVal <- sendUpdates msg fold previousVal
+  res <- deltaUpdate previousVal newVal
+  assign appianValue res
+
+deltaUpdate :: (Monad m, MonadThrow m) => Value -> Value -> AppianT m Value
+deltaUpdate full delta =
+    case has (key "ui" . key "#t" . _String . only "UiComponentsDelta") delta of
+      False -> return $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack)  delta
+      True -> handleMissing "Bad update delta?" full $ handleDelta full $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack) delta
+
+handleDelta :: Value -> Value -> Maybe Value
+handleDelta fullResp delta = do
+  let comps = delta ^.. key "ui" . key "modifiedComponents" . plate
+  foldlM updateComponent fullResp comps
+
+updateComponent :: Value -> Value -> Maybe Value
+updateComponent fullResp componentVal = do
+  cid <- componentVal ^? key "_cId" . _String
+  return $ (hasKeyValue "_cId" cid .~ componentVal) fullResp

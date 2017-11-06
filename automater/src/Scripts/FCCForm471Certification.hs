@@ -66,9 +66,9 @@ selectAllCheckboxesUpdateF = MonadicFold (failing (hasType "CheckboxField" . _JS
 selectAllDropdownsUpdateF :: (Plated s, AsValue s, AsJSON s) => ReifiedMonadicFold m s (Either Text Update)
 selectAllDropdownsUpdateF = MonadicFold (failing (hasType "DropdownField" . _JSON . to (dfValue .~ 3) . to toUpdate . to Right) (to $ const $ Left "Could not find any dropdowns!"))
 
-checkResult :: MonadThrow m => Value -> AppianT m Form471Num
+checkResult :: (MonadThrow m, RunClient m, MonadTime m, MonadLogger m, MonadCatch m) => Value -> AppianT m Form471Num
 checkResult v = do
   num <- handleMissing "It appears the 471 was not created successfully?" v $ v ^? hasKeyValueWith (isPrefixOf "You have successfully filed FCC Form 471") "label" . key "label" . _String . to (parseOnly parse471Number) . traverse
-  sendUpdates "Click Close" (MonadicFold $ to $ buttonUpdate "Close")
+  sendUpdates "Click Close" (MonadicFold $ to $ buttonUpdate "Close") v
   return num
 
