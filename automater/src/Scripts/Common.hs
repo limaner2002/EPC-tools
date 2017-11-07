@@ -84,8 +84,21 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
           logDebugN $ "PagingInfo: " <> (tshow $ gf' ^? pagingInfo)
           loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
-forGridRows_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
-forGridRows_ updateFcn colFcn fold f = do
+forGridRows_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
+forGridRows_ updateFcn colFcn fold f v = do
+  gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
+  loop (gf ^. gfTotalCount) v 0
+    where
+      loop total val idx = do
+        case total <= idx of
+          True -> return val
+          False -> do
+            (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
+            val' <- f b gf val'
+            loop total val' (idx + 1)
+
+forGridRows1_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRows1_ updateFcn colFcn fold f = do
   v <- use appianValue
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
   loop (gf ^. gfTotalCount) 0
@@ -326,6 +339,16 @@ sendUpdates1 msg fold = do
   newVal <- sendUpdates msg fold previousVal
   res <- deltaUpdate previousVal newVal
   assign appianValue res
+
+sendUpdates1' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m (Either ValidationsException ())
+sendUpdates1' msg fold = do
+  previousVal <- use appianValue
+  eNewVal <- sendUpdates' msg fold previousVal
+  case eNewVal of
+    Left ve -> return $ Left ve
+    Right newVal -> do
+      res <- deltaUpdate previousVal newVal
+      Right <$> assign appianValue res
 
 deltaUpdate :: (Monad m, MonadThrow m) => Value -> Value -> AppianT m Value
 deltaUpdate full delta =

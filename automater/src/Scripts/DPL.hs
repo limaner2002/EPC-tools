@@ -24,6 +24,15 @@ launchAction actionName = do
   pid <- handleMissing ("Could not find process model id for action '" <> actionName <> "'") v $ v ^? hasKeyValue "displayLabel" actionName . key "processModelId" . _JSON . to ProcessModelId
   actionEx pid
 
+data DPLOrg
+  = BEN
+  | SPIN
+  deriving (Show, Eq)
+
+instance IsString DPLOrg where
+  fromString "BEN" = BEN
+  fromString "SPIN" = SPIN
+
 data DPLType
   = DPLSelect
   | DPL1

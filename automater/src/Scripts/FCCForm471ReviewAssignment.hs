@@ -42,9 +42,13 @@ instance IsString PIAReviewerType where
   fromString "QA Heightened Scrutiny" = PIAQAHS
   fromString "USAC QA Reviewer" = PIAUsacQA
   fromString "USAC Heightened Scrutiny Reviewer" = PIAUsacHS
+  fromString str = error $ "Could not create PIAReviewerType from " <> show str
 
 instance Csv.FromField PIAReviewerType where
-  parseField = pure . fromString . unpack . decodeUtf8
+  parseField bs =
+    case readMay (decodeUtf8 bs) of
+      Nothing -> fail $ "Could not create PIAReviewerType from " <> show bs
+      Just v -> return v
 
 newtype BEN = BEN Int
   deriving (Show, Eq, Num)
@@ -72,8 +76,12 @@ instance Csv.FromNamedRecord Form471ReviewConf where
     <*> r Csv..: "ben"
     <*> r Csv..: "fy"
     <*> r Csv..: "revType"
-    <*> Csv.parseNamedRecord r
-    <*> Csv.parseNamedRecord r
+    <*> (Login <$> r Csv..: "mgrUsername"
+               <*> r Csv..: "mgrPassword"
+        )
+    <*> (Login <$> r Csv..: "revUsername"
+               <*> r Csv..: "revPassword"
+        )
 
 benToText :: BEN -> Text
 benToText (BEN n) = tshow n
@@ -95,7 +103,7 @@ form471Assign conf = do
                                                 )
 
 setAppNumSort :: GridField a -> GridField a
-setAppNumSort = gfSelection . traverse . failing _NonSelectable (_Selectable . gslPagingInfo) . pgISort .~ Just [SortField "applicationNumber" False]
+setAppNumSort = gfSelection . traverse . failing _NonSelectable (_Selectable . gslPagingInfo) . pgISort .~ Just [SortField "applicationNumber" True]
 
 gridSelection :: [Int] -> GridField a -> GridField a
 gridSelection idxs gf = gfSelection . traverse . _Selectable . gslSelected .~ idents $ gf

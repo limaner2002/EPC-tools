@@ -37,7 +37,7 @@ data AppianState = AppianState
 
 makeLenses ''AppianState
 
--- type Appian = AppianT (LoggingT ClientM)
+type Appian = AppianT (LoggingT ClientM)
 
 newtype AppianT (m :: * -> *) a = AppianT
   { unAppian :: StateT AppianState m a
@@ -74,3 +74,6 @@ instance ToHttpApiData Cookies where
 
 defUserAgent :: UserAgent
 defUserAgent = UserAgent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36"
+
+usesValue :: Monad m => (Value -> a) -> AppianT m a
+usesValue = uses appianValue

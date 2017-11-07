@@ -176,6 +176,13 @@ instance Show MissingItemException where
 
 instance Exception MissingItemException
 
+newtype ScriptException = ScriptException Text
+
+instance Show ScriptException where
+  show (ScriptException msg) = unpack msg
+
+instance Exception ScriptException
+
 run471Intake :: BaseUrl -> FilePath -> FilePath -> Int -> IO ()
 run471Intake baseUrl fpPrefix csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
@@ -192,13 +199,19 @@ run471Assign baseUrl csvInput n = do
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Assign conf) env (conf ^. confReviewMgr))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
-run471Review :: String -> FilePath -> Int -> Login -> IO ()
-run471Review hostUrl csvInput n reviewer = do
+run471Review :: String -> FilePath -> Int -> IO ()
+run471Review hostUrl csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Review conf) env reviewer)
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (f env)
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
+  where
+    f env conf = do
+      eRes <- fmap join $ tryAny $ liftIO $ runAppianT (form471Review conf) env (conf ^. confReviewer)
+      case eRes of
+        Left exc -> return $ Left $ toException $ ScriptException $ (conf ^. confFormNum . to tshow) <> ": " <> tshow exc <> "\n" <> (conf ^. confReviewer . username . to tshow)
+        Right _ -> return eRes
   
 -- run471Certify :: String -> FilePath -> Int -> Login -> IO ()
 -- run471Certify hostUrl csvInput n reviewer = do
