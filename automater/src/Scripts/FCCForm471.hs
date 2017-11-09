@@ -205,7 +205,7 @@ createFRN _ 0 _ val = return val
 createFRN conf n spin val = do
   logDebugN $ "Creating FRN with " <> tshow (n - 1) <> " to go."
   dates <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
-            >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 10)
+            >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
                                                <|> MonadicFold (to (buttonUpdate "No"))
                                                <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 3))
                                                <|> MonadicFold (to (buttonUpdate "Continue"))
@@ -281,6 +281,7 @@ selectFunction v =
     False -> sendUpdates "Select Type of Connection" (MonadicFold (to $ dropdownUpdate "Type of Internal Connection" 2)) v
       >>= sendUpdates "Select Type, Make, Model, and Continue" (MonadicFold (to $ dropdownUpdate "Type of Product" 2)
                                                                <|> dropdownArbitraryUpdateF "Make"
+							       <|> MonadicFold (textFieldArbitrary "Enter the Make" 255)
                                                                <|> MonadicFold (textFieldArbitrary "Model" 255)
                                                                <|> MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
                                                                <|> MonadicFold (to $ buttonUpdate "Continue")

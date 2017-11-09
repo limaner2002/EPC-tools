@@ -46,9 +46,13 @@ plotParser tz = plotSystem'
 readTime :: ReadM LocalTime
 readTime = do
   input <- readerAsk
-  case readMay input of
+  case parseTimeM True defaultTimeLocale "%Y-%m-%d %T %Z" input of
     Nothing -> readerError $ show input <> " does not appear to be a valid time. Please use the format 'YYYY-MM-DD HH:MM:SS TZ'"
     Just time -> return time
+  -- input <- readerAsk
+  -- case readMay input of
+  --   Nothing -> readerError $ show input <> " does not appear to be a valid time. Please use the format 'YYYY-MM-DD HH:MM:SS TZ'"
+  --   Just time -> return time
 
 readJMeter :: TimeZone -> ReadM LocalTime
 readJMeter tz = do
