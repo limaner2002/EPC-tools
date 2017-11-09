@@ -193,7 +193,7 @@ run471Intake baseUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr baseUrl
 
-  res <- runResourceT $ runNoLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Intake conf) env (conf ^. applicant))
+  res <- runResourceT $ runNoLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStdoutLoggingT (form471Intake conf) env (conf ^. applicant))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 run471Assign :: BaseUrl -> LogFilePath -> FilePath -> Int -> IO ()
