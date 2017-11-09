@@ -37,10 +37,10 @@ instance Csv.FromNamedRecord CertConf where
     <$> r Csv..: "formNum"
     <*> Csv.parseNamedRecord r
 
-form471Certification :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => Form471Num -> AppianT m Form471Num
-form471Certification formNum = do
+form471Certification :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => CertConf -> AppianT m Form471Num
+form471Certification conf = do
   tasksList <- tasksTab Nothing
-  taskId <- handleMissing ("Cannot find task for " <> tshow formNum) tasksList $ tasksList ^? hasKeyValueWith (reviewTask formNum) "content" . key "id" . _String . to (stripPrefix "t-") . traverse . to TaskId
+  taskId <- handleMissing ("Cannot find task for " <> tshow (conf ^. certFormNum)) tasksList $ tasksList ^? hasKeyValueWith (reviewTask conf) "content" . key "id" . _String . to (stripPrefix "t-") . traverse . to TaskId
   taskAccept taskId
   taskStatus taskId
     >>= sendUpdates "Check box and Continue to Certification" (selectAllCheckboxesUpdateF
@@ -55,8 +55,8 @@ form471Certification formNum = do
 parse471Number :: Parser Form471Num
 parse471Number = takeWhile (/= '#') *> take 1 *> (Form471Num <$> decimal)
 
-reviewTask :: Form471Num -> Text -> Bool
-reviewTask formNum t = either (const False) (== formNum) $ parsedNum
+reviewTask :: CertConf -> Text -> Bool
+reviewTask conf t = either (const False) (== conf ^. certFormNum) $ parsedNum
   where
     parsedNum = parseOnly parse471Number t
 

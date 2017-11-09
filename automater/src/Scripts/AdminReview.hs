@@ -22,15 +22,14 @@ import Scripts.ComadReview
 import Servant.Client
 import Control.Monad.Time
 
-fullReview :: ClientEnv -> ReviewUsers -> FullReviewConf -> IO (Either SomeException Value)
--- fullReview = error "Full Review is broken due to the backend re-write!"
-fullReview env revUsers fullReviewConf = do
+fullReview :: LogFilePath -> ClientEnv -> ReviewUsers -> FullReviewConf -> IO (Either SomeException Value)
+fullReview logFilePath env revUsers fullReviewConf = do
   let reviewManager = userReviewerManager revUsers
       initialReviewer = userInitialReviewer revUsers
       finalReviewer = userFinalReviewer revUsers
       solixReviewer = userSolixReviewer revUsers
       usacReviewer = userUsacReviewer revUsers
-      runIt act login = tryAny $ runAppianT act env login
+      runIt act login = tryAny $ runAppianT logFilePath act env login
       runItRetry action login = retryIt (login ^! act (runIt action) . to join)
       initial = initialReviewConf fullReviewConf
       final = finalReviewConf fullReviewConf
@@ -97,7 +96,7 @@ preprodAdminReviewUsers = ReviewUsers
   (Login "brian.kickey@solixinc.com" "EPCPassword123!")
   (Login "carolyn.mccornac@usac.org" "EPCPassword123!")
 
-adminReview env revUsers = fullReview env revUsers adminReviewConf
+adminReview logFilePath env revUsers = fullReview logFilePath env revUsers adminReviewConf
 
 adminReviewConf = FullReviewConf adminInitial2017 adminFinal2017 adminSolix2017 adminUsac2017
 
@@ -109,7 +108,7 @@ preprodSpinReviewUsers = ReviewUsers
   (Login "brian.kickey@solixinc.com" "EPCPassword123!")
   (Login "cjames@usac.org" "EPCPassword123!")
 
-spinReview env revUsers = fullReview env revUsers spinReviewConf
+spinReview logFilePath env revUsers = fullReview logFilePath env revUsers spinReviewConf
 
 spinReviewConf = FullReviewConf spinInitial2017 spinFinal2017 spinSolix2017 spinUsac2017
 
@@ -121,7 +120,7 @@ preprodForm486Users = ReviewUsers
   (Login "robin.reingold@sl.universalservice.org" "EPCPassword123!")
   (Login "avery.scott@sl.universalservice.org" "EPCPassword123!")
 
-form486Review env revUsers = fullReview env revUsers form486ReviewConf
+form486Review logFilePath env revUsers = fullReview logFilePath env revUsers form486ReviewConf
 
 form486ReviewConf = FullReviewConf form486Initial2017 form486Final2017 form486Solix2017 form486Usac2017 
 
@@ -133,11 +132,11 @@ preprodServSubUsers = ReviewUsers
   (Login "brian.kickey@solixinc.com" "EPCPassword123!")
   (Login "jwalsh@usac.org" "EPCPassword123!")
 
-servSubReview env revUsers = fullReview env revUsers servSubConf
+servSubReview logFilePath env revUsers = fullReview logFilePath env revUsers servSubConf
 
 servSubConf = FullReviewConf servSubInitial2017 servSubFinal2017 servSubSolix2017 servSubUsac2017
 
-appealReview env revUsers = fullReview env revUsers appealReviewConf
+appealReview logFilePath env revUsers = fullReview logFilePath env revUsers appealReviewConf
 
 appealReviewConf = FullReviewConf appealInitial2017 appealFinal2017 appealSolix2017 appealUsac2017
 
@@ -149,7 +148,7 @@ preprodForm500Users = ReviewUsers
   (Login "aisha.mahmood@sl.universalservice.org" "EPCPassword123!")
   (Login "banderson@usac.org" "EPCPassword123!")
 
-form500Review env revUsers = fullReview env revUsers form500ReviewConf
+form500Review logFilePath env revUsers = fullReview logFilePath env revUsers form500ReviewConf
 
 form500ReviewConf = FullReviewConf form500Initial2017 form500Final2017 form500Solix2017 form500Usac2017
 
@@ -169,6 +168,6 @@ test3ComadUsers = ReviewUsers
   (Login "solixqareviewer@mailinator.com" "USACuser123$")
   (Login "comadusacqareviewer@mailinator.com" "USACuser123$")
 
-comadReview env revUsers = fullReview env revUsers comadReviewConf
+comadReview logFilePath env revUsers = fullReview logFilePath env revUsers comadReviewConf
 
 comadReviewConf = FullReviewConf comadInitial2016 comadFinal2016 comadSolix2016 comadUsac2016

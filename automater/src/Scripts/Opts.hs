@@ -2,8 +2,9 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Scripts.Opts -- where
+module Scripts.Opts
   ( commandsInfo
   , runScript
   , Script (..)
@@ -17,6 +18,7 @@ import Options.Applicative.Types
 
 import Scripts.FCCForm471
 import Scripts.FCCForm471ReviewAssignment
+import Scripts.FCCForm471Certification
 import Scripts.CreateCSCase
 import Scripts.FCCForm486
 import Scripts.SPINChangeIntake
@@ -24,7 +26,7 @@ import Scripts.InitialReview
 import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
-import Appian.Client (runAppianT, cookieModifier)
+import Appian.Client (runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT')
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
 import Servant.Client
@@ -48,13 +50,13 @@ import Scripts.ProducerConsumer
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
 
-runScript :: Script -> BaseUrl -> String -> FilePath -> Int -> IO ()
+runScript :: Script -> BaseUrl -> String -> LogFilePath -> Int -> IO ()
 runScript (CSScript script) baseUrl username fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   password <- getPassword
   let login = Login (pack username) (pack password)
 
-  results <- mapConcurrently (const $ tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
+  results <- mapConcurrently (const $ tryAny $ runAppianT fp script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
 
   dispResults results
 -- runScript (Form471 script) baseUrl username fp nThreads = do
@@ -64,7 +66,7 @@ runScript (CSScript script) baseUrl username fp nThreads = do
 --   results <- mapConcurrently (\login -> tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ take nThreads logins
 --   dispResults results
 runScript (Form486 script userFile) baseUrl _ fp nThreads = do
-  stderrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
+  stderrLn $ intercalate " " [pack userFile, tshow baseUrl, tshow fp, tshow nThreads]
   stderrLn "\n********************************************************************************\n"
   stderrLn "Waiting for 2 mins. Does the above look correct?"
   threadDelay (120000000)
@@ -72,13 +74,13 @@ runScript (Form486 script userFile) baseUrl _ fp nThreads = do
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
   logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
 
-  results <- mapConcurrently (\login -> tryAny $ runAppianT (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
+  results <- mapConcurrently (\login -> tryAny $ runAppianT "/dev/null" (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
 
   dispResults results
 
-runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> FilePath -> IO ()
+runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> LogFilePath -> IO ()
 runSPINIntake script userFile nThreads baseUrl fp = do
-  stderrLn $ intercalate " " [pack userFile, tshow baseUrl, pack fp, tshow nThreads]
+  stderrLn $ intercalate " " [pack userFile, tshow baseUrl, tshow fp, tshow nThreads]
   stderrLn "\n********************************************************************************\n"
   stderrLn "Waiting for 2 mins. Does the above look correct?"
   threadDelay (120000000)
@@ -91,20 +93,20 @@ runSPINIntake script userFile nThreads baseUrl fp = do
   putStrLn "Finished with SPIN Change Intake!"
     where
       runIt mgr login = do
-        res <- tryAny $ runAppianT script (ClientEnv mgr baseUrl) login
+        res <- tryAny $ runAppianT (logFilePath "/tmp/spinIntake.log") script (ClientEnv mgr baseUrl) login
         print res
 
-runMultiple :: (FilePath -> Int -> IO ()) -> FilePath -> Int -> [Int] -> IO ()
+runMultiple :: (LogFilePath -> Int -> IO ()) -> LogFilePath -> Int -> [Int] -> IO ()
 runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip [1..nRuns] . repeat) nUserList
   where
     runScript (run, nUsers) = script logFp nUsers
       where
-        logFp = logFilePrefix <> suffix
+        logFp = logFilePrefix <> logFilePath suffix
         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
-runInitialReview :: BaseUrl -> String -> FilePath -> Int -> IO ()
+runInitialReview :: BaseUrl -> String -> LogFilePath -> Int -> IO ()
 runInitialReview baseUrl username fp nThreads = do
-  stderrLn $ intercalate " " [tshow baseUrl, pack fp, tshow nThreads]
+  stderrLn $ intercalate " " [tshow baseUrl, tshow fp, tshow nThreads]
   stderrLn "\n********************************************************************************\n"
   stderrLn "Waiting for 2 mins. Does the above look correct?"
   threadDelay (120000000)
@@ -115,24 +117,24 @@ runInitialReview baseUrl username fp nThreads = do
       login = Login (pack username) $ pack password
   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
 
-  results <- mapConcurrently (\f -> tryAny $ runAppianT f (ClientEnv mgr baseUrl) login) actions
+  results <- mapConcurrently (\f -> tryAny $ runAppianT fp f (ClientEnv mgr baseUrl) login) actions
 
   dispResults results
 
-runReview :: BaseUrl -> FilePath -> Int -> IO ()
-runReview baseUrl fp nThreads = do
-  stderrLn $ "Running review on " <> tshow baseUrl <> " for " <> tshow nThreads <> " threads."
-  mgr <- newManager tlsManagerSettings
-  results <- mapConcurrently (const $ dispatchReview RevSpinChange (ClientEnv mgr baseUrl)) [1..nThreads]
+-- runReview :: BaseUrl -> FilePath -> Int -> IO ()
+-- runReview baseUrl fp nThreads = do
+--   stderrLn $ "Running review on " <> tshow baseUrl <> " for " <> tshow nThreads <> " threads."
+--   mgr <- newManager tlsManagerSettings
+--   results <- mapConcurrently (const $ dispatchReview RevSpinChange (ClientEnv mgr baseUrl)) [1..nThreads]
 
-  dispResults results
+--   dispResults results
 
-runAdminIntake :: FilePath -> Int -> BaseUrl -> FilePath -> IO ()
+runAdminIntake :: FilePath -> Int -> BaseUrl -> LogFilePath -> IO ()
 runAdminIntake userFile nThreads baseUrl fp = runConsumer action baseUrl fp userFile nThreads
   where
     action login = adminIntake $ login ^. username . to AppianUsername
   
-runConsumer :: (Login -> Appian a) -> BaseUrl -> FilePath -> FilePath -> Int -> IO ()
+runConsumer :: (Login -> Appian a) -> BaseUrl -> LogFilePath -> FilePath -> Int -> IO ()
 runConsumer f baseUrl fp userFile nThreads = do
   chan <- atomically newTChan
   mgr <- liftIO $ newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
@@ -140,7 +142,7 @@ runConsumer f baseUrl fp userFile nThreads = do
   putStrLn "Done!"
     where
       runIt mgr login = do
-        res <- join <$> (tryAny $ runAppianT (f login) (ClientEnv mgr baseUrl) login)
+        res <- join <$> (tryAny $ runAppianT fp (f login) (ClientEnv mgr baseUrl) login)
         case res of
           Left exc -> print exc
           Right _ -> putStrLn "Success!"
@@ -152,11 +154,11 @@ instance Show UnsupportedReviewException where
 
 instance Exception UnsupportedReviewException
 
-dispatchReview :: ReviewType -> ClientEnv -> IO (Either SomeException Value)
-dispatchReview RevSpinChange env = spinReview env preprodSpinReviewUsers
-dispatchReview RevForm486 env = form486Review env preprodForm486Users
-dispatchReview RevServSub env = servSubReview env preprodServSubUsers
-dispatchReview typ _ = throwM $ UnsupportedReviewException $ tshow typ
+-- dispatchReview :: ReviewType -> ClientEnv -> IO (Either SomeException Value)
+-- dispatchReview RevSpinChange env = spinReview env preprodSpinReviewUsers
+-- dispatchReview RevForm486 env = form486Review env preprodForm486Users
+-- dispatchReview RevServSub env = servSubReview env preprodServSubUsers
+-- dispatchReview typ _ = throwM $ UnsupportedReviewException $ tshow typ
 
 loginConsumer :: MonadIO m => TChan (ThreadControl a) -> (a -> m ()) -> m ()
 loginConsumer chan f = S.mapM_ f $ S.map tcItem $ S.takeWhile notFinished $ S.repeatM (atomically $ readTChan chan)
@@ -183,24 +185,27 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: BaseUrl -> FilePath -> FilePath -> Int -> IO ()
-run471Intake baseUrl fpPrefix csvInput n = do
+newtype HostUrl = HostUrl String
+  deriving (Show, Eq, IsString)
+
+run471Intake :: BaseUrl -> LogFilePath -> FilePath -> Int -> IO ()
+run471Intake baseUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr baseUrl
 
-  res <- runResourceT $ runNoLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Intake conf) env (conf ^. applicant))
+  res <- runResourceT $ runNoLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Intake conf) env (conf ^. applicant))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
-run471Assign :: BaseUrl -> FilePath -> Int -> IO ()
-run471Assign baseUrl csvInput n = do
+run471Assign :: BaseUrl -> LogFilePath -> FilePath -> Int -> IO ()
+run471Assign baseUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr baseUrl
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Assign conf) env (conf ^. confReviewMgr))
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) env (conf ^. confReviewMgr))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
-run471Review :: String -> FilePath -> Int -> IO ()
-run471Review hostUrl csvInput n = do
+run471Review :: String -> LogFilePath -> FilePath -> Int -> IO ()
+run471Review hostUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
 
@@ -208,26 +213,26 @@ run471Review hostUrl csvInput n = do
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
   where
     f env conf = do
-      eRes <- fmap join $ tryAny $ liftIO $ runAppianT (form471Review conf) env (conf ^. confReviewer)
+      eRes <- fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Review conf) env (conf ^. confReviewer)
       case eRes of
         Left exc -> return $ Left $ toException $ ScriptException $ (conf ^. confFormNum . to tshow) <> ": " <> tshow exc <> "\n" <> (conf ^. confReviewer . username . to tshow)
         Right _ -> return eRes
   
--- run471Certify :: String -> FilePath -> Int -> Login -> IO ()
--- run471Certify hostUrl csvInput n reviewer = do
---   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
---   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+run471Certify :: HostUrl -> LogFilePath -> FilePath -> Int -> IO ()
+run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
+  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
 
---   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT (form471Certification conf) env (conf ^. applicant))
---   dispResults $ fmap (maybe (throwM MissingItemException) id) res
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) env (conf ^. certLogin))
+  dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
-run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> FilePath -> IO ()
+run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> LogFilePath -> IO ()
 run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
   where
     run486Intake (run, nUsers) = runScript (Form486 form486Intake userFp) baseUrl mempty logFp nUsers
       where
         userFp = fpPrefix <> suffix
-        logFp = logFilePrefix <> suffix
+        logFp = logFilePrefix <> logFilePath suffix
         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
@@ -275,11 +280,12 @@ scriptsParser = runScript
   (  long "username"
   <> short 'u'
   )
-  <*> strOption
-  (  long "log-file-path"
-  <> short 'l'
-  <> help "The path of the file to write the logs to."
-  )
+  <*> logFileParser
+  -- <*> strOption
+  -- (  long "log-file-path"
+  -- <> short 'l'
+  -- <> help "The path of the file to write the logs to."
+  -- )
   <*> option auto
   (  long "nThreads"
   <> short 'n'
@@ -392,20 +398,20 @@ initialReviewParser = runMultiple
   )
   <*> threadsParser
 
-reviewInfo :: ParserInfo (IO ())
-reviewInfo = info (helper <*> reviewParser)
-  (  fullDesc
-  <> progDesc "Runs PC review for 486, Service Substitution, SPIN Change, and Appeals."
-  )
+-- reviewInfo :: ParserInfo (IO ())
+-- reviewInfo = info (helper <*> reviewParser)
+--   (  fullDesc
+--   <> progDesc "Runs PC review for 486, Service Substitution, SPIN Change, and Appeals."
+--   )
 
-reviewParser :: Parser (IO ())
-reviewParser = runReview
-  <$> urlParser
-  <*> logFileParser
-  <*> option auto
-  (  long "num-threads"
-  <> short 't'
-  )
+-- reviewParser :: Parser (IO ())
+-- reviewParser = runReview
+--   <$> urlParser
+--   <*> logFileParser
+--   <*> option auto
+--   (  long "num-threads"
+--   <> short 't'
+--   )
 
 adminIntakeInfo :: ParserInfo (IO ())
 adminIntakeInfo = info (helper <*> adminIntakeParser)
@@ -434,8 +440,8 @@ parseManyR = parseMany >>= readMany
       Just y -> return y
       Nothing -> fail $ "Could not read " <> show x
 
-logFileParser :: Parser String
-logFileParser = strOption
+logFileParser :: Parser LogFilePath
+logFileParser = logFilePath <$> strOption
   (  long "log-file-path"
   <> short 'l'
   <> help "The path of the file to write the logs to."

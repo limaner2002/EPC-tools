@@ -21,6 +21,7 @@ library
                      , Scripts.FCCForm471
                      , Scripts.FCCForm471ReviewAssignment
                      , Scripts.FCCForm471Common
+                     , Scripts.FCCForm471Certification
                      , Scripts.Opts
                      , Scripts.CreateCSCase
                      , Scripts.Test

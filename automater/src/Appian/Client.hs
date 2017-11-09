@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Appian.Client
   ( module Appian.Client
@@ -267,8 +268,16 @@ forumClientEnv = do
     where
       settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
 
-runAppianT :: AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
-runAppianT f env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)
+newtype LogFilePath = LogFilePath FilePath
+  deriving (Show, IsString, Semigroup)
+
+logFilePath = LogFilePath
+
+runAppianT :: LogFilePath -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
+runAppianT (LogFilePath pth) = runAppianT' (runFileLoggingT pth)
+
+runAppianT' :: (LoggingT ClientM (a, AppianState) -> ClientM (a, AppianState)) -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
+runAppianT' runLogger f env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)
   where
     login' = execAppianT (login creds) (AppianState mempty Null)
     logout' (Right (_, cookies)) = do
@@ -276,7 +285,7 @@ runAppianT f env creds = bracket (runClientM' login') (runClientM' . logout') (r
       putStrLn "Successfully logged out!"
     logout' (Left err) = print err
     execFun (Right (_, cookies)) = do
-      (res, _) <- runStderrLoggingT $ execAppianT f cookies
+      (res, _) <- runLogger $ execAppianT f cookies
       return res
     execFun (Left err) = throwM err
     runClientM' act = do
