@@ -24,19 +24,19 @@ import Stats.Types
 import Stats.Fold
 import Sheets.Generic
 
-collectRuns :: (MonadResource m, MonadLogger m) => [FilePath] -> m Dict
+collectRuns :: (MonadResource m, MonadLogger m) => [CsvPath] -> m Dict
 collectRuns = foldM collectStats mempty
 
-collectStats :: (MonadLogger m, MonadResource m) => Dict -> FilePath -> m Dict
+collectStats :: (MonadLogger m, MonadResource m) => Dict -> CsvPath -> m Dict
 collectStats dict path = do
-  logDebugN $ "Reading raw data from file " <> pack path
+  logDebugN $ "Reading raw data from file " <> tshow path
   res <- csvStreamByName >>> streamFold (statFold dict) $ path
   return $ S.fst' res
 
-dispRuns :: (MonadResource m, MonadLogger m) => OutputMode -> [FilePath] -> m ()
+dispRuns :: (MonadResource m, MonadLogger m) => OutputMode -> [CsvPath] -> m ()
 dispRuns mode paths = do
   logInfoN "Reading raw data from .csv files"
-  let msg = "Gathering stats from:\n" <> intercalate "\n" (fmap pack paths)
+  let msg = "Gathering stats from:\n" <> intercalate "\n" (fmap tshow paths)
   logDebugN msg
   res <- collectRuns paths
   let rows = fmap (uncurry statToAggregateRow) $ sortOn (^. _2 . statTime) $ mapToList res
@@ -80,19 +80,19 @@ aggToRow agg = [ unpack (agg ^. aggLabel)
                , show (agg ^. aggErrorPct)
                ]
 
-mkAggSheet :: (MonadResource m, MonadLogger m) => Text -> FilePath -> m (Text, Worksheet)
+mkAggSheet :: (MonadResource m, MonadLogger m) => Text -> CsvPath -> m (Text, Worksheet)
 mkAggSheet name fp = do
-  logDebugN $ "Reading sheet " <> name <> " from file " <> pack fp
+  logDebugN $ "Reading sheet " <> name <> " from file " <> tshow fp
   ws <- csvStreamByName >>> S.map aggRow >>> streamFold wsRowFold $ fp
   return (name, S.fst' ws)
   where
     aggRow :: AggregateRow -> AggregateRow
     aggRow = id
 
-mkXlsx :: (MonadResource m, MonadLogger m) => S.Stream (S.Of (Text, FilePath)) m r -> m Xlsx
+mkXlsx :: (MonadResource m, MonadLogger m) => S.Stream (S.Of (Text, CsvPath)) m r -> m Xlsx
 mkXlsx = S.mapM (uncurry mkAggSheet) >>> streamFold (xlsxSheetFold def) >=> S.fst' >>> return
 
-mkAggXlsx :: (MonadResource m, MonadLogger m) => [(Text, FilePath)] -> FilePath -> m ()
+mkAggXlsx :: (MonadResource m, MonadLogger m) => [(Text, CsvPath)] -> FilePath -> m ()
 mkAggXlsx sheets outputPath = do
   ct <- liftBase getPOSIXTime
   logInfoN "Reading aggregate reports from .csv files"

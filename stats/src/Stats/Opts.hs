@@ -50,11 +50,12 @@ aggInfo = info (helper <*> aggParser)
 
 aggParser :: (MonadResource m, MonadLogger m) => Parser (m ())
 aggParser = mkAggXlsx
-  <$> option auto
-  (  long "reports"
-  <> short 'r'
-  <> help "The names of the reports to display as the resulting .xlsx sheet and the path to the .csv containing the aggregate report."
-  )
+  <$> ((fmap . fmap) (\(label, path) -> (label, fromString path)) $ option auto
+       (  long "reports"
+         <> short 'r'
+         <> help "The names of the reports to display as the resulting .xlsx sheet and the path to the .csv containing the aggregate report."
+       )
+      )
   <*> strOption
   (  long "output"
   <> short 'o'
@@ -83,7 +84,7 @@ dispRunsGlob mode pathGlob = do
   logDebugN $ "pathGlob: " <> tshow pathGlob
 
   paths <- liftBase $ namesMatching pathGlob
-  dispRuns mode paths
+  dispRuns mode $ fmap fromString paths
 
 readLevel :: ReadM LogLevel
 readLevel = do

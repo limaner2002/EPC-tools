@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Stats.CsvStream where
 
@@ -13,8 +14,11 @@ import Control.Monad.Trans.Resource
 import qualified Data.ByteString.Lazy as BL
 import Control.Monad.Logger
 
-csvStream :: (MonadResource m, FromRecord a) => HasHeader -> FilePath -> S.Stream (S.Of a) m ()
-csvStream hasHeader path = do
+newtype CsvPath = CsvPath FilePath
+  deriving (Show, Eq, IsString)
+
+csvStream :: (MonadResource m, FromRecord a) => HasHeader -> CsvPath -> S.Stream (S.Of a) m ()
+csvStream hasHeader (CsvPath path) = do
   ct <- BSS.readFile >>> BSS.toLazy $ path
   S.unfoldr (unfoldRecords hasHeader) $ decode hasHeader $ S.fst' ct
 
@@ -27,8 +31,8 @@ unfoldRecords hasHeader recs = loop recs
       | onull rest = return $ Left ()
       | otherwise = loop $ decode hasHeader rest
 
-csvStreamByName :: (MonadResource m, FromNamedRecord a, MonadLogger m) => FilePath -> S.Stream (S.Of a) m String
-csvStreamByName path = do
+csvStreamByName :: (MonadResource m, FromNamedRecord a, MonadLogger m) => CsvPath -> S.Stream (S.Of a) m String
+csvStreamByName (CsvPath path) = do
   ct <- BSS.readFile >>> BSS.toLazy $ path
   S.unfoldr unfoldRecordsByName $ decodeByName $ S.fst' ct
 

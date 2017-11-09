@@ -273,8 +273,14 @@ newtype LogFilePath = LogFilePath FilePath
 
 logFilePath = LogFilePath
 
-runAppianT :: LogFilePath -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
-runAppianT (LogFilePath pth) = runAppianT' (runFileLoggingT pth)
+data LogMode
+  = LogStdout
+  | LogFile LogFilePath
+  deriving Show
+
+runAppianT :: LogMode -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
+runAppianT (LogFile (LogFilePath pth)) = runAppianT' (runFileLoggingT pth)
+runAppianT LogStdout = runAppianT' runStdoutLoggingT
 
 runAppianT' :: (LoggingT ClientM (a, AppianState) -> ClientM (a, AppianState)) -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
 runAppianT' runLogger f env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)
