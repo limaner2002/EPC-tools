@@ -47,7 +47,8 @@ type ReportsTab = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> "repo
 type TasksTab = "suite" :> "api" :> "feed" :> "tempo" :> QueryParam "m" Text :> QueryParam "t" Text :> QueryParam "s" Text
                 :> QueryParam "defaultFacets" Text :> QueryParam "b" UTCTime :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
 
-type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> Capture "recordId" RecordId :> "view" :> "all" :> Get '[AppianApplication] Value
+type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> Capture "recordId" RecordId :> "view" :> "all"
+  :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Get '[AppianTVUI] Value
 
 type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Get '[InlineSail] Value
 
@@ -112,6 +113,11 @@ recordsTab = logDebugN "Viewing records tab now!" >> recordsTab_ (Just defUserAg
   where
     recordsTab_ = toClient Proxy (Proxy :: Proxy RecordsTab)
 
+recordsTab' :: (RunClient m, MonadLogger m) => AppianT m ()
+recordsTab' = do
+  v <- recordsTab
+  assign appianValue v
+
 reportsTab :: RunClient m => AppianT m Value
 reportsTab = toClient Proxy (Proxy :: Proxy ReportsTab)
 
@@ -126,7 +132,7 @@ tasksTab mUtcTime = do
     tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
 
 viewRecord :: RunClient m => RecordId -> AppianT m Value
-viewRecord rid = viewRecord_ rid
+viewRecord rid = viewRecord_ rid (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO")
   where
     viewRecord_ = toClient Proxy (Proxy :: Proxy ViewRecord)
 
@@ -507,7 +513,6 @@ validationsExc :: Functor f => (([Text], Value, UiConfig (SaveRequestList Update
 validationsExc = lens _validationsExc f
   where
     f exc tpl = exc { _validationsExc = tpl }
--- makeLenses ''ValidationsException
 
 instance Show ValidationsException where
   show (ValidationsException validations) = "ValidationsException: \n" <> intercalate "\n" (fmap unpack $ validations ^. _1)
