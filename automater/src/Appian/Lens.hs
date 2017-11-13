@@ -47,6 +47,21 @@ getButtonWith f = deep (filtered (has $ runFold ((,) <$> Fold (key "confirmButto
 getDropdown :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (DropdownField -> f DropdownField) -> s -> f s
 getDropdown = hasTypeAndLabel "DropdownField"
 
+getDropdown' :: (Contravariant f, Applicative f) => Text -> (Result DropdownField -> f (Result DropdownField)) -> Value -> f Value
+getDropdown' label = deep (getComponentWith (\v -> isDropdown v && hasLabel' label v))
+
+getDropdownWith :: (Contravariant f, Applicative f) => (Value -> Bool) -> (Result DropdownField -> f (Result DropdownField)) -> Value -> f Value
+getDropdownWith = getComponentWith
+
+isDropdown :: Value -> Bool
+isDropdown = anyOf (key "#t" . _String) (\t -> t == "DropdownField" || t == "DropdownWidget")
+
+hasLabel' :: Text -> Value -> Bool
+hasLabel' label v = has (key "label" . _String . only label) v || has (key "inlineLabel" . _String . only label) v
+
+getComponentWith :: (Contravariant f, Applicative f, FromJSON a) => (Value -> Bool) -> (Result a -> f (Result a)) -> Value -> f Value
+getComponentWith pred = filtered pred . to fromJSON
+
 getTextField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (TextField -> f TextField) -> s -> f s
 getTextField = hasLabel
 
