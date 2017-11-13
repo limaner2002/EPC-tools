@@ -80,23 +80,23 @@ runScript (Form486 script userFile) baseUrl _ fp nThreads = do
 
   dispResults results
 
-runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> LogMode -> IO ()
-runSPINIntake script userFile nThreads baseUrl fp = do
-  stderrLn $ intercalate " " [pack userFile, tshow baseUrl, tshow fp, tshow nThreads]
-  stderrLn "\n********************************************************************************\n"
-  stderrLn "Waiting for 2 mins. Does the above look correct?"
-  threadDelay (120000000)
-  stderrLn "Starting SPIN Change intake now!"
-  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
-  chan <- newTChanIO
+-- runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> LogMode -> IO ()
+-- runSPINIntake script userFile nThreads baseUrl fp = do
+--   stderrLn $ intercalate " " [pack userFile, tshow baseUrl, tshow fp, tshow nThreads]
+--   stderrLn "\n********************************************************************************\n"
+--   stderrLn "Waiting for 2 mins. Does the above look correct?"
+--   threadDelay (120000000)
+--   stderrLn "Starting SPIN Change intake now!"
+--   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+--   chan <- newTChanIO
 
-  results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
+--   results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
 
-  putStrLn "Finished with SPIN Change Intake!"
-    where
-      runIt mgr login = do
-        res <- tryAny $ runAppianT (LogFile "/tmp/spinIntake.log") script (ClientEnv mgr baseUrl) login
-        print res
+--   putStrLn "Finished with SPIN Change Intake!"
+--     where
+--       runIt mgr login = do
+--         res <- tryAny $ runAppianT (LogFile "/tmp/spinIntake.log") script (ClientEnv mgr baseUrl) login
+--         print res
 
 runMultiple :: (LogMode -> Int -> IO ()) -> LogFilePath -> Int -> [Int] -> IO ()
 runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip [1..nRuns] . repeat) nUserList
@@ -237,6 +237,17 @@ run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run48
         logFp = logFilePrefix <> logFilePath suffix
         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
+runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> HostUrl -> LogMode -> CsvPath -> Int -> IO ()
+runIt f (HostUrl hostUrl) logMode csvInput n = do
+  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\a -> fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) env (getLogin a))
+  dispResults $ fmap (maybe (throwM MissingItemException) id) res
+
+runSPINIntake :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
+runSPINIntake = runIt spinChangeIntake
+
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
 setTimeout timeout settings = settings { managerResponseTimeout = timeout }
 
@@ -376,14 +387,17 @@ spinChangeInfo = info (helper <*> spinChangeParser)
   )
 
 spinChangeParser :: Parser (IO ())
-spinChangeParser = runSPINIntake spinChangeIntake
-  <$> userParser
-  <*> option auto
-  (  long "num-threads"
-  <> short 't'
-  )
-  <*> urlParser
+spinChangeParser = runSPINIntake
+  <$> (HostUrl <$> strOption
+  (  long "host-url"
+  <> help "The url of the host to use."
+  ))
   <*> logModeParser
+  <*> csvConfParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
 
 initialReviewInfo :: ParserInfo (IO ())
 initialReviewInfo = info (helper <*> initialReviewParser)

@@ -132,19 +132,18 @@ data ReviewType
   | RevSpinChange
   | RevServSub
   | RevAdminCorrection
-  | RevInvalid Text
   deriving (Show, Eq, Read)
 
-instance IsString ReviewType where
-  fromString "-- Select a Review Type --" = RevSelect
-  fromString "Appeals" = RevAppeals
-  fromString "FCC Form 486/CIPA" = RevForm486
-  fromString "COMAD" = RevCOMAD
-  fromString "FCC Form 500" = RevForm500
-  fromString "SPIN Change" = RevSpinChange
-  fromString "Service Substitution" = RevServSub
-  fromString "Administrative Correction" = RevAdminCorrection
-  fromString s = RevInvalid $ pack s
+instance Parseable ReviewType where
+  parseElement "-- Select a Review Type --" = pure RevSelect
+  parseElement "Appeals" = pure RevAppeals
+  parseElement "FCC Form 486/CIPA" = pure RevForm486
+  parseElement "COMAD" = pure RevCOMAD
+  parseElement "FCC Form 500" = pure RevForm500
+  parseElement "SPIN Change" = pure RevSpinChange
+  parseElement "Service Substitution" = pure RevServSub
+  parseElement "Administrative Correction" = pure RevAdminCorrection
+  parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Review Type."
 
 data ReviewerType
   = ReviewerSelect
@@ -154,18 +153,17 @@ data ReviewerType
   | RevUsac
   | RevHSInit
   | RevHSFinal
-  | ReviewerInvalid Text
   deriving (Show, Eq, Read)
 
-instance IsString ReviewerType where
-  fromString "-- Select a Reviewer Type --" = ReviewerSelect
-  fromString "Initial Review" = RevInitial
-  fromString "Final Review" = RevFinal
-  fromString "Solix QA Review" = RevSolix
-  fromString "USAC QA Review" = RevUsac
-  fromString "Heightened Scrutiny Initial Review" = RevHSInit
-  fromString "Heightened Scrutiny Final Review" = RevHSFinal
-  fromString s = ReviewerInvalid $ pack s
+instance Parseable ReviewerType where
+  parseElement "-- Select a Reviewer Type --" = pure ReviewerSelect
+  parseElement "Initial Review" = pure RevInitial
+  parseElement "Final Review" = pure RevFinal
+  parseElement "Solix QA Review" = pure RevSolix
+  parseElement "USAC QA Review" = pure RevUsac
+  parseElement "Heightened Scrutiny Initial Review" = pure RevHSInit
+  parseElement "Heightened Scrutiny Final Review" = pure RevHSFinal
+  parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Reviewer Type."
 
 data ReviewConf = ReviewConf
   { revTaskVar :: TVar DistributeTask

@@ -33,16 +33,16 @@ data PIAReviewerType
   | PIAUsacHS
   deriving (Show, Eq, Read)
 
-instance IsString PIAReviewerType where
-  fromString "PIA Initial Reviewer" = PIAInitial
-  fromString "Heightened Scrutiny Initial Reviewer" = PIAHSInitial
-  fromString "PIA Final Reviewer" = PIAFinal
-  fromString "QA Reviewer" = PIAQA
-  fromString "Heightened Scrutiny Final Reviewer" = PIAHSFinal
-  fromString "QA Heightened Scrutiny" = PIAQAHS
-  fromString "USAC QA Reviewer" = PIAUsacQA
-  fromString "USAC Heightened Scrutiny Reviewer" = PIAUsacHS
-  fromString str = error $ "Could not create PIAReviewerType from " <> show str
+instance Parseable PIAReviewerType where
+  parseElement "PIA Initial Reviewer" = pure PIAInitial
+  parseElement "Heightened Scrutiny Initial Reviewer" = pure PIAHSInitial
+  parseElement "PIA Final Reviewer" = pure PIAFinal
+  parseElement "QA Reviewer" = pure PIAQA
+  parseElement "Heightened Scrutiny Final Reviewer" = pure PIAHSFinal
+  parseElement "QA Heightened Scrutiny" = pure PIAQAHS
+  parseElement "USAC QA Reviewer" = pure PIAUsacQA
+  parseElement "USAC Heightened Scrutiny Reviewer" = pure PIAUsacHS
+  parseElement str = throwM $ ParseException $ tshow str <> " is not a recognized PIA Reviewer Type."
 
 instance Csv.FromField PIAReviewerType where
   parseField bs =
@@ -57,7 +57,10 @@ instance Csv.FromField BEN where
   parseField bs = BEN <$> Csv.parseField bs
 
 instance Csv.FromField FundingYear where
-  parseField = pure . fromString . unpack . decodeUtf8
+  parseField bs = do
+    case parseElement $ decodeUtf8 bs of
+      Left msg -> fail $ show msg
+      Right val -> return val
 
 data Form471ReviewConf = Form471ReviewConf
   { _confFormNum :: Form471Num

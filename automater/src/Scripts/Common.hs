@@ -297,24 +297,41 @@ selectGridfieldUpdateF ident gf = MonadicFold (failing (to (const (selectCheckbo
 selectCheckbox :: GridFieldIdent -> GridField a -> GridField a
 selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]
 
-dropdownUpdate' :: (AsJSON t, AsValue t, Plated t, IsString s, Eq s, Contravariant f, Applicative f)
-                => Text -> s -> Over (->) f t t (Either Text Update) (Either Text Update)
-dropdownUpdate' label s = failing mkUpdate err
-  where
-    fetchSet = getDropdown label . to (dropdownSelect s) . traverse
-    mkUpdate = fetchSet . to toUpdate . to Right
-    err = to $ const $ Left "Could not set dropdown!"
+class Parseable a where
+  parseElement :: MonadThrow m => Text -> m a
 
-dropdownUpdateF' :: (Eq t, IsString t, Plated s, AsValue s, AsJSON s) =>
-                    Text -> t -> ReifiedMonadicFold m s (Either Text Update)
+-- dropdownUpdate' :: (AsJSON t, AsValue t, Plated t, Parseable s, Eq s, Contravariant f, Applicative f)
+--                 => Text -> s -> Over (->) f t t (Either Text Update) (Either Text Update)
+-- dropdownUpdate' label s = failing mkUpdate err
+--   where
+--     fetchSet = getDropdown label . to (dropdownSelect s) . traverse
+--     mkUpdate = fetchSet . to toUpdate . to Right
+--     err = to $ const $ Left "Could not set dropdown!"
+
+dropdownUpdate' :: (Applicative f, Eq a, Parseable a,
+                    Contravariant f, Plated b, Data.Aeson.Lens.AsValue b, AsJSON b
+                   ) => Text -> a -> (Either Text Update -> f (Either Text Update)) -> b -> f b
+dropdownUpdate' label a = getDropdown label . to (dropdownSelect a) . to (bimap tshow toUpdate)
+
+dropdownUpdateF' :: (Eq a, Parseable a, Plated s, AsValue s, AsJSON s) =>
+                    Text -> a -> ReifiedMonadicFold m s (Either Text Update)
 dropdownUpdateF' label s = MonadicFold $ dropdownUpdate' label s
 
-dropdownIndex :: (IsString s, Eq s) => s -> DropdownField -> Maybe Int
-dropdownIndex s df = df ^? dfChoices . itraversed . to (fromString . unpack) . ifiltered filter . withIndex . _1 . to (+1)
-  where
-    filter _ v = v == s
+newtype ParseException = ParseException Text
+  deriving Show
 
-dropdownSelect :: (IsString s, Eq s) => s -> DropdownField -> Maybe DropdownField
+instance Exception ParseException
+
+dropdownIndex :: (Parseable s, Eq s, MonadThrow m) => s -> DropdownField -> m Int
+dropdownIndex s df = do
+  let filter _ v = v == s
+
+  mRes <- df ^!? dfChoices . itraversed . act parseElement . ifiltered filter . withIndex . _1 . to (+1)
+  case mRes of
+    Nothing -> throwM $ ParseException $ "Could not find the desired value in the list of choices!"
+    Just idx -> return idx
+
+dropdownSelect :: (Parseable s, Eq s, MonadThrow m) => s -> DropdownField -> m DropdownField
 dropdownSelect s df = do
   idx <- dropdownIndex s df
   return $ dfValue .~ idx $ df
@@ -324,14 +341,13 @@ data FundingYear
   | FY2016
   | FY2017
   | FY2018
-  | FYInvalid Text
   deriving (Show, Eq, Read)
 
-instance IsString FundingYear where
-  fromString "-- Select a Funding Year --" = FYSelect
-  fromString "2016" = FY2016
-  fromString "2017" = FY2017
-  fromString s = FYInvalid $ pack s
+instance Parseable FundingYear where
+  parseElement "-- Select a Funding Year --" = pure FYSelect
+  parseElement "2016" = pure FY2016
+  parseElement "2017" = pure FY2017
+  parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Funding Year."
 
 sendUpdates1 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
 sendUpdates1 msg fold = do
@@ -365,3 +381,6 @@ updateComponent :: Value -> Value -> Maybe Value
 updateComponent fullResp componentVal = do
   cid <- componentVal ^? key "_cId" . _String
   return $ (hasKeyValue "_cId" cid .~ componentVal) fullResp
+
+class HasLogin a where
+  getLogin :: a -> Login

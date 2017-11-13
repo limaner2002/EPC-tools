@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Scripts.SPINChangeIntake where
 
@@ -18,9 +19,44 @@ import Scripts.Test
 import Scripts.Common
 import qualified Data.Foldable as F
 import Control.Monad.Time
+import qualified Data.Csv as Csv
 
-spinChangeIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianT m (Maybe Text)
-spinChangeIntake = do
+data SpinChangeType
+  = SpinChangeBulk
+  | SpinChangeGlobal
+  | SpinChange
+  | SpinChangeSRC
+  deriving (Show, Read, Eq)
+
+instance Parseable SpinChangeType where
+  parseElement "Bulk SPIN" = return SpinChangeBulk
+  parseElement "Global SPIN" = return SpinChangeGlobal
+  parseElement "SRC SPIN" = return SpinChangeSRC
+  parseElement "SPIN Change" = return SpinChange
+  parseElement txt = throwM $ ParseException $ tshow txt <> " is not a recognized SPIN Change Type."
+
+data SpinChangeConfig = SpinChangeConfig
+  { _spinChangeType :: SpinChangeType
+  , _spinChangeCreator :: Login
+  } deriving Show
+
+makeLenses ''SpinChangeConfig
+
+instance Csv.FromNamedRecord SpinChangeConfig where
+  parseNamedRecord r = SpinChangeConfig
+    <$> r Csv..: "spinChangeType"
+    <*> Csv.parseNamedRecord r
+
+instance Csv.FromField SpinChangeType where
+  parseField bs = case parseElement (decodeUtf8 bs) of
+    Left err -> fail $ show err
+    Right v -> return v
+
+instance HasLogin SpinChangeConfig where
+  getLogin conf = conf ^. spinChangeCreator
+
+spinChangeIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => SpinChangeConfig -> AppianT m (Maybe Text)
+spinChangeIntake conf = do
   let un = Identifiers [AppianUsername "kyle.davie@fwisd.org"]
 
   v <- myLandingPageAction "SPIN Change"
@@ -32,8 +68,8 @@ spinChangeIntake = do
                                                 ) v
 
   sendUpdates "Nickname & SPIN Change Type" (MonadicFold (textFieldArbitrary "Nickname" 255)
-                          <|> MonadicFold (to (dropdownUpdate "SPIN Change Type" 2))
-                          ) v'
+                                             <|> dropdownUpdateF' "SPIN Change Type" (conf ^. spinChangeType)
+                                            ) v'
     >>= sendUpdates' "Funding Year & Main Contact & Continue" (MonadicFold (to (dropdownUpdate "Funding Year" 2))
                                                                <|> MonadicFold (to (pickerUpdate "Main Contact Person" un))
                                                                <|> MonadicFold (to (buttonUpdate "Continue"))
