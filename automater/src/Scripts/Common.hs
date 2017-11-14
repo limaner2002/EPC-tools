@@ -366,21 +366,5 @@ sendUpdates1' msg fold = do
       res <- deltaUpdate previousVal newVal
       Right <$> assign appianValue res
 
-deltaUpdate :: (Monad m, MonadThrow m) => Value -> Value -> AppianT m Value
-deltaUpdate full delta =
-    case has (key "ui" . key "#t" . _String . only "UiComponentsDelta") delta of
-      False -> return $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack)  delta
-      True -> handleMissing "Bad update delta?" full $ handleDelta full $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack) delta
-
-handleDelta :: Value -> Value -> Maybe Value
-handleDelta fullResp delta = do
-  let comps = delta ^.. key "ui" . key "modifiedComponents" . plate
-  foldlM updateComponent fullResp comps
-
-updateComponent :: Value -> Value -> Maybe Value
-updateComponent fullResp componentVal = do
-  cid <- componentVal ^? key "_cId" . _String
-  return $ (hasKeyValue "_cId" cid .~ componentVal) fullResp
-
 class HasLogin a where
   getLogin :: a -> Login

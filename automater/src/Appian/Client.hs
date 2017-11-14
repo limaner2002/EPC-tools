@@ -33,6 +33,7 @@ import Data.Aeson.Lens
 import Data.Time (diffUTCTime, NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Time
+import Data.ByteString (appendFile)
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
@@ -49,6 +50,9 @@ type TasksTab = "suite" :> "api" :> "feed" :> "tempo" :> QueryParam "m" Text :> 
 
 type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> Capture "recordId" RecordId :> "view" :> "all"
   :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Get '[AppianTVUI] Value
+
+type RecordUpdate update = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> ReqBody '[AppianTV] (UiConfig update)
+  :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 
 type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Get '[InlineSail] Value
 
@@ -136,6 +140,23 @@ viewRecord rid = viewRecord_ rid (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8
   where
     viewRecord_ = toClient Proxy (Proxy :: Proxy ViewRecord)
 
+recordUpdate :: (RunClient m, ToJSON update) => UiConfig update -> AppianT m Value
+recordUpdate upd = do
+  cj <- use appianCookies
+  recordUpdate_ upd (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  where
+    recordUpdate_ = toClient Proxy (Proxy :: Proxy (RecordUpdate update))
+
+sendRecordUpdates :: (RunClient m, MonadThrow m, MonadCatch m, MonadTime m, MonadLogger m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendRecordUpdates msg fold = do
+  previousVal <- use appianValue
+  eVal <- sendUpdates_ recordUpdate msg fold previousVal
+  case eVal of
+    Left v -> throwM v
+    Right newVal -> do
+      res <- deltaUpdate previousVal newVal
+      assign appianValue res
+
 editReport :: RunClient m => ReportId -> AppianT m Value
 editReport rid = do
   cj <- use appianCookies
@@ -220,7 +241,32 @@ test3ClientEnvDbg = do
   mgr <- C.newManager settings
   return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
     where
-      reqLoggerFunc req = print req >> return req
+      reqLoggerFunc req = do
+        print req
+        let rb (C.RequestBodyBS bs) = bs
+        appendFile "/tmp/req.json" $ rb $ C.requestBody req
+        return req
+      settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
+                                        , C.managerModifyResponse = respLoggerFunc
+                                        }
+      respLoggerFunc resp = do
+        print (C.responseStatus resp)
+        print (C.responseHeaders resp)
+        print (C.responseCookieJar resp)
+        cookieModifier resp
+
+preprodClientEnvDbg = do
+  mgr <- C.newManager settings
+  return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
+    where
+      reqLoggerFunc req = do
+        print req
+        let rb (C.RequestBodyLBS bs) = "\n\n--- begin request ---\n\n" <> toStrict bs <> "\n\n--- end request ---\n\n"
+            rb (C.RequestBodyBS bs) = "\n\n--- begin request ---\n\n" <> bs <> "\n\n--- end request ---\n\n"
+            rb _ = error "I did not code for this type of request body"
+        appendFile "/tmp/req.json" $ rb $ C.requestBody req
+        return req
+
       settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
                                         , C.managerModifyResponse = respLoggerFunc
                                         }
@@ -432,6 +478,22 @@ sendUpdates' label f v = do
   taskId <- getTaskId v
   sendUpdates_ (taskUpdate taskId) label f v
 
+deltaUpdate :: (Monad m, MonadThrow m) => Value -> Value -> AppianT m Value
+deltaUpdate full delta =
+    case has (key "ui" . key "#t" . _String . only "UiComponentsDelta") delta of
+      False -> return $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack)  delta
+      True -> handleMissing "Bad update delta?" full $ handleDelta full $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack) delta
+
+handleDelta :: Value -> Value -> Maybe Value
+handleDelta fullResp delta = do
+  let comps = delta ^.. key "ui" . key "modifiedComponents" . plate
+  foldlM updateComponent fullResp comps
+
+updateComponent :: Value -> Value -> Maybe Value
+updateComponent fullResp componentVal = do
+  cid <- componentVal ^? key "_cId" . _String
+  return $ (hasKeyValue "_cId" cid .~ componentVal) fullResp
+
     -- Utility functions
 
 getTaskId :: MonadThrow m => Value -> AppianT m TaskId
@@ -532,4 +594,3 @@ instance Show ClientException where
   show (ClientException exc) = "ClientException: " <> show (exc)
 
 instance Exception ClientException
-

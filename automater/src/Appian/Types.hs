@@ -215,6 +215,15 @@ data UiConfig a = UiConfig
   { _uiContext :: AppianString
   , _uiUuid :: Text
   , _uiUpdates :: Maybe a
+  , _uiIdentifier :: Maybe Identifier
+  } deriving Show
+
+data Identifier = Identifier
+  { _idfUrlStub :: Text
+  , _idfSiteUrlStub :: Text
+  , _idfPageUrlStub :: Text
+  , _idfView :: Text
+  , _idfViewData :: Text
   } deriving Show
 
 data TextField = TextField
@@ -392,6 +401,8 @@ newtype Dashboard = Dashboard
   { _dsbVal :: Text
   } deriving (Show, Eq)
 
+ 
+
 makeLenses ''DropdownField
 makeLenses ''CheckboxGroup
 makeLenses ''ButtonWidget
@@ -418,6 +429,7 @@ makeLenses ''ImageCell
 makeLenses ''CollaborationDocument
 makeLenses ''CheckboxField
 makeLenses ''GridFieldColumn
+makeLenses ''Identifier
 
 makePrisms ''GridFieldCell
 makePrisms ''GridValue
@@ -697,11 +709,22 @@ instance FromJSON Update where
   parseJSON _ = fail "Could not parse Update"
 
 instance ToJSON a => ToJSON (UiConfig a) where
-  toJSON ui = object
+  toJSON ui = object (
     [ "context" .= (ui ^. uiContext)
     , "uuid" .= (ui ^. uiUuid)
     , ("#t", "UiConfig")
     , "updates" .= (ui ^. uiUpdates)
+    ] <> maybe mempty (\ident -> ["identifier" .= ident]) (ui ^. uiIdentifier)
+    )
+
+instance ToJSON Identifier where
+  toJSON ident = object
+    [ "urlStub" .= (ident ^. idfUrlStub)
+    , "siteUrlStub" .= (ident ^. idfSiteUrlStub)
+    , "pageUrlStub" .= (ident ^. idfPageUrlStub)
+    , "view" .= (ident ^. idfView)
+    , "viewData" .= (ident ^. idfViewData)
+    , ("#t", "RecordInstanceListIdentifier")
     ]
 
 instance ToJSON ImageCell where
@@ -738,7 +761,18 @@ instance FromJSON a => FromJSON (UiConfig a) where
         <$> o .: "context"
         <*> o .: "uuid"
         <*> o .:? "updates"
+        <*> o .:? "identifier"
   parseJSON _ = fail "Could not parse UiConfig"
+
+instance FromJSON Identifier where
+  parseJSON val@(Object o) = parseAppianType "RecordInstanceListIdentifier" mkIdent val
+    where
+      mkIdent = Identifier
+        <$> o .: "urlStub"
+        <*> o .: "siteUrlStub"
+        <*> o .: "pageUrlStub"
+        <*> o .: "view"
+        <*> o .: "viewData"
 
 instance FromJSON TextField where
   parseJSON val@(Object o) = parseAppianTypeWith "TextField" (\t -> isSuffixOf "TextField" t || isSuffixOf "TextWidget" t) mkField val
