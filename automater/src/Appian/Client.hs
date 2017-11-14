@@ -33,7 +33,6 @@ import Data.Aeson.Lens
 import Data.Time (diffUTCTime, NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Time
-import Data.ByteString (appendFile)
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
@@ -239,15 +238,15 @@ actionEx pid = do
     where
       actionEx_ = toClient Proxy (Proxy :: Proxy ActionEx)
 
-test3ClientEnvDbg = do
+newtype HostUrl = HostUrl String
+  deriving (Show, Eq, IsString)
+
+clientEnvDbgWith :: (C.Request -> IO C.Request) -> HostUrl -> IO ClientEnv
+clientEnvDbgWith f (HostUrl url) = do
   mgr <- C.newManager settings
   return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
     where
-      reqLoggerFunc req = do
-        print req
-        let rb (C.RequestBodyBS bs) = bs
-        appendFile "/tmp/req.json" $ rb $ C.requestBody req
-        return req
+      reqLoggerFunc req = f req
       settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
                                         , C.managerModifyResponse = respLoggerFunc
                                         }
@@ -257,26 +256,8 @@ test3ClientEnvDbg = do
         print (C.responseCookieJar resp)
         cookieModifier resp
 
-preprodClientEnvDbg = do
-  mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
-    where
-      reqLoggerFunc req = do
-        print req
-        let rb (C.RequestBodyLBS bs) = "\n\n--- begin request ---\n\n" <> toStrict bs <> "\n\n--- end request ---\n\n"
-            rb (C.RequestBodyBS bs) = "\n\n--- begin request ---\n\n" <> bs <> "\n\n--- end request ---\n\n"
-            rb _ = error "I did not code for this type of request body"
-        appendFile "/tmp/req.json" $ rb $ C.requestBody req
-        return req
-
-      settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc
-                                        , C.managerModifyResponse = respLoggerFunc
-                                        }
-      respLoggerFunc resp = do
-        print (C.responseStatus resp)
-        print (C.responseHeaders resp)
-        print (C.responseCookieJar resp)
-        cookieModifier resp
+clientEnvDbg :: HostUrl -> IO ClientEnv
+clientEnvDbg = clientEnvDbgWith (\req -> print req >> return req)
 
 cookieModifier :: C.Response C.BodyReader -> IO (C.Response C.BodyReader)
 cookieModifier resp = do
@@ -292,33 +273,9 @@ getMultipartTok = to C.destroyCookieJar . traverse . filtered filterFcn . runFol
       || C.cookie_name c == "JSESSIONID"
       || C.cookie_name c == "__appianCsrfToken"
 
-preprodClientEnv = do
+clientEnv (HostUrl url) = do
   mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https "portal-preprod.usac.org" 443 "")
-    where
-      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
-
-testClientEnv = do
-  mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https "portal-test.usac.org" 443 "")
-    where
-      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
-
-test3ClientEnv = do
-  mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
-    where
-      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
-
-test2ClientEnv = do
-  mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https "portal-test2.appiancloud.com" 443 "")
-    where
-      settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
-
-forumClientEnv = do
-  mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https "forum.appian.com" 443 "")
+  return $ ClientEnv mgr (BaseUrl Https url 443 "")
     where
       settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
 

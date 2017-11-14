@@ -27,7 +27,7 @@ import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
 import Appian.Client ( runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT'
-                     , LogMode (..)
+                     , LogMode (..), HostUrl (..)
                      )
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -186,9 +186,6 @@ instance Show ScriptException where
   show (ScriptException msg) = unpack msg
 
 instance Exception ScriptException
-
-newtype HostUrl = HostUrl String
-  deriving (Show, Eq, IsString)
 
 run471Intake :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Intake baseUrl logFilePath csvInput n = do
