@@ -219,11 +219,11 @@ data UiConfig a = UiConfig
   } deriving Show
 
 data Identifier = Identifier
-  { _idfUrlStub :: Text
-  , _idfSiteUrlStub :: Text
-  , _idfPageUrlStub :: Text
-  , _idfView :: Text
+  { _idfSiteUrlStub :: Text
+  , _idfUrlStub :: Text
   , _idfViewData :: Text
+  , _idfView :: Text
+  , _idfPageUrlStub :: Text
   } deriving Show
 
 data TextField = TextField
@@ -718,13 +718,13 @@ instance ToJSON a => ToJSON (UiConfig a) where
     )
 
 instance ToJSON Identifier where
-  toJSON ident = object
-    [ "urlStub" .= (ident ^. idfUrlStub)
-    , "siteUrlStub" .= (ident ^. idfSiteUrlStub)
-    , "pageUrlStub" .= (ident ^. idfPageUrlStub)
-    , "view" .= (ident ^. idfView)
-    , "viewData" .= (ident ^. idfViewData)
+  toJSON idf = object
+    [ "siteUrlStub" .= (idf ^. idfSiteUrlStub)
+    , "urlStub" .= (idf ^. idfUrlStub)
     , ("#t", "RecordInstanceListIdentifier")
+    , "viewData" .= (idf ^. idfViewData)
+    , "view" .= (idf ^. idfView)
+    , "pageUrlStub" .= (idf ^. idfPageUrlStub)
     ]
 
 instance ToJSON ImageCell where
@@ -768,11 +768,11 @@ instance FromJSON Identifier where
   parseJSON val@(Object o) = parseAppianType "RecordInstanceListIdentifier" mkIdent val
     where
       mkIdent = Identifier
-        <$> o .: "urlStub"
-        <*> o .: "siteUrlStub"
-        <*> o .: "pageUrlStub"
-        <*> o .: "view"
+        <$> o .: "siteUrlStub"
+        <*> o .: "urlStub"
         <*> o .: "viewData"
+        <*> o .: "view"
+        <*> o .: "pageUrlStub"
 
 instance FromJSON TextField where
   parseJSON val@(Object o) = parseAppianTypeWith "TextField" (\t -> isSuffixOf "TextField" t || isSuffixOf "TextWidget" t) mkField val

@@ -5,6 +5,9 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Appian.Instances where
 
@@ -167,3 +170,9 @@ instance MonadTime ClientM where
 
 instance Csv.FromField AppianUsername where
   parseField bs = AppianUsername <$> Csv.parseField bs
+
+data TrailingSlash
+
+instance (HasClient m api, RunClient m) => HasClient m (TrailingSlash :> api) where
+  type Client m (TrailingSlash :> api) = Client m api
+  clientWithRoute _ _ req = clientWithRoute (Proxy :: Proxy m) (Proxy :: Proxy api) $ req { requestPath = requestPath req <> "/" }

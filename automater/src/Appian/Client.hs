@@ -49,9 +49,9 @@ type TasksTab = "suite" :> "api" :> "feed" :> "tempo" :> QueryParam "m" Text :> 
                 :> QueryParam "defaultFacets" Text :> QueryParam "b" UTCTime :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[JSON] Value
 
 type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tempo" :> "records" :> "type" :> Capture "recordId" RecordId :> "view" :> "all"
-  :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Get '[AppianTVUI] Value
+  :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[AppianTVUI] Value
 
-type RecordUpdate update = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> ReqBody '[AppianTV] (UiConfig update)
+type RecordUpdate update = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> TrailingSlash :> ReqBody '[AppianTV] (UiConfig update)
   :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 
 type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Get '[InlineSail] Value
@@ -136,7 +136,9 @@ tasksTab mUtcTime = do
     tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
 
 viewRecord :: RunClient m => RecordId -> AppianT m Value
-viewRecord rid = viewRecord_ rid (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO")
+viewRecord rid = do
+  cj <- use appianCookies
+  viewRecord_ rid (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     viewRecord_ = toClient Proxy (Proxy :: Proxy ViewRecord)
 
