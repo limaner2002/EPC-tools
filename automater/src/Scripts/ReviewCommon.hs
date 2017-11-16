@@ -132,6 +132,8 @@ data ReviewType
   | RevSpinChange
   | RevServSub
   | RevAdminCorrection
+  | RevSRCSpinChange
+  | RevBulkSpinChange
   deriving (Show, Eq, Read)
 
 instance Parseable ReviewType where
@@ -143,6 +145,8 @@ instance Parseable ReviewType where
   parseElement "SPIN Change" = pure RevSpinChange
   parseElement "Service Substitution" = pure RevServSub
   parseElement "Administrative Correction" = pure RevAdminCorrection
+  parseElement "Bulk SPIN" = pure RevBulkSpinChange
+  parseElement "SRC SPIN" = pure RevSRCSpinChange
   parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Review Type."
 
 data ReviewerType
