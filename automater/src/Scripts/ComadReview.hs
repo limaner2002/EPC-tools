@@ -18,18 +18,21 @@ import Scripts.ReviewCommon
 import Scripts.Test
 import qualified Test.QuickCheck as QC
 import Control.Monad.Time
+import Scripts.ComadReviewTypes
 
-comadInitialReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewConf -> ReviewBaseConf -> AppianT m Value
-comadInitialReview conf baseConf = do
-  (rid, v) <- myAssignedReport baseConf
-  distributeLinks_ (\rid -> editAdjustmentAmounts rid >> reviewComadRequest rid) rid conf v
+comadInitialReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> ComadReviewConf -> AppianT m Value
+comadInitialReview baseConf conf = do
+  (rid, v) <- myAssignedReportTemp (conf ^? comadId) baseConf
+  rref <- handleMissing "recordRef" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
+  -- distributeLinks_ (\rid -> editAdjustmentAmounts rid >> reviewComadRequest rid) rid conf v
+  editAdjustmentAmounts rref
+  reviewComadRequest rref
 
 editAdjustmentAmounts :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => RecordRef -> AppianT m Value
 editAdjustmentAmounts rid =
   viewRecordDashboard rid (Dashboard "summary")
     >>= flip viewRelatedActions rid
     >>= uncurry (executeRelatedAction "Edit Adjustment Amount")
---    >>= pageAdjustments
     >>= forAdjustments
     >>= sendUpdates "Submit" (MonadicFold $ to $ buttonUpdate "Submit")
 
@@ -100,7 +103,6 @@ addViolation val ident = do
 handleNoViolation :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Either ValidationsException Value -> AppianT m Value
 handleNoViolation (Left ve) = case ve ^. validationsExc . _1 of
   ["You cannot add a Violation to an FRN that you have marked as \"No Violation\""] -> return $ ve ^. validationsExc . _2
-    -- sendUpdates "Continue to 'Review FRN Decisions'" (MonadicFold (to $ buttonUpdate "Continue")) $ ve ^. validationsExc . _2
   [] -> error "Violations not implemented yet!"
   _ -> throwM ve
 handleNoViolation (Right v) =

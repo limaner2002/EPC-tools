@@ -44,7 +44,7 @@ fullReview logMode env revUsers fullReviewConf = do
                          RevForm486 -> return res
                          _ -> mapErr (runItRetry (assignment final (finalReviewer ^. username . to AppianUsername)) $ trace "Final Assign" reviewManager) res
                                 >>= mapErr (runItRetry (withReviewConf $ finalReview final) $ trace "Final Review" finalReviewer)
-      dispatchInitialReview RevCOMAD = withReviewConf $ flip comadInitialReview initial
+      dispatchInitialReview RevCOMAD = error "Not supported yet due to PC review rewrite." -- withReviewConf $ flip comadInitialReview initial
       dispatchInitialReview _ = withReviewConf $ flip initialReview initial
 
   runItRetry (assignment initial (initialReviewer ^. username . to AppianUsername)) reviewManager

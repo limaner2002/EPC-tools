@@ -1,7 +1,10 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Scripts.FCCForm471 where
+module Scripts.FCCForm471
+  ( module Scripts.FCCForm471
+  , module Scripts.FCCForm471Types
+  ) where
 
 import ClassyPrelude
 import Control.Lens hiding (index)
@@ -23,6 +26,7 @@ import qualified Data.Foldable as F
 import qualified Data.Csv as Csv
 import Control.Monad.Logger
 import Control.Monad.Time
+import Scripts.FCCForm471Types
 
 form471Intake :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> AppianT m Value
 form471Intake conf = do
@@ -162,6 +166,14 @@ isEmpty470Grid v = case v ^? hasType "GridField" . key "numRowsToDisplay" . _Num
   Just _ -> True
   Nothing -> False
 
+search470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Form470SearchType -> Value -> AppianT m Value
+search470 (ByBEN ben) = sendUpdates "Search for 470 by BEN" (MonadicFold (to $ textUpdate "Search by BEN" ben)
+                                                      <|> MonadicFold (to (buttonUpdate "Search"))
+                                                     )
+search470 (By470 form470ID) = sendUpdates "Search for 470 by 470 ID" (MonadicFold (to $ textUpdate "Search by Search by FCC Form 470 Number" form470ID)
+                                                                      <|> MonadicFold (to (buttonUpdate "Search"))
+                                                                     )
+
 select470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 select470 v = case isEmpty470Grid v of
   True -> sendUpdates "No Form 470" (MonadicFold (to (buttonUpdate "No"))
@@ -216,13 +228,8 @@ createFRN conf n spin val = do
             >>= sendUpdates "Enter number of Bids" ( MonadicFold (intFieldArbitrary "How many bids were received?") -- (to (textUpdate "How many bids were received?" "3"))
                                      <|> MonadicFold (to (buttonUpdate "Yes"))
                                    )
-            >>= sendUpdates "Search for 470" (MonadicFold (to $ textUpdate "Search by BEN" (conf ^. ben))
-                                               <|> MonadicFold (to (buttonUpdate "Search"))
-                                             )
+            >>= search470 (conf ^. form470Search)
             >>= select470
-            -- >>= sendUpdates "Select 470 and Continue" (MonadicFold (to (gridFieldUpdate 0))
-            --                  <|> MonadicFold (to (buttonUpdate "Continue"))
-            --                 )
             >>= sendUpdates "SPIN Search" (    MonadicFold (to (textUpdate "Search by SPIN" spin))
                              <|> MonadicFold (to (buttonUpdate "Search"))
                             )
@@ -329,88 +336,3 @@ enterCosts conf v =
                                                                 <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                                                                ) v
 
-data Form471Conf = Form471Conf
-  { _nFRNs :: Int
-  , _nLineItems :: Int
-  , _spin :: Text
-  , _category :: Category
-  , _applicant :: Login
-  , _lineItemSize :: LineItemSize
-  , _ben :: Text
-  } deriving Show
-
-instance Csv.FromNamedRecord Form471Conf where
-  parseNamedRecord r = Form471Conf
-    <$> r Csv..: "nFRNs"
-    <*> r Csv..: "nLineItems"
-    <*> r Csv..: "spin"
-    <*> r Csv..: "category"
-    <*> Csv.parseNamedRecord r
-    <*> r Csv..: "lineItemSize"
-    <*> r Csv..: "BEN to Copy 470"
-
-data LineItemSize
-  = Small
-  | Regular
-  deriving (Show, Read)
-
-data Category
-  = Cat1
-  | Cat2
-
-instance Show Category where
-  show Cat1 = "Category 1"
-  show Cat2 = "Category 2"
-
-instance Csv.FromField LineItemSize where
-  parseField bs = case readMay (decodeUtf8 bs) of
-    Nothing -> fail $ show bs <> " does not appear to be a valid Line Item Size. Use only 'Small' or 'Regular'"
-    Just size -> return size
-
-instance Csv.FromField Category where
-  parseField bs = case decodeUtf8 bs of
-    "1" -> return Cat1
-    "2" -> return Cat2
-    _ -> fail $ show bs <> " does not appear to be a valid category. Use only '1' or '2'"
-
-nFRNs :: Functor f => (Int -> f Int) -> Form471Conf -> f Form471Conf
-nFRNs = lens get update
-  where
-    get = _nFRNs
-    update conf v = conf { _nFRNs = v }
-
-nLineItems :: Functor f => (Int -> f Int) -> Form471Conf -> f Form471Conf
-nLineItems = lens get update
-  where
-    get = _nLineItems
-    update conf v = conf { _nLineItems = v }
-
-spin :: Functor f => (Text -> f Text) -> Form471Conf -> f Form471Conf
-spin = lens get update
-  where
-    get = _spin
-    update conf v = conf { _spin = v }
-
-applicant :: Functor f => (Login -> f Login) -> Form471Conf -> f Form471Conf
-applicant = lens get update
-  where
-    get = _applicant
-    update conf v = conf { _applicant = v }
-
-lineItemSize :: Functor f => (LineItemSize -> f LineItemSize) -> Form471Conf -> f Form471Conf
-lineItemSize = lens get update
-  where
-    get = _lineItemSize
-    update conf v = conf { _lineItemSize = v }
-
-category :: Functor f => (Category -> f Category) -> Form471Conf -> f Form471Conf
-category = lens get update
-  where
-    get = _category
-    update conf v = conf { _category = v }
-
-ben :: Functor f => (Text -> f Text) -> Form471Conf -> f Form471Conf
-ben = lens get update
-  where
-    get = _ben
-    update conf v = conf { _ben = v }

@@ -19,6 +19,7 @@ library
                      , Appian.Lens
                      , Appian.Client
                      , Scripts.FCCForm471
+                     , Scripts.FCCForm471Types
                      , Scripts.FCCForm471ReviewAssignment
                      , Scripts.FCCForm471Common
                      , Scripts.FCCForm471Certification
@@ -34,6 +35,7 @@ library
                      , Scripts.Assignment
                      , Scripts.AdminIntake
                      , Scripts.ComadReview
+                     , Scripts.ComadReviewTypes
                      , Util.Parallel
                      , Scripts.ProducerConsumer
   build-depends:       base

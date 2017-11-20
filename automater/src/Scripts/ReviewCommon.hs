@@ -1,6 +1,8 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Scripts.ReviewCommon where
 
@@ -20,6 +22,7 @@ import Control.Retry
 import qualified Streaming.Prelude as S
 import qualified Data.Foldable as F
 import Control.Monad.Time
+import qualified Data.Csv as Csv
 
 data ReviewBaseConf = ReviewBaseConf
   { reviewType :: ReviewType
@@ -236,13 +239,28 @@ makeNote val ident = do
                                          <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
                                         )
 
-myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> AppianT m (ReportId, Value)
-myAssignedReport conf = do
+newtype CaseNumber = CaseNumber
+  { _caseNumber :: Int
+  } deriving (Show, Eq, Num, Csv.FromField)
+
+makeLenses ''CaseNumber
+
+  -- This needs to be renamed to replace the myAssignedReport function below.
+myAssignedReportTemp :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Maybe CaseNumber -> ReviewBaseConf -> AppianT m (ReportId, Value)
+myAssignedReportTemp mCaseNum conf = do
   (rid, v) <- openReport "My Assigned Post-Commit Assignments"
+  let filterCase v = case mCaseNum of
+        Nothing -> return v
+        Just caseNum -> sendReportUpdates rid "Application/Request Number" (MonadicFold $ to $ textUpdate "Application/Request Number" (caseNum ^. caseNumber . to tshow)) v
   res <- editReport rid
     >>= sendReportUpdates rid "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType conf))
     >>= sendReportUpdates rid "Select Reviewer Type" (dropdownUpdateF' "Reviewer Type" (reviewerType conf))
     >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Funding Year" (fundingYear conf))
+    >>= filterCase
     >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
     >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
   return (rid, res)
+
+    -- Needs to be replaced by myAssignedReportTemp above
+myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> AppianT m (ReportId, Value)
+myAssignedReport = myAssignedReportTemp Nothing

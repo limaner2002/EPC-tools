@@ -85,12 +85,15 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
           loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
 forGridRows_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
-forGridRows_ updateFcn colFcn fold f v = do
+forGridRows_ = forGridRowsWith_ (const True)
+
+forGridRowsWith_ :: (RunClient m, MonadThrow m) => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
+forGridRowsWith_ continueFcn updateFcn colFcn fold f v = do
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
   loop (gf ^. gfTotalCount) v 0
     where
       loop total val idx = do
-        case total <= idx of
+        case (total <= idx && continueFcn idx) of
           True -> return val
           False -> do
             (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
@@ -345,6 +348,7 @@ data FundingYear
 
 instance Parseable FundingYear where
   parseElement "-- Select a Funding Year --" = pure FYSelect
+  parseElement "--Select a Funding Year--" = pure FYSelect
   parseElement "2016" = pure FY2016
   parseElement "2017" = pure FY2017
   parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Funding Year."

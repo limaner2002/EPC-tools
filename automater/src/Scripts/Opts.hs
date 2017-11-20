@@ -26,6 +26,7 @@ import Scripts.InitialReview
 import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
+import Scripts.ComadReview
 import Appian.Client ( runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT'
                      , LogMode (..), HostUrl (..)
                      )
@@ -192,7 +193,7 @@ run471Intake baseUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr baseUrl
 
-  res <- runResourceT $ runNoLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStdoutLoggingT (form471Intake conf) env (conf ^. applicant))
+  res <- runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStdoutLoggingT (form471Intake conf) env (conf ^. applicant))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
@@ -234,6 +235,9 @@ run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run48
         logFp = logFilePrefix <> logFilePath suffix
         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
+runComadInitialReview :: ReviewBaseConf -> HostUrl -> LogMode -> CsvPath -> Int -> IO ()
+runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
+
 runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> HostUrl -> LogMode -> CsvPath -> Int -> IO ()
 runIt f (HostUrl hostUrl) logMode csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
@@ -265,6 +269,7 @@ commandsInfo = info (helper <*> parseCommands)
 parseCommands :: Parser (IO ())
 parseCommands = subparser
   (  command "form471Intake" form471IntakeInfo
+  <> command "comadInitial" comadInitialInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
@@ -321,6 +326,14 @@ urlParser = BaseUrl
   )
   <*> pure ""
 
+hostUrlParser :: Parser HostUrl
+hostUrlParser = HostUrl
+  <$> strOption
+  (  long "host-name"
+  <> short 'n'
+  <> help "The hostname of the server to use."
+  )
+
 data Script
   = CSScript (Appian Text)
   | Form471 (Appian Value)
@@ -345,6 +358,23 @@ form471IntakeInfo = info (helper <*> form471Parser)
 form471Parser :: Parser (IO ())
 form471Parser = run471Intake
   <$> urlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
+
+comadInitialInfo :: ParserInfo (IO ())
+comadInitialInfo = info (helper <*> comadInitialParser)
+  (  fullDesc
+  <> progDesc "Runs the PC COMAD Initial Review script"
+  )
+
+comadInitialParser :: Parser (IO ())
+comadInitialParser = runComadInitialReview
+  <$> pure comadInitial2017
+  <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
   <*> option auto
