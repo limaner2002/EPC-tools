@@ -31,3 +31,9 @@ checkUsers env fp outFile = check fp
       >>> runResourceT
       >>> runNoLoggingT
     toRow (Just login) = login ^. username <> "," <> login ^. password
+
+runParallelFileLoggerT :: MonadBaseControl IO m => FilePath -> LoggingT m a -> m a
+runParallelFileLoggerT logFilePath logging = do
+  chan <- newChan
+  runChanLoggingT chan logging
+  runFileLoggingT logFilePath $ unChanLoggingT chan

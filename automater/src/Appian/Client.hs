@@ -33,6 +33,7 @@ import Data.Aeson.Lens
 import Data.Time (diffUTCTime, NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Time
+import Util.Parallel (runParallelFileLoggingT)
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
@@ -290,7 +291,7 @@ data LogMode
   deriving Show
 
 runAppianT :: LogMode -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
-runAppianT (LogFile (LogFilePath pth)) = runAppianT' (runFileLoggingT pth)
+runAppianT (LogFile (LogFilePath pth)) = runAppianT' (runParallelFileLoggingT pth)
 runAppianT LogStdout = runAppianT' runStdoutLoggingT
 
 runAppianT' :: (LoggingT ClientM (a, AppianState) -> ClientM (a, AppianState)) -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)

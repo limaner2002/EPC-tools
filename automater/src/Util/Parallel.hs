@@ -11,6 +11,7 @@ module Util.Parallel
   , distributeTasks
   , runDistributeTasks
   , ParallelConf
+  , runParallelFileLoggingT
   ) where
 
 import ClassyPrelude
@@ -176,3 +177,8 @@ newParallelConf = ParallelConf
   <*> newTChanIO
   <*> (newTVarIO =<< (mkPositive 0))
 
+runParallelFileLoggingT :: (MonadBaseControl IO m, MonadIO m) => FilePath -> LoggingT m a -> m a
+runParallelFileLoggingT logFilePath logging = do
+  chan <- newChan
+  runChanLoggingT chan logging
+  runFileLoggingT logFilePath $ unChanLoggingT chan
