@@ -170,7 +170,7 @@ search470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Form470S
 search470 (ByBEN ben) = sendUpdates "Search for 470 by BEN" (MonadicFold (to $ textUpdate "Search by BEN" ben)
                                                       <|> MonadicFold (to (buttonUpdate "Search"))
                                                      )
-search470 (By470 form470ID) = sendUpdates "Search for 470 by 470 ID" (MonadicFold (to $ textUpdate "Search by Search by FCC Form 470 Number" form470ID)
+search470 (By470 form470ID) = sendUpdates "Search for 470 by 470 ID" (MonadicFold (to $ textUpdate "Search by FCC Form 470 Number" form470ID)
                                                                       <|> MonadicFold (to (buttonUpdate "Search"))
                                                                      )
 
