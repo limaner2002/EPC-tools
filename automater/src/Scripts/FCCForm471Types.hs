@@ -27,17 +27,17 @@ instance Csv.FromNamedRecord Form471Conf where
     <*> r Csv..: "category"
     <*> Csv.parseNamedRecord r
     <*> r Csv..: "lineItemSize"
-    <*> r Csv..: "BEN to Copy 470"
+    <*> Csv.parseNamedRecord r
 
 data Form470SearchType
   = ByBEN Text
   | By470 Text
   deriving Show
 
-instance Csv.FromField Form470SearchType where
-  parseField bs =
-    ByBEN <$> (Csv.parseField bs)
-    <|> By470 <$> (Csv.parseField bs)
+instance Csv.FromNamedRecord Form470SearchType where
+  parseNamedRecord r =
+    ByBEN <$> r Csv..: "BEN to Copy 470"
+    <|> By470 <$> r Csv..: "470"
 
 data LineItemSize
   = Small

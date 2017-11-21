@@ -177,8 +177,17 @@ newParallelConf = ParallelConf
   <*> newTChanIO
   <*> (newTVarIO =<< (mkPositive 0))
 
-runParallelFileLoggingT :: (MonadBaseControl IO m, MonadIO m) => FilePath -> LoggingT m a -> m a
+newtype DeadLoggerException = DeadLoggerException Text
+  deriving Show
+
+instance Exception DeadLoggerException
+
+runParallelFileLoggingT :: (MonadBaseControl IO m, MonadIO m, Forall (Pure m), MonadThrow m) => FilePath -> LoggingT m a -> m a
 runParallelFileLoggingT logFilePath logging = do
   chan <- newChan
-  runChanLoggingT chan logging
-  runFileLoggingT logFilePath $ unChanLoggingT chan
+  eRes <- race (runFileLoggingT logFilePath $ unChanLoggingT chan)
+               (runChanLoggingT chan logging)
+  case eRes of
+    Left _ -> throwM $ DeadLoggerException "The logging thread appears to have died!"
+    Right a -> return a
+  

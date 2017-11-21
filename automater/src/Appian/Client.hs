@@ -291,7 +291,7 @@ data LogMode
   deriving Show
 
 runAppianT :: LogMode -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
-runAppianT (LogFile (LogFilePath pth)) = runAppianT' (runParallelFileLoggingT pth)
+-- runAppianT (LogFile (LogFilePath pth)) = runAppianT' (runParallelFileLoggingT pth)
 runAppianT LogStdout = runAppianT' runStdoutLoggingT
 
 runAppianT' :: (LoggingT ClientM (a, AppianState) -> ClientM (a, AppianState)) -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
