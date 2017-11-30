@@ -245,6 +245,21 @@ newtype CaseNumber = CaseNumber
 
 makeLenses ''CaseNumber
 
+data ReviewConf' = ReviewConf'
+  { _frnCaseNumber :: CaseNumber
+  , _reviewer :: Login
+  } deriving (Show, Eq)
+
+makeLenses ''ReviewConf'
+
+instance Csv.FromNamedRecord ReviewConf' where
+  parseNamedRecord r = ReviewConf'
+    <$> r Csv..: "Case Id"
+    <*> Csv.parseNamedRecord r
+
+instance HasLogin ReviewConf' where
+  getLogin conf = conf ^. reviewer
+
   -- This needs to be renamed to replace the myAssignedReport function below.
 myAssignedReportTemp :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Maybe CaseNumber -> ReviewBaseConf -> AppianT m (ReportId, Value)
 myAssignedReportTemp mCaseNum conf = do
@@ -258,7 +273,7 @@ myAssignedReportTemp mCaseNum conf = do
     >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Funding Year" (fundingYear conf))
     >>= filterCase
     >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
-    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
+--    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
   return (rid, res)
 
     -- Needs to be replaced by myAssignedReportTemp above

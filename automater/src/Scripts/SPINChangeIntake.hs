@@ -57,9 +57,13 @@ instance HasLogin SpinChangeConfig where
 
 spinChangeIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => SpinChangeConfig -> AppianT m (Maybe Text)
 spinChangeIntake conf = do
-  let un = Identifiers [AppianUsername "kyle.davie@fwisd.org"]
-
   v <- myLandingPageAction "SPIN Change"
+
+  spinChangeIntake' conf v
+
+spinChangeIntake' :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => SpinChangeConfig -> Value -> AppianT m (Maybe Text)
+spinChangeIntake' conf v = do
+  let un = Identifiers [AppianUsername "kyle.davie@fwisd.org"]
 
   v' <- case v ^? hasKeyValue "label" "Existing Organizations" of
     Nothing -> return v

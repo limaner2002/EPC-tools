@@ -108,34 +108,28 @@ runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip 
         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
 runInitialReview :: BaseUrl -> String -> LogMode -> Int -> IO ()
-runInitialReview baseUrl username fp nThreads = do
-  stderrLn $ intercalate " " [tshow baseUrl, tshow fp, tshow nThreads]
-  stderrLn "\n********************************************************************************\n"
-  stderrLn "Waiting for 2 mins. Does the above look correct?"
-  threadDelay (120000000)
-  stderrLn "Starting SPIN Change initial review now!"
-  password <- getPassword
-  conf <- newReviewConf
-  let actions = take nThreads $ repeat (initialReview conf adminInitial2017)
-      login = Login (pack username) $ pack password
-  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+runInitialReview = error "Initial review is broken due to the rewrite such that review stages take the case number as inputs now."
+-- runInitialReview baseUrl username fp nThreads = do
+--   stderrLn $ intercalate " " [tshow baseUrl, tshow fp, tshow nThreads]
+--   stderrLn "\n********************************************************************************\n"
+--   stderrLn "Waiting for 2 mins. Does the above look correct?"
+--   threadDelay (120000000)
+--   stderrLn "Starting SPIN Change initial review now!"
+--   password <- getPassword
+--   conf <- newReviewConf
+--   let actions = take nThreads $ repeat (initialReview conf adminInitial2017)
+--       login = Login (pack username) $ pack password
+--   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
 
-  results <- mapConcurrently (\f -> tryAny $ runAppianT fp f (ClientEnv mgr baseUrl) login) actions
-
-  dispResults results
-
--- runReview :: BaseUrl -> FilePath -> Int -> IO ()
--- runReview baseUrl fp nThreads = do
---   stderrLn $ "Running review on " <> tshow baseUrl <> " for " <> tshow nThreads <> " threads."
---   mgr <- newManager tlsManagerSettings
---   results <- mapConcurrently (const $ dispatchReview RevSpinChange (ClientEnv mgr baseUrl)) [1..nThreads]
+--   results <- mapConcurrently (\f -> tryAny $ runAppianT fp f (ClientEnv mgr baseUrl) login) actions
 
 --   dispResults results
 
 runAdminIntake :: FilePath -> Int -> BaseUrl -> LogMode -> IO ()
-runAdminIntake userFile nThreads baseUrl fp = runConsumer action baseUrl fp userFile nThreads
-  where
-    action login = adminIntake $ login ^. username . to AppianUsername
+runAdminIntake = error "Appeal intake has been broken!"
+-- runAdminIntake userFile nThreads baseUrl fp = runConsumer action baseUrl fp userFile nThreads
+--   where
+--     action login = adminIntake $ login ^. username . to AppianUsername
   
 runConsumer :: (Login -> Appian a) -> BaseUrl -> LogMode -> FilePath -> Int -> IO ()
 runConsumer f baseUrl fp userFile nThreads = do
@@ -188,13 +182,18 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
+run471Intake :: BaseUrl -> LogMode -> CsvPath -> Int -> IO [Maybe (Either SomeException Value)]
 run471Intake baseUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr baseUrl
+      runFunc conf = do
+        res <- fmap join $ tryAny $ liftIO $ runAppianT' runStdoutLoggingT (form471Intake conf) env (conf ^. applicant)
+        let res' = bimap (\exc -> toException $ ScriptException $ tshow (conf ^. applicant) <> ": " <> tshow exc) id res
+        return res'
 
-  res <- runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStdoutLoggingT (form471Intake conf) env (conf ^. applicant))
+  res <- trace "Running 471 intake now." $ runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) runFunc
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
+  return res
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Assign baseUrl logFilePath csvInput n = do
@@ -237,6 +236,9 @@ run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run48
 
 runComadInitialReview :: ReviewBaseConf -> HostUrl -> LogMode -> CsvPath -> Int -> IO ()
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
+
+runReview :: ReviewBaseConf -> HostUrl -> LogMode -> CsvPath -> Int -> IO ()
+runReview baseConf = runIt (finalReview baseConf)
 
 runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> HostUrl -> LogMode -> CsvPath -> Int -> IO ()
 runIt f (HostUrl hostUrl) logMode csvInput n = do
@@ -363,7 +365,7 @@ form471Parser = run471Intake
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
-  )
+  ) *> pure (pure ())
 
 comadInitialInfo :: ParserInfo (IO ())
 comadInitialInfo = info (helper <*> comadInitialParser)
@@ -517,3 +519,12 @@ threadsParser = option parseManyR
 
 stderrLn :: MonadIO m => Text -> m ()
 stderrLn txt = hPut stderr $ encodeUtf8 txt <> "\n"
+
+-- reviewTypeParser :: Parser ReviewType
+-- reviewTypeParser =
+--   (parseElement . pack)
+--   <$>  
+--   strOption
+--   (  long "reviewType"
+--   <> help "The type of case to review."
+--   )

@@ -71,7 +71,6 @@ form471Intake conf = do
     >>= createFRN conf (conf ^. nFRNs) (conf ^. spin)
     >>= forLineItems conf
     >>= ifContinueToCertification
-    >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
 
 selectMembers :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 selectMembers v = do
@@ -157,9 +156,18 @@ selectEntitiesReceivingService v
                                              Just False -> sendUpdates "Add All Button" addAllButtonUpdate v
                                              _ -> return v
                                          ) "Search for Consortium Member by Entity Type"
+    >>= isShared
     -- >>= sendUpdates "Select Consortium Member Entity Type" (MonadicFold (to (dropdownUpdate "Search for Consortium Member by Entity Type" 3)))
     -- >>= sendUpdates "Add All Dependent Schools and NIFs" (MonadicFold (to (buttonUpdate "Add All Dependent Schools And NIFs ")))
-    >>= sendUpdates "Manage Recipients of Service" (MonadicFold (to (buttonUpdate "Save & Continue")))
+    -- >>= sendUpdates "Manage Recipients of Service" (MonadicFold (to (buttonUpdate "Save & Continue")))
+    >>= sendUpdates "Manage Recipients of Service" (buttonUpdateWith (\label -> label == "Save & Continue" || label == "Continue") "Could not locate 'Continue' button")
+
+isShared :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
+isShared v = case has (getTextField "Are the costs shared equally among all of the entities?") v of
+  True -> sendUpdates "Select Yes (Equally Shared Costs)" (MonadicFold (to (buttonUpdate "Yes"))
+                                                           <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+                                                          ) v
+  False -> return v
 
 isEmpty470Grid :: Value -> Bool
 isEmpty470Grid v = case v ^? hasType "GridField" . key "numRowsToDisplay" . _Number . only 0.0 of
@@ -170,9 +178,14 @@ search470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Form470S
 search470 (ByBEN ben) = sendUpdates "Search for 470 by BEN" (MonadicFold (to $ textUpdate "Search by BEN" ben)
                                                       <|> MonadicFold (to (buttonUpdate "Search"))
                                                      )
+                        >=> select470
 search470 (By470 form470ID) = sendUpdates "Search for 470 by 470 ID" (MonadicFold (to $ textUpdate "Search by FCC Form 470 Number" form470ID)
+                                                                      <|> MonadicFold (to $ textUpdate "Search by BEN" mempty)
                                                                       <|> MonadicFold (to (buttonUpdate "Search"))
                                                                      )
+                              >=> sendUpdates "Select 470 and Continue" (MonadicFold (to (gridFieldUpdate 0))
+                                                                         <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                                        )
 
 select470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 select470 v = case isEmpty470Grid v of
@@ -184,9 +197,14 @@ select470 v = case isEmpty470Grid v of
                             ) v
 
 ifContinueToCertification :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
-ifContinueToCertification v = case v ^? getButton "Review FCC Form 471" of
-  Just _ -> return v
-  Nothing -> sendUpdates "Click Continue to Certification" (MonadicFold (to (buttonUpdate "Continue to Certification"))) v
+ifContinueToCertification v =
+  case has (key "ui" . key "#t" . _String . only "FormLayout") v of
+    True -> return v
+    False ->
+      case v ^? getButton "Review FCC Form 471" of
+        Just _ -> sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471"))) v
+        Nothing -> sendUpdates "Click Continue to Certification" (MonadicFold (to (buttonUpdate "Continue to Certification"))) v
+          >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
 
     -- Discards the result of f
 foldDropdown :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Text -> (Value -> AppianT m Value) -> Text -> Value -> AppianT m Value
@@ -211,6 +229,8 @@ getAddAllButton label
   || label == "Add All Schools and Dependent NIFs "
   || label == "Add All Libraries and Dependent NIFs "
   || label == "Add All Dependent Libraries and NIFs "
+  || label == "Add All Schools "
+  || label == "Add All Libraries "
 
 createFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> Int -> Text -> Value -> AppianT m Value
 createFRN _ 0 _ val = return val
@@ -219,7 +239,7 @@ createFRN conf n spin val = do
   dates <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
             >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
                                                <|> MonadicFold (to (buttonUpdate "No"))
-                                               <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 3))
+                                               <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 2))
                                                <|> MonadicFold (to (buttonUpdate "Continue"))
                                               )
             >>= sendUpdates "Select Purchase Type" (MonadicFold (to (buttonUpdate "Tariff"))
@@ -229,7 +249,7 @@ createFRN conf n spin val = do
                                      <|> MonadicFold (to (buttonUpdate "Yes"))
                                    )
             >>= search470 (conf ^. form470Search)
-            >>= select470
+--             >>= select470
             >>= sendUpdates "SPIN Search" (    MonadicFold (to (textUpdate "Search by SPIN" spin))
                              <|> MonadicFold (to (buttonUpdate "Search"))
                             )
@@ -264,7 +284,7 @@ forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse
 addLineItem' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
 addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' (conf ^. nLineItems)
-  >>= sendUpdates "Review FRN Line Items" (MonadicFold (to (buttonUpdate "Continue")))
+  >>= sendUpdates "Review FRN Line Items" (buttonUpdateWith (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
   where
     addLineItem'' 0 val = return val
     addLineItem'' n val = do
@@ -281,18 +301,21 @@ selectFunction :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadG
 selectFunction v =
   case has (getDropdown "Function") v of
     True -> sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2))) v
-            >>= sendUpdates "Select Type of Connection and Continue" (MonadicFold (to (dropdownUpdate "Type of Connection" 13))
-                                                                      <|> MonadicFold (radioButtonUpdate "Purpose" 1)
+            >>= sendUpdates "Select Type of Connection and Continue" (dropdownArbitraryUpdateF "Type of Connection" -- MonadicFold (to (dropdownUpdate "Type of Connection" 13))
+                                                                      -- <|> MonadicFold (radioButtonUpdate "Purpose" 1)
                                                                       <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                      )
-    False -> sendUpdates "Select Type of Connection" (MonadicFold (to $ dropdownUpdate "Type of Internal Connection" 2)) v
-      >>= sendUpdates "Select Type, Make, Model, and Continue" (MonadicFold (to $ dropdownUpdate "Type of Product" 2)
-                                                               <|> dropdownArbitraryUpdateF "Make"
-							       <|> MonadicFold (textFieldArbitrary "Enter the Make" 255)
-                                                               <|> MonadicFold (textFieldArbitrary "Model" 255)
-                                                               <|> MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
-                                                               <|> MonadicFold (to $ buttonUpdate "Continue")
-                                                               )
+    -- False -> sendUpdates "Select Type of Connection" (MonadicFold (to $ dropdownUpdate "Type of Internal Connection" 2)) v
+    --   >>= sendUpdates "Select Type, Make, Model, and Continue" (MonadicFold (to $ dropdownUpdate "Type of Product" 2)
+    --                                                            <|> dropdownArbitraryUpdateF "Make"
+    --     						       <|> MonadicFold (textFieldArbitrary "Enter the Make" 255)
+    --                                                            <|> MonadicFold (textFieldArbitrary "Model" 255)
+    --                                                            <|> MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
+    --                                                            <|> MonadicFold (to $ buttonUpdate "Continue")
+    --                                                            )
+    False -> sendUpdates "Total Quantity of Equipment Maintained" (MonadicFold (to $ textUpdate "Total Quantity of Equipment Maintained" "2")
+                                                                   <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                                  ) v
 
 handleDataQuestions :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 handleDataQuestions v = do
@@ -317,22 +340,28 @@ handleConnections v = do
 
 enterCosts :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m) => Form471Conf -> Value -> AppianT m Value
 enterCosts conf v =
-  case has (hasKeyValue "_cId" "d2d5fc7028c296c76a2a9698ed79bd69") v of
-    False -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+  case conf ^. category of
+    Cat1 -> case has (hasKeyValue "_cId" "d2d5fc7028c296c76a2a9698ed79bd69") v of
+              False -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                            <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+                                                                          ) v
+              True -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                                           <|> dropdownCidArbitraryUpdateF "d2d5fc7028c296c76a2a9698ed79bd69"
+                                                                           <|> MonadicFold (to (buttonUpdate "Save & Continue"))
+                                                                         ) v
+    Cat2 -> sendUpdates "Enter Costs Calutations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                               <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+                                                               <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+                                                               <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+                                                               <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                                                                ) v
-    True -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                <|> dropdownCidArbitraryUpdateF "d2d5fc7028c296c76a2a9698ed79bd69"
-                                                                <|> MonadicFold (to (buttonUpdate "Save & Continue"))
-                                                               ) v
-

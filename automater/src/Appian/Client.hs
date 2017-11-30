@@ -317,6 +317,9 @@ buttonUpdate label v = toUpdate <$> btn
   where
     btn = maybeToEither ("Could not locate button " <> tshow label) $ v ^? getButton label
 
+buttonUpdateWith :: (Plated s, AsValue s, AsJSON s) => (Text -> Bool) -> t -> ReifiedMonadicFold m s (Either t Update)
+buttonUpdateWith f msg = MonadicFold (failing (getButtonWith f . to toUpdate . to Right) (to (const $ Left msg)))
+
 dropdownUpdate :: Text -> Int -> Value -> Either Text Update
 dropdownUpdate label n v = toUpdate <$> (_Right . dfValue .~ n $ dropdown)
   where
@@ -554,3 +557,17 @@ instance Show ClientException where
   show (ClientException exc) = "ClientException: " <> show (exc)
 
 instance Exception ClientException
+
+recordTime :: (MonadTime m, MonadLogger m) => Text -> m a -> m a
+recordTime label f = do
+  start <- currentTime
+  res <- f
+  end <- currentTime
+  let elapsed = diffUTCTime end start
+  logInfoN $ intercalate ","
+    [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
+    , tshow (diffToMS elapsed)
+    , label
+    , "200"
+    ]
+  return res

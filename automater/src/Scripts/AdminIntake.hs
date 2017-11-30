@@ -1,5 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Scripts.AdminIntake where
 
@@ -17,10 +19,26 @@ import Scripts.Common
 import Scripts.Test
 import Scripts.ReviewCommon
 import Control.Monad.Time
+import qualified Data.Csv as Csv
 
-adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => AppianUsername -> AppianT m (Maybe Text)
-adminIntake un = do
-  let user = Identifiers [un]
+newtype OrganizationName = OrganizationName Text
+  deriving (Show, Eq, IsString, Csv.FromField)
+
+data AppealIntakeConfig = AppealIntakeConfig
+  { _appealOrg :: OrganizationName
+  , _appealApplicant :: Login
+  } deriving (Show, Eq)
+
+makeLenses ''AppealIntakeConfig
+
+instance Csv.FromNamedRecord AppealIntakeConfig where
+  parseNamedRecord r = AppealIntakeConfig
+    <$> r Csv..: "Organization Name"
+    <*> Csv.parseNamedRecord r
+
+adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => AppealIntakeConfig -> AppianT m (Maybe Text)
+adminIntake conf = do
+  let user = Identifiers [conf ^. appealApplicant . username]
 
   v <- myLandingPageAction "Appeal"
 

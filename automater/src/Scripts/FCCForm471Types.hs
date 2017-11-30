@@ -39,6 +39,10 @@ instance Csv.FromNamedRecord Form470SearchType where
     ByBEN <$> r Csv..: "BEN to Copy 470"
     <|> By470 <$> r Csv..: "470"
 
+data Form470FunctionType
+  = BMIC
+  deriving (Show, Eq)
+
 data LineItemSize
   = Small
   | Regular

@@ -66,6 +66,7 @@ library
                      , monad-time
                      , mtl
                      , case-insensitive
+                     , async-pool
   default-language:    Haskell2010
 
 test-suite automater-test
