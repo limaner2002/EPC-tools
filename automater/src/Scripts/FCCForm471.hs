@@ -186,6 +186,8 @@ search470 (By470 form470ID) = sendUpdates "Search for 470 by 470 ID" (MonadicFol
                               >=> sendUpdates "Select 470 and Continue" (MonadicFold (to (gridFieldUpdate 0))
                                                                          <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                         )
+search470 No470 = sendUpdates "Click Search" (MonadicFold (to $ buttonUpdate "Search"))
+                  >=> select470
 
 select470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m Value
 select470 v = case isEmpty470Grid v of

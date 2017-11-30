@@ -8,6 +8,7 @@ import Control.Lens
 import ClassyPrelude
 import qualified Data.Csv as Csv
 import Appian.Instances
+import Scripts.Common (HasLogin (..))
 
 data Form471Conf = Form471Conf
   { _nFRNs :: Int
@@ -32,12 +33,23 @@ instance Csv.FromNamedRecord Form471Conf where
 data Form470SearchType
   = ByBEN Text
   | By470 Text
+  | No470
   deriving Show
 
 instance Csv.FromNamedRecord Form470SearchType where
   parseNamedRecord r =
     ByBEN <$> r Csv..: "BEN to Copy 470"
     <|> By470 <$> r Csv..: "470"
+    <|> pure No470
+
+instance Csv.ToNamedRecord Form470SearchType where
+  toNamedRecord (ByBEN t) = Csv.namedRecord
+    [ ("BEN to Copy 470", encodeUtf8 t)
+    ]
+  toNamedRecord (By470 t) = Csv.namedRecord
+    [ ("470", encodeUtf8 t)
+    ]
+  toNamedRecord No470 = mempty
 
 data Form470FunctionType
   = BMIC
@@ -67,49 +79,22 @@ instance Csv.FromField Category where
     "2" -> return Cat2
     _ -> fail $ show bs <> " does not appear to be a valid category. Use only '1' or '2'"
 
--- nFRNs :: Functor f => (Int -> f Int) -> Form471Conf -> f Form471Conf
--- nFRNs = lens get update
---   where
---     get = _nFRNs
---     update conf v = conf { _nFRNs = v }
-
--- nLineItems :: Functor f => (Int -> f Int) -> Form471Conf -> f Form471Conf
--- nLineItems = lens get update
---   where
---     get = _nLineItems
---     update conf v = conf { _nLineItems = v }
-
--- spin :: Functor f => (Text -> f Text) -> Form471Conf -> f Form471Conf
--- spin = lens get update
---   where
---     get = _spin
---     update conf v = conf { _spin = v }
-
--- applicant :: Functor f => (Login -> f Login) -> Form471Conf -> f Form471Conf
--- applicant = lens get update
---   where
---     get = _applicant
---     update conf v = conf { _applicant = v }
-
--- lineItemSize :: Functor f => (LineItemSize -> f LineItemSize) -> Form471Conf -> f Form471Conf
--- lineItemSize = lens get update
---   where
---     get = _lineItemSize
---     update conf v = conf { _lineItemSize = v }
-
--- category :: Functor f => (Category -> f Category) -> Form471Conf -> f Form471Conf
--- category = lens get update
---   where
---     get = _category
---     update conf v = conf { _category = v }
-
--- ben :: Functor f => (Text -> f Text) -> Form471Conf -> f Form471Conf
--- ben = lens get update
---   where
---     get = _ben
---     update conf v = conf { _ben = v }
-
 makeLenses ''Form471Conf
 makePrisms ''Form470SearchType
 makePrisms ''Category
 makePrisms ''LineItemSize
+
+instance HasLogin Form471Conf where
+  getLogin conf = conf ^. applicant
+
+instance Csv.ToNamedRecord Form471Conf where
+  toNamedRecord conf = Csv.namedRecord
+    [ ("nFRNs", conf ^. nFRNs . to (encodeUtf8 . tshow))
+    , ("nLineItems", conf ^. nLineItems . to (encodeUtf8 . tshow))
+    , ("spin", conf ^. spin . to encodeUtf8)
+    , ("category", conf ^. category . to (encodeUtf8 . tshow))
+    , ("username", conf ^. applicant . username . to encodeUtf8)
+    , ("password", conf ^. applicant . password . to encodeUtf8)
+    , ("lineItemSize", conf ^. lineItemSize . to (encodeUtf8 . tshow))
+    ]
+    <> Csv.toNamedRecord (conf ^. form470Search)
