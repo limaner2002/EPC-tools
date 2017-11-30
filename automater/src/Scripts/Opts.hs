@@ -6,8 +6,6 @@
 
 module Scripts.Opts
   ( commandsInfo
-  , runScript
-  , Script (..)
   , setTimeout
   , module Scripts.Opts
   ) where
@@ -53,51 +51,27 @@ import Scripts.ProducerConsumer
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
 
-runScript :: Script -> BaseUrl -> String -> LogMode -> Int -> IO ()
-runScript (CSScript script) baseUrl username fp nThreads = do
-  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
-  password <- getPassword
-  let login = Login (pack username) (pack password)
-
-  results <- mapConcurrently (const $ tryAny $ runAppianT fp script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
-
-  dispResults results
--- runScript (Form471 script) baseUrl username fp nThreads = do
+-- runScript :: Script -> BaseUrl -> String -> LogMode -> Int -> IO ()
+-- runScript (CSScript script) baseUrl username fp nThreads = do
 --   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
 --   password <- getPassword
---   logins <- S.fst' <$> (csvStreamByName >>> S.drop 10 >>> S.toList >>> runResourceT >>> runNoLoggingT $ "applicantConsortiums.csv")
---   results <- mapConcurrently (\login -> tryAny $ runAppianT script (ClientEnv mgr baseUrl) login) $ take nThreads logins
+--   let login = Login (pack username) (pack password)
+
+--   results <- mapConcurrently (const $ tryAny $ runAppianT fp script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
+
 --   dispResults results
-runScript (Form486 script userFile) baseUrl _ fp nThreads = do
-  stderrLn $ intercalate " " [tshow userFile, tshow baseUrl, tshow fp, tshow nThreads]
-  stderrLn "\n********************************************************************************\n"
-  stderrLn "Waiting for 2 mins. Does the above look correct?"
-  threadDelay (120000000)
-  stderrLn "Starting 486 intake now!"
-  mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
-  logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
-
-  results <- mapConcurrently (\login -> tryAny $ runAppianT fp (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
-
-  dispResults results
-
--- runSPINIntake :: Appian (Maybe Text) -> FilePath -> Int -> BaseUrl -> LogMode -> IO ()
--- runSPINIntake script userFile nThreads baseUrl fp = do
---   stderrLn $ intercalate " " [pack userFile, tshow baseUrl, tshow fp, tshow nThreads]
+-- runScript (Form486 script userFile) baseUrl _ fp nThreads = do
+--   stderrLn $ intercalate " " [tshow userFile, tshow baseUrl, tshow fp, tshow nThreads]
 --   stderrLn "\n********************************************************************************\n"
 --   stderrLn "Waiting for 2 mins. Does the above look correct?"
 --   threadDelay (120000000)
---   stderrLn "Starting SPIN Change intake now!"
+--   stderrLn "Starting 486 intake now!"
 --   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
---   chan <- newTChanIO
+--   logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
 
---   results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
+--   results <- mapConcurrently (\login -> tryAny $ runAppianT fp (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
 
---   putStrLn "Finished with SPIN Change Intake!"
---     where
---       runIt mgr login = do
---         res <- tryAny $ runAppianT (LogFile "/tmp/spinIntake.log") script (ClientEnv mgr baseUrl) login
---         print res
+--   dispResults results
 
 runMultiple :: (LogMode -> Int -> IO ()) -> LogFilePath -> Int -> [Int] -> IO ()
 runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip [1..nRuns] . repeat) nUserList
@@ -151,12 +125,6 @@ instance Show UnsupportedReviewException where
 
 instance Exception UnsupportedReviewException
 
--- dispatchReview :: ReviewType -> ClientEnv -> IO (Either SomeException Value)
--- dispatchReview RevSpinChange env = spinReview env preprodSpinReviewUsers
--- dispatchReview RevForm486 env = form486Review env preprodForm486Users
--- dispatchReview RevServSub env = servSubReview env preprodServSubUsers
--- dispatchReview typ _ = throwM $ UnsupportedReviewException $ tshow typ
-
 loginConsumer :: MonadIO m => TChan (ThreadControl a) -> (a -> m ()) -> m ()
 loginConsumer chan f = S.mapM_ f $ S.map tcItem $ S.takeWhile notFinished $ S.repeatM (atomically $ readTChan chan)
 
@@ -182,18 +150,8 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: BaseUrl -> LogMode -> CsvPath -> Int -> IO [Maybe (Either SomeException Value)]
-run471Intake baseUrl logFilePath csvInput n = do
-  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
-  let env = ClientEnv mgr baseUrl
-      runFunc conf = do
-        res <- fmap join $ tryAny $ liftIO $ runAppianT' runStdoutLoggingT (form471Intake conf) env (conf ^. applicant)
-        let res' = bimap (\exc -> toException $ ScriptException $ tshow (conf ^. applicant) <> ": " <> tshow exc) id res
-        return res'
-
-  res <- trace "Running 471 intake now." $ runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) runFunc
-  dispResults $ fmap (maybe (throwM MissingItemException) id) res
-  return res
+run471Intake :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
+run471Intake = runIt form471Intake
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Assign baseUrl logFilePath csvInput n = do
@@ -225,14 +183,14 @@ run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) env (conf ^. certLogin))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
-run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> LogFilePath -> IO ()
-run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
-  where
-    run486Intake (run, nUsers) = runScript (Form486 form486Intake $ fromString userFp) baseUrl mempty (LogFile logFp) nUsers
-      where
-        userFp = fpPrefix <> suffix
-        logFp = logFilePrefix <> logFilePath suffix
-        suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
+-- run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> LogFilePath -> IO ()
+-- run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
+--   where
+--     run486Intake (run, nUsers) = runScript (Form486 form486Intake $ fromString userFp) baseUrl mempty (LogFile logFp) nUsers
+--       where
+--         userFp = fpPrefix <> suffix
+--         logFp = logFilePrefix <> logFilePath suffix
+--         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
 runComadInitialReview :: ReviewBaseConf -> HostUrl -> LogMode -> CsvPath -> Int -> IO ()
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
@@ -280,34 +238,34 @@ parseCommands = subparser
   -- <> command "adminIntake" adminIntakeInfo
   )
 
-scriptsInfo :: ParserInfo (IO ())
-scriptsInfo = info (helper <*> scriptsParser)
-  (  fullDesc
-  <> progDesc "Various scripts written for the EPC system."
-  )
+-- scriptsInfo :: ParserInfo (IO ())
+-- scriptsInfo = info (helper <*> scriptsParser)
+--   (  fullDesc
+--   <> progDesc "Various scripts written for the EPC system."
+--   )
 
-scriptsParser :: Parser (IO ())
-scriptsParser = runScript
-  <$> option scriptParser
-  (  long "run-script"
-  <> short 'r'
-  )
-  <*> urlParser
-  <*> strOption
-  (  long "username"
-  <> short 'u'
-  )
-  <*> logModeParser
-  -- <*> strOption
-  -- (  long "log-file-path"
-  -- <> short 'l'
-  -- <> help "The path of the file to write the logs to."
-  -- )
-  <*> option auto
-  (  long "nThreads"
-  <> short 'n'
-  <> help "The number of threads to execute with."
-  )
+-- scriptsParser :: Parser (IO ())
+-- scriptsParser = runScript
+--   <$> option scriptParser
+--   (  long "run-script"
+--   <> short 'r'
+--   )
+--   <*> urlParser
+--   <*> strOption
+--   (  long "username"
+--   <> short 'u'
+--   )
+--   <*> logModeParser
+--   -- <*> strOption
+--   -- (  long "log-file-path"
+--   -- <> short 'l'
+--   -- <> help "The path of the file to write the logs to."
+--   -- )
+--   <*> option auto
+--   (  long "nThreads"
+--   <> short 'n'
+--   <> help "The number of threads to execute with."
+--   )
 
 urlParser :: Parser BaseUrl
 urlParser = BaseUrl
@@ -336,20 +294,14 @@ hostUrlParser = HostUrl
   <> help "The hostname of the server to use."
   )
 
-data Script
-  = CSScript (Appian Text)
-  | Form471 (Appian Value)
-  | Form486 (AppianUsername -> Appian (Maybe Text)) CsvPath
-  | SPINChange (Appian Value) FilePath
-
-scriptParser :: ReadM Script
-scriptParser = do
-  name <- readerAsk
-  let conf = Form471Conf {_nFRNs = 5, _spin = "143000413", _applicant = Login {_username = "mcmechd@gardencityschools.com", _password = "EPCPassword123!"}}
-  case name of
-    "cscase" -> return $ CSScript createCSCase
-    "form471" -> return $ Form471 (form471Intake conf)
-    _ -> fail $ show name <> " is not a valid script name!"
+-- scriptParser :: ReadM Script
+-- scriptParser = do
+--   name <- readerAsk
+--   let conf = Form471Conf {_nFRNs = 5, _spin = "143000413", _applicant = Login {_username = "mcmechd@gardencityschools.com", _password = "EPCPassword123!"}}
+--   case name of
+--     "cscase" -> return $ CSScript createCSCase
+--     "form471" -> return $ Form471 (form471Intake conf)
+--     _ -> fail $ show name <> " is not a valid script name!"
 
 form471IntakeInfo :: ParserInfo (IO ())
 form471IntakeInfo = info (helper <*> form471Parser)
@@ -359,13 +311,13 @@ form471IntakeInfo = info (helper <*> form471Parser)
 
 form471Parser :: Parser (IO ())
 form471Parser = run471Intake
-  <$> urlParser
+  <$> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
-  ) *> pure (pure ())
+  )
 
 comadInitialInfo :: ParserInfo (IO ())
 comadInitialInfo = info (helper <*> comadInitialParser)
@@ -392,22 +344,22 @@ csvConfParser = fromString <$>
   <> help "The csv config file for 471 intake."
   )
 
-form486Info :: ParserInfo (IO ())
-form486Info = info (helper <*> form486Parser)
-  (  fullDesc
-  <> progDesc "Runs the FCC Form 486 intake performance script"
-  )
+-- form486Info :: ParserInfo (IO ())
+-- form486Info = info (helper <*> form486Parser)
+--   (  fullDesc
+--   <> progDesc "Runs the FCC Form 486 intake performance script"
+--   )
 
-form486Parser :: Parser (IO ())
-form486Parser = run486Intake
-  <$> urlParser
-  <*> userParser
-  <*> option auto
-  (  long "num-runs"
-  <> short 'n'
-  )
-  <*> threadsParser
-  <*> logFileParser
+-- form486Parser :: Parser (IO ())
+-- form486Parser = run486Intake
+--   <$> urlParser
+--   <*> userParser
+--   <*> option auto
+--   (  long "num-runs"
+--   <> short 'n'
+--   )
+--   <*> threadsParser
+--   <*> logFileParser
 
 spinChangeInfo :: ParserInfo (IO ())
 spinChangeInfo = info (helper <*> spinChangeParser)
@@ -446,21 +398,6 @@ initialReviewParser = runMultiple
   <> short 'n'
   )
   <*> threadsParser
-
--- reviewInfo :: ParserInfo (IO ())
--- reviewInfo = info (helper <*> reviewParser)
---   (  fullDesc
---   <> progDesc "Runs PC review for 486, Service Substitution, SPIN Change, and Appeals."
---   )
-
--- reviewParser :: Parser (IO ())
--- reviewParser = runReview
---   <$> urlParser
---   <*> logModeParser
---   <*> option auto
---   (  long "num-threads"
---   <> short 't'
---   )
 
 adminIntakeInfo :: ParserInfo (IO ())
 adminIntakeInfo = info (helper <*> adminIntakeParser)
@@ -520,11 +457,3 @@ threadsParser = option parseManyR
 stderrLn :: MonadIO m => Text -> m ()
 stderrLn txt = hPut stderr $ encodeUtf8 txt <> "\n"
 
--- reviewTypeParser :: Parser ReviewType
--- reviewTypeParser =
---   (parseElement . pack)
---   <$>  
---   strOption
---   (  long "reviewType"
---   <> help "The type of case to review."
---   )

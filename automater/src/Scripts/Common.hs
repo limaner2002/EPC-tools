@@ -101,14 +101,17 @@ forGridRowsWith_ continueFcn updateFcn colFcn fold f v = do
             loop total val' (idx + 1)
 
 forGridRows1_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
-forGridRows1_ updateFcn colFcn fold f = do
+forGridRows1_ = forGridRowsWith1_ (const True)
+
+forGridRowsWith1_ :: (RunClient m, MonadThrow m) => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRowsWith1_ continueFcn updateFcn colFcn fold f = do
   v <- use appianValue
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
   loop (gf ^. gfTotalCount) 0
     where
       loop total idx = do
         val <- use appianValue
-        case total <= idx of
+        case (total <= idx && continueFcn idx) of
           True -> assign appianValue val
           False -> do
             (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
