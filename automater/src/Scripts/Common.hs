@@ -93,9 +93,9 @@ forGridRowsWith_ continueFcn updateFcn colFcn fold f v = do
   loop (gf ^. gfTotalCount) v 0
     where
       loop total val idx = do
-        case (total <= idx && continueFcn idx) of
-          True -> return val
-          False -> do
+        case (idx < total && continueFcn idx) of
+          False -> return val
+          True -> do
             (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
             val' <- f b gf val'
             loop total val' (idx + 1)
@@ -111,9 +111,9 @@ forGridRowsWith1_ continueFcn updateFcn colFcn fold f = do
     where
       loop total idx = do
         val <- use appianValue
-        case (total <= idx && continueFcn idx) of
-          True -> assign appianValue val
-          False -> do
+        case (idx < total && continueFcn idx) of
+          False -> assign appianValue val
+          True -> do
             (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
             res <- deltaUpdate val val'
             assign appianValue res
