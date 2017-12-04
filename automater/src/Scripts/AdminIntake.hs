@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.AdminIntake where
 
@@ -20,6 +21,7 @@ import Scripts.Test
 import Scripts.ReviewCommon
 import Control.Monad.Time
 import qualified Data.Csv as Csv
+import Data.Random (MonadRandom)
 
 newtype OrganizationName = OrganizationName Text
   deriving (Show, Eq, IsString, Csv.FromField)
@@ -36,7 +38,7 @@ instance Csv.FromNamedRecord AppealIntakeConfig where
     <$> r Csv..: "Organization Name"
     <*> Csv.parseNamedRecord r
 
-adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m) => AppealIntakeConfig -> AppianT m (Maybe Text)
+adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => AppealIntakeConfig -> AppianT m (Maybe Text)
 adminIntake conf = do
   let user = Identifiers [conf ^. appealApplicant . username]
 

@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.Assignment where
 
@@ -16,8 +17,9 @@ import Control.Lens.Action.Reified
 import Scripts.Common
 import Scripts.ReviewCommon
 import Control.Monad.Time
+import Data.Random (MonadRandom)
 
-assignment :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> AppianUsername -> AppianT m Value
+assignment :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReviewBaseConf -> AppianUsername -> AppianT m Value
 assignment conf username = do
   let un = Identifiers [username]
   (rid, v) <- openReport "Post-Commit Assignments"

@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.InitialReview where
 
@@ -18,8 +19,9 @@ import Scripts.Common
 import Scripts.ReviewCommon
 import Scripts.Test
 import Control.Monad.Time
+import Data.Random (MonadRandom)
 
-initialReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
+initialReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 initialReview baseConf conf = do
   (rid, v) <- myAssignedReportTemp (conf ^? frnCaseNumber) baseConf
   -- distributeLinks "Review Request Decision" rid conf v
@@ -31,7 +33,7 @@ initialReview baseConf conf = do
     >>= addNotes
     >>= sendUpdates "Send to Next Reviewer" (MonadicFold $ to (buttonUpdate "Send to Next Reviewer"))
 
-manageAppealDetails :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
+manageAppealDetails :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 manageAppealDetails baseConf conf = do
   (rid, v) <- myAssignedReportTemp (conf ^? frnCaseNumber) baseConf
   rref <- handleMissing "recordRef" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
@@ -48,10 +50,10 @@ manageAppealDetails baseConf conf = do
                                   <|> MonadicFold (to $ buttonUpdate "Save & Close")
                                   )
 
-adminInitial :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewConf' -> ReviewBaseConf -> AppianT m Value
+adminInitial :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReviewConf' -> ReviewBaseConf -> AppianT m Value
 adminInitial conf baseConf = manageAppealDetails baseConf conf >> initialReview baseConf conf
 
-finalReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
+finalReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 finalReview bConf conf = do
   (rid, v) <- myAssignedReportTemp (conf ^? frnCaseNumber) bConf
   -- distributeLinks "Add Review Notes" rid conf v
@@ -61,15 +63,15 @@ finalReview bConf conf = do
     >>= addNotes
     >>= sendUpdates "Send to next reviewer" (buttonUpdateWith (\l -> l == "Send to Next Reviewer" || l == "Review Completed") "Could not find 'Send to Next Reviewer'/'Review Completed' button!")
 
-addDecisions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
+addDecisions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Value -> AppianT m Value
 addDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeDecisions val val
 
-makeDecisions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
+makeDecisions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 makeDecisions val gf = do
   v <- foldGridField' makeDecision val gf
   return (v, v)
 
-makeDecision :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
+makeDecision :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Value -> GridFieldIdent -> AppianT m Value
 makeDecision val ident = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse
   _ <- sendUpdates "Decision: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))

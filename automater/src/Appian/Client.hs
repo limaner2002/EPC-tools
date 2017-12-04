@@ -34,6 +34,7 @@ import Data.Time (diffUTCTime, NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Time
 import Util.Parallel (runParallelFileLoggingT)
+import Data.Random
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
@@ -149,7 +150,7 @@ recordUpdate upd = do
   where
     recordUpdate_ = toClient Proxy (Proxy :: Proxy (RecordUpdate update))
 
-sendRecordUpdates :: (RunClient m, MonadThrow m, MonadCatch m, MonadTime m, MonadLogger m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendRecordUpdates :: (RunClient m, MonadThrow m, MonadCatch m, MonadTime m, MonadLogger m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
 sendRecordUpdates msg fold = do
   previousVal <- use appianValue
   eVal <- sendUpdates_ recordUpdate msg fold previousVal
@@ -290,14 +291,14 @@ data LogMode
   | LogFile LogFilePath
   deriving Show
 
-runAppianT :: LogMode -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
+runAppianT :: LogMode -> AppianT (LoggingT ClientM) a -> AppianState -> ClientEnv -> Login -> IO (Either SomeException a)
 -- runAppianT (LogFile (LogFilePath pth)) = runAppianT' (runParallelFileLoggingT pth)
 runAppianT LogStdout = runAppianT' runStdoutLoggingT
 
-runAppianT' :: (LoggingT ClientM (a, AppianState) -> ClientM (a, AppianState)) -> AppianT (LoggingT ClientM) a -> ClientEnv -> Login -> IO (Either SomeException a)
-runAppianT' runLogger f env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)
+runAppianT' :: (LoggingT ClientM (a, AppianState) -> ClientM (a, AppianState)) -> AppianT (LoggingT ClientM) a -> AppianState -> ClientEnv -> Login -> IO (Either SomeException a)
+runAppianT' runLogger f appianState env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)
   where
-    login' = execAppianT (login creds) (AppianState mempty Null)
+    login' = execAppianT (login creds) appianState
     logout' (Right (_, cookies)) = do
       execAppianT logout cookies
       putStrLn "Successfully logged out!"
@@ -399,44 +400,34 @@ sendUpdate' f (Right x) = do
         [] -> return $ Right v
         l -> return $ Left $ ValidationsException (l, v, x)
 
-sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendUpdates_ updateFcn label f v = do
   updates <- lift $ v ^!! runMonadicFold f
+  bounds <- use appianBounds
   let errors = lefts updates
 
   case errors of
-    [] -> do
-      start <- currentTime
-      res <- sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
-      end <- currentTime
-      let elapsed = diffUTCTime end start
-      logInfoN $ intercalate ","
-        [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
-        , tshow (diffToMS elapsed)
-        , label
-        , "200"
-        ]
-      return res
+    [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
     l -> throwM $ MissingComponentException (intercalate "\n" l, v)
 
-sendReportUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendReportUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendReportUpdates reportId label f v = do
   eRes <- sendReportUpdates' reportId label f v
   case eRes of
     Left v -> throwM v
     Right res -> return res
 
-sendReportUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendReportUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
 
-sendUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendUpdates label f v = do
   eRes <- sendUpdates' label f v
   case eRes of
     Left v -> throwM v
     Right res -> return res
 
-sendUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendUpdates' label f v = do
   taskId <- getTaskId v
   sendUpdates_ (taskUpdate taskId) label f v
@@ -571,3 +562,9 @@ recordTime label f = do
     , "200"
     ]
   return res
+
+thinkTimer :: (MonadBase IO m, MonadRandom m) => Bounds -> m a -> m a
+thinkTimer bounds f = do
+    secs <- sample $ uniform (bounds ^. lowerBound) (bounds ^. upperBound)
+    threadDelay (secs * 1000000)
+    f

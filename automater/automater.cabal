@@ -38,6 +38,7 @@ library
                      , Scripts.ComadReviewTypes
                      , Util.Parallel
                      , Scripts.ProducerConsumer
+                     , Appian.Internal.Appian
   build-depends:       base
                      , lens
                      , aeson
@@ -57,7 +58,6 @@ library
                      , monad-logger
                      , streaming
                      , resourcet
-                     , MonadRandom
                      , cassava
                      , stats
                      , lens-action
@@ -67,6 +67,8 @@ library
                      , mtl
                      , case-insensitive
                      , async-pool
+                     , random-fu
+                     , random-source
   default-language:    Haskell2010
 
 test-suite automater-test

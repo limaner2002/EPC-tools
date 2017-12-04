@@ -27,11 +27,12 @@ import Appian.Types
 import Data.Proxy
 import qualified Data.Csv as Csv
 import Control.Monad.Time
+import Data.Random.Source
 
 data Login = Login
   { _username :: Text
   , _password :: Text
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Ord)
 
 makeLenses ''Login
 
@@ -46,6 +47,12 @@ instance Csv.ToRecord Login where
     , Csv.toField $ login ^. password
     ]
 
+instance Csv.ToNamedRecord Login where
+  toNamedRecord login = Csv.namedRecord
+    [ ("username", login ^. username . to Csv.toField)
+    , ("password", login ^. password . to Csv.toField)
+    ]
+
 data AppianConf = AppianConf
   { confCookies :: Cookies
   , confUserAgent :: UserAgent
@@ -55,6 +62,24 @@ instance RunClient m => RunClient (LoggingT m) where
   runRequest = lift . runRequest
   throwServantError = lift . throwServantError
   catchServantError m c = LoggingT $ \logFun -> runLoggingT m logFun `catchServantError` \e -> runLoggingT (c e) logFun
+
+instance MonadRandom m => MonadRandom (LoggingT m) where
+  getRandomWord8 = lift getRandomWord8
+  getRandomWord16 = lift getRandomWord16
+  getRandomWord32 = lift getRandomWord32
+  getRandomWord64 = lift getRandomWord64
+  getRandomDouble = lift getRandomDouble
+
+  getRandomNByteInteger = lift . getRandomNByteInteger
+
+instance MonadRandom ClientM where
+  getRandomWord8 = liftIO getRandomWord8
+  getRandomWord16 = liftIO getRandomWord16
+  getRandomWord32 = liftIO getRandomWord32
+  getRandomWord64 = liftIO getRandomWord64
+  getRandomDouble = liftIO getRandomDouble
+
+  getRandomNByteInteger = liftIO . getRandomNByteInteger
 
 data HTML
 

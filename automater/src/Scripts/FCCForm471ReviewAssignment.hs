@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.FCCForm471ReviewAssignment where
 
@@ -21,6 +22,7 @@ import Control.Monad.Time
 import Scripts.ReviewCommon
 import Scripts.FCCForm471Common
 import qualified Data.Csv as Csv
+import Data.Random (MonadRandom)
 
 data PIAReviewerType
   = PIAInitial
@@ -89,7 +91,7 @@ instance Csv.FromNamedRecord Form471ReviewConf where
 benToText :: BEN -> Text
 benToText (BEN n) = tshow n
 
-form471Assign :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Form471ReviewConf -> AppianT m Value
+form471Assign :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Form471ReviewConf -> AppianT m Value
 form471Assign conf = do
   let un = Identifiers [conf ^. confReviewer . username]
   (rid, v) <- openReport "471 Reviews Assignment "
@@ -117,7 +119,7 @@ gridSelection idxs gf = gfSelection . traverse . _Selectable . gslSelected .~ id
 form471NumToText :: Form471Num -> Text
 form471NumToText (Form471Num n) = tshow n
 
-form471Review :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => Form471ReviewConf -> AppianT m Value
+form471Review :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m) => Form471ReviewConf -> AppianT m Value
 form471Review conf = do
   (rid, v) <- openReport "My Assigned 471 Applications"
   editReport rid
@@ -130,12 +132,12 @@ form471Review conf = do
     >>= addDecision (conf ^. confReviewType)
     >>= sendUpdates "Complete Review Step" (MonadicFold $ getButtonWith (\l -> l == "Complete PIA Review" || l == "Complete HS Review") . to toUpdate . to Right)
 
-clearAllExceptions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => Value -> AppianT m Value
+clearAllExceptions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m) => Value -> AppianT m Value
 clearAllExceptions v = forGridRows_ sendUpdates (^. gfColumns . at "Exception Name" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) clearExceptions v
                        >>= forGridRows_ sendUpdates (^. gfColumns . at "Exception Name" . traverse . _TextCellDynLink . _2) (MonadicFold $ dropping 1 getGridFieldCell . traverse) clearExceptions
                        >>= forGridRows_ sendUpdates (^. gfColumns . at "Exception Name" . traverse . _TextCellDynLink . _2) (MonadicFold $ dropping 2 getGridFieldCell . traverse) clearExceptions
 
-clearExceptions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => DynamicLink -> GridField GridFieldCell -> Value -> AppianT m Value
+clearExceptions :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m) => DynamicLink -> GridField GridFieldCell -> Value -> AppianT m Value
 clearExceptions dyl _ v = sendUpdates' "Click on Exceptions Link" (MonadicFold $ to (const dyl) . to toUpdate . to Right) v
   >>= handleValidations
         (sendUpdates "Click 'Add Comment'" (MonadicFold $ to $ dynamicLinkUpdate "Add Comment")
@@ -157,7 +159,7 @@ clickApplication val = do
   (_, v) <- viewRelatedActions val rref
   executeRelatedAction "Manage Exceptions" rref v
 
-addDecision :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m) => PIAReviewerType -> Value -> AppianT m Value
+addDecision :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m) => PIAReviewerType -> Value -> AppianT m Value
 addDecision PIAInitial v = sendUpdates "Click 'Add Decision'" (MonadicFold $ to $ buttonUpdate "Add Decision") v
   >>= sendUpdates "Select Decision" (MonadicFold (to $ dropdownUpdate "Select Decision" 2))
   >>= sendUpdates "Select Reason" (MonadicFold (to $ dropdownUpdate "Select Reason" 2))

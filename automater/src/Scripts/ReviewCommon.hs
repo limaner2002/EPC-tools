@@ -23,6 +23,7 @@ import qualified Streaming.Prelude as S
 import qualified Data.Foldable as F
 import Control.Monad.Time
 import qualified Data.Csv as Csv
+import Data.Random (MonadRandom)
 
 data ReviewBaseConf = ReviewBaseConf
   { reviewType :: ReviewType
@@ -194,16 +195,16 @@ retryIt act = retrying reviewRetryPolicy shouldRetry (const act)
 reviewRetryPolicy :: Monad m => RetryPolicyM m
 reviewRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 1
 
-distributeLinks_ :: (MonadThrow m, RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadIO m) => (RecordRef -> AppianT m Value) -> ReportId -> ReviewConf -> Value -> AppianT m Value
+distributeLinks_ :: (MonadThrow m, RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadIO m, MonadBase IO m, MonadRandom m) => (RecordRef -> AppianT m Value) -> ReportId -> ReviewConf -> Value -> AppianT m Value
 distributeLinks_ action rid conf v = do
   gf <- handleMissing "FRN Case Grid" v $ v ^? getGridFieldCell . traverse
   mVal <- distributeTasks (revTaskVar conf) (revChan conf) (getAllLinks rid v) action
   handleMissing "Could not select FRN!" v mVal
 
-distributeLinks :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadIO m) => Text -> ReportId -> ReviewConf -> Value -> AppianT m Value
+distributeLinks :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadIO m, MonadBase IO m, MonadRandom m) => Text -> ReportId -> ReviewConf -> Value -> AppianT m Value
 distributeLinks actionName rid conf v = distributeLinks_ (viewRelatedActions v >=> uncurry (executeRelatedAction actionName)) rid conf v
 
-getAllLinks :: (RunClient m, MonadLogger m, MonadThrow m, MonadTime m, MonadCatch m) => ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) (AppianT m) ()
+getAllLinks :: (RunClient m, MonadLogger m, MonadThrow m, MonadTime m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReportId -> Value -> S.Stream (S.Of (ThreadControl RecordRef)) (AppianT m) ()
 getAllLinks rid v = do
   mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
   case mIdents of
@@ -215,15 +216,15 @@ accumLinks val l gf = return (l', val)
   where
     l' = (<>) <$> l <*> (gf ^? gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2)
 
-addNotes :: (RunClient m, MonadLogger m, MonadTime m, MonadThrow m, MonadCatch m, MonadGen m) => Value -> AppianT m Value
+addNotes :: (RunClient m, MonadLogger m, MonadTime m, MonadThrow m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m) => Value -> AppianT m Value
 addNotes val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeNotes val val
 
-makeNotes :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadGen m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
+makeNotes :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 makeNotes val gf = do
   v <- foldGridField' makeNote val gf
   return (v, v)
 
-makeNote :: (MonadThrow m, RunClient m, MonadTime m, MonadGen m, MonadLogger m, MonadCatch m) => Value -> GridFieldIdent -> AppianT m Value
+makeNote :: (MonadThrow m, RunClient m, MonadTime m, MonadGen m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Value -> GridFieldIdent -> AppianT m Value
 makeNote val ident = do
   gf <- handleMissing "FRN Note Grid" val $ val ^? getGridFieldCell . traverse
   val' <- sendUpdates "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
@@ -261,7 +262,7 @@ instance HasLogin ReviewConf' where
   getLogin conf = conf ^. reviewer
 
   -- This needs to be renamed to replace the myAssignedReport function below.
-myAssignedReportTemp :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Maybe CaseNumber -> ReviewBaseConf -> AppianT m (ReportId, Value)
+myAssignedReportTemp :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Maybe CaseNumber -> ReviewBaseConf -> AppianT m (ReportId, Value)
 myAssignedReportTemp mCaseNum conf = do
   (rid, v) <- openReport "My Assigned Post-Commit Assignments"
   let filterCase v = case mCaseNum of
@@ -277,5 +278,5 @@ myAssignedReportTemp mCaseNum conf = do
   return (rid, res)
 
     -- Needs to be replaced by myAssignedReportTemp above
-myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => ReviewBaseConf -> AppianT m (ReportId, Value)
+myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReviewBaseConf -> AppianT m (ReportId, Value)
 myAssignedReport = myAssignedReportTemp Nothing

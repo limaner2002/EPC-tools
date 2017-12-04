@@ -17,6 +17,7 @@ import Options.Applicative.Types
 import Scripts.FCCForm471
 import Scripts.FCCForm471ReviewAssignment
 import Scripts.FCCForm471Certification
+import Scripts.FCCForm471Common (Form471Num)
 import Scripts.CreateCSCase
 import Scripts.FCCForm486
 import Scripts.SPINChangeIntake
@@ -60,6 +61,7 @@ getPassword = pure "EPCPassword123!"
 --   results <- mapConcurrently (const $ tryAny $ runAppianT fp script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
 
 --   dispResults results
+
 -- runScript (Form486 script userFile) baseUrl _ fp nThreads = do
 --   stderrLn $ intercalate " " [tshow userFile, tshow baseUrl, tshow fp, tshow nThreads]
 --   stderrLn "\n********************************************************************************\n"
@@ -113,7 +115,8 @@ runConsumer f baseUrl fp userFile nThreads = do
   putStrLn "Done!"
     where
       runIt mgr login = do
-        res <- join <$> (tryAny $ runAppianT fp (f login) (ClientEnv mgr baseUrl) login)
+        let appianState = newAppianState (Bounds 0 0)
+        res <- join <$> (tryAny $ runAppianT fp (f login) appianState (ClientEnv mgr baseUrl) login)
         case res of
           Left exc -> print exc
           Right _ -> putStrLn "Success!"
@@ -150,15 +153,16 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
 run471Intake = runIt form471Intake
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Assign baseUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr baseUrl
+      appianState = newAppianState (Bounds 0 0)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) env (conf ^. confReviewMgr))
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
@@ -170,7 +174,8 @@ run471Review hostUrl logFilePath csvInput n = do
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
   where
     f env conf = do
-      eRes <- fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Review conf) env (conf ^. confReviewer)
+      let appianState = newAppianState (Bounds 0 0)
+      eRes <- fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Review conf) appianState env (conf ^. confReviewer)
       case eRes of
         Left exc -> return $ Left $ toException $ ScriptException $ (conf ^. confFormNum . to tshow) <> ": " <> tshow exc <> "\n" <> (conf ^. confReviewer . username . to tshow)
         Right _ -> return eRes
@@ -179,8 +184,9 @@ run471Certify :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+      appianState = newAppianState (Bounds 0 0)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) env (conf ^. certLogin))
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) appianState env (conf ^. certLogin))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 -- run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> LogFilePath -> IO ()
@@ -192,23 +198,24 @@ run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
 --         logFp = logFilePrefix <> logFilePath suffix
 --         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
-runComadInitialReview :: ReviewBaseConf -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
-runReview :: ReviewBaseConf -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
 runReview baseConf = runIt (finalReview baseConf)
 
-runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException b]
-runIt f (HostUrl hostUrl) logMode csvInput n = do
+runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException b]
+runIt f bounds (HostUrl hostUrl) logMode csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+      appianState = newAppianState bounds
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\a -> fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) env (getLogin a))
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\a -> fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a))
   let res' = fmap (maybe (throwM MissingItemException) id) res
   dispResults res'
   return res'
 
-runSPINIntake :: HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException (Maybe Text)]
+runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException (Maybe Text)]
 runSPINIntake = runIt spinChangeIntake
 
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
@@ -313,7 +320,8 @@ form471IntakeInfo = info (helper <*> form471Parser)
 
 form471Parser :: Parser (IO ())
 form471Parser = fmap void $ run471Intake
-  <$> hostUrlParser
+  <$> boundsParser
+  <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
   <*> option auto
@@ -330,6 +338,7 @@ comadInitialInfo = info (helper <*> comadInitialParser)
 comadInitialParser :: Parser (IO ())
 comadInitialParser = fmap void $ runComadInitialReview
   <$> pure comadInitial2017
+  <*> boundsParser
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
@@ -371,7 +380,8 @@ spinChangeInfo = info (helper <*> spinChangeParser)
 
 spinChangeParser :: Parser (IO ())
 spinChangeParser = void <$> (runSPINIntake
-  <$> (HostUrl <$> strOption
+  <$> boundsParser
+  <*> (HostUrl <$> strOption
   (  long "host-url"
   <> help "The url of the host to use."
   ))
@@ -458,4 +468,24 @@ threadsParser = option parseManyR
 
 stderrLn :: MonadIO m => Text -> m ()
 stderrLn txt = hPut stderr $ encodeUtf8 txt <> "\n"
+
+boundsParser :: Parser Bounds
+boundsParser = Bounds
+  <$> option auto
+  (  long "lower"
+  <> help "The minimum for the think timer"
+  )
+  <*> option auto
+  (  long "upper"
+  <> help "The maximum for the think timer"
+  )
+
+-- reviewTypeParser :: Parser ReviewType
+-- reviewTypeParser =
+--   (parseElement . pack)
+--   <$>  
+--   strOption
+--   (  long "reviewType"
+--   <> help "The type of case to review."
+--   )
 

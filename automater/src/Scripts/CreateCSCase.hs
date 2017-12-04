@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.CreateCSCase where
 
@@ -13,10 +14,11 @@ import Appian.Types
 import Appian.Instances
 import Appian.Lens
 import Appian.Client
-import Control.Monad.Random
+-- import Control.Monad.Random
+import Data.Random
 import Control.Monad.Time
 
-createCSCase :: (RunClient m, MonadLogger m, MonadTime m, MonadCatch m) => AppianT m Text
+createCSCase :: (RunClient m, MonadLogger m, MonadTime m, MonadCatch m, MonadBase IO m, MonadRandom m) => AppianT m Text
 createCSCase = do
   v <- actionsTab
     >>= (\v -> handleResult $ v ^. getTaskProcId "Create a Customer Service Case")
@@ -51,5 +53,5 @@ dropdownUpdateWith f label = getDropdown label . to f . to toUpdate
 dropdownRandom :: MonadRandom m => DropdownField -> m DropdownField
 dropdownRandom df = do
   let n = df ^. dfChoices . to length
-  idx <- getRandomR (1, n+1)
+  idx <- sample $ uniform 1 (n+1)
   return $ dfValue .~ idx $ df
