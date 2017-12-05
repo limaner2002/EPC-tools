@@ -27,7 +27,7 @@ import Scripts.AdminReview
 import Scripts.AdminIntake
 import Scripts.ComadReview
 import Appian.Client ( runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT'
-                     , LogMode (..), HostUrl (..)
+                     , LogMode (..), HostUrl (..), MissingComponentException (..), badUpdateExceptionMsg
                      )
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -48,6 +48,7 @@ import Control.Monad.Trans.Resource (runResourceT)
 import Control.Arrow ((>>>))
 import qualified Data.Csv as Csv
 import Scripts.ProducerConsumer
+import Control.Retry
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -156,6 +157,9 @@ instance Exception ScriptException
 run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
 run471Intake = runIt form471Intake
 
+run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
+run471IntakeAndCertify = runIt form471IntakeAndCertify
+
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Assign baseUrl logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
@@ -198,6 +202,24 @@ run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
 --         logFp = logFilePrefix <> logFilePath suffix
 --         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
+shouldRetry :: Monad m => RetryStatus -> Either SomeException a -> m Bool
+shouldRetry _ (Left exc) = case exc ^? to fromException . traverse . badUpdateExceptionMsg of
+    Nothing -> pure False
+    Just txt -> pure $ isPrefixOf "Cannot find task for " txt
+    where
+        fromMissing (MissingComponentException tpl) = tpl
+shouldRetry _ (Right _) = pure False
+
+findTaskRetryPolicy :: Monad m => RetryPolicyM m
+findTaskRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 10
+
+form471IntakeAndCertify :: Form471Conf -> Appian Form471Num
+form471IntakeAndCertify conf = do
+    formNum <- form471Intake conf
+    let certConf = CertConf formNum $ conf ^. applicant
+    eRes <- retrying findTaskRetryPolicy shouldRetry (const $ tryAny $ form471Certification certConf)
+    either throwM pure eRes
+
 runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
@@ -210,7 +232,10 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput n = do
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\a -> fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a))
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\a -> do
+                                                                                                               res <- fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
+                                                                                                               return res
+                                                                                                           )
   let res' = fmap (maybe (throwM MissingItemException) id) res
   dispResults res'
   return res'
@@ -239,6 +264,7 @@ parseCommands :: Parser (IO ())
 parseCommands = subparser
   (  command "form471Intake" form471IntakeInfo
   <> command "comadInitial" comadInitialInfo
+  <> command "form471IntakeAndCertify" form471IntakeAndCertifyInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
@@ -320,6 +346,23 @@ form471IntakeInfo = info (helper <*> form471Parser)
 
 form471Parser :: Parser (IO ())
 form471Parser = fmap void $ run471Intake
+  <$> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
+
+form471IntakeAndCertifyInfo :: ParserInfo (IO ())
+form471IntakeAndCertifyInfo = info (helper <*> form471IntakeAndCertifyParser)
+  (  fullDesc
+  <> progDesc "Runs the PC COMAD Initial Review script"
+  )
+
+form471IntakeAndCertifyParser :: Parser (IO ())
+form471IntakeAndCertifyParser = fmap void $ run471IntakeAndCertify
   <$> boundsParser
   <*> hostUrlParser
   <*> logModeParser
