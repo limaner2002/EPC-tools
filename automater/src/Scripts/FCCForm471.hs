@@ -85,9 +85,10 @@ form471Intake conf = do
     -- Common!
 searchEntities :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> Value -> AppianT m Value
 searchEntities entityName v = do
-  let orgIdents = (^. runFold ((,) <$> Fold (gfColumns . at "Organization ID" . traverse . _TextCellDynLink . _1) <*> Fold (gfIdentifiers . traverse)) . to (uncurry zip))
+  let orgIdents = (^. runFold ((,) <$> Fold (gfColumns . at "Organization ID" . traverse . _TextCellLink . _1) <*> Fold (gfIdentifiers . traverse)) . to (uncurry zip))
   assign appianValue v
   forGridRows1_ sendUpdates orgIdents (MonadicFold $ getGridFieldCell . traverse) (selectEntity entityName)
+  sendUpdates1 "Click Apply for Funding Now" (MonadicFold $ to $ buttonUpdate "Apply For Funding Now")
   use appianValue
 
 selectEntity :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> (Text, GridFieldIdent) -> GridField GridFieldCell -> AppianT m ()
