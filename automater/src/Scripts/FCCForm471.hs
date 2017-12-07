@@ -32,7 +32,7 @@ import Scripts.FCCForm471Common (Form471Num(..))
 import Data.Random (MonadRandom)
 import Control.Retry
 
-form471Intake :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m, MonadIO m) => Form471Conf -> AppianT m Value
+form471Intake :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m, MonadIO m) => Form471Conf -> AppianT m Form471Num
 form471Intake conf = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
@@ -73,14 +73,14 @@ form471Intake conf = do
     True -> sendUpdates "Entity Members" (MonadicFold (to (buttonUpdate "Save & Continue"))) membersPage
     False -> selectMembers membersPage
 
-  createFRNVal <- sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
+  frnList <- sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
     >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
-  case conf ^. createFRNType of
-    CopyFRN _ -> createFRN conf (conf ^. nFRNs) (conf ^. spin) createFRNVal
-    NewFRN -> do
-      createFRN conf (conf ^. nFRNs) (conf ^. spin) createFRNVal
-        >>= forLineItems conf
-        -- >>= ifContinueToCertification
+    >>= createFRN conf (conf ^. nFRNs) (conf ^. spin)
+  val <- case conf ^. createFRNType of
+    NewFRN -> forLineItems conf frnList
+    CopyFRN _ -> clickThroughAllFRNLineItems frnList
+    
+  ifContinueToCertification val
 
     -- Common!
 searchEntities :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> Value -> AppianT m Value
@@ -286,12 +286,12 @@ createFRN conf n spin val = do
                                                                            use appianValue
                                                                        )
                           )
-                      -- >>= sendUpdates "Continue to Key Information" (MonadicFold $ to $ buttonUpdate "Continue")
-                      -- >>= sendUpdates "Continue to Contract" (MonadicFold $ to $ buttonUpdate "Continue")
-                      -- >>= sendUpdates "Continue to Contract Dates" (MonadicFold $ to $ buttonUpdate "Continue")
-                      -- -- The below may change based on contract type
-                      -- >>= setDates
-                      -- >>= sendUpdates "Save Narrative & Continue" (MonadicFold (to $ buttonUpdate "Save & Continue"))
+                      >>= sendUpdates "Continue to Key Information" (MonadicFold $ to $ buttonUpdate "Continue")
+                      >>= sendUpdates "Continue to Contract" (MonadicFold $ to $ buttonUpdate "Continue")
+                      >>= sendUpdates "Continue to Contract Dates" (MonadicFold $ to $ buttonUpdate "Continue")
+                      -- The below may change based on contract type
+                      >>= setDates
+                      >>= sendUpdates "Save Narrative & Continue" (MonadicFold (to $ buttonUpdate "Save & Continue"))
 
   createFRN conf (n - 1) spin frnList
 
