@@ -154,11 +154,12 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
+run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
 run471Intake = runIt form471Intake
 
 run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
-run471IntakeAndCertify = runIt form471IntakeAndCertify
+run471IntakeAndCertify = error "Temporarily broken!"
+-- run471IntakeAndCertify = runIt form471IntakeAndCertify
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Assign baseUrl logFilePath csvInput n = do
@@ -214,11 +215,12 @@ findTaskRetryPolicy :: Monad m => RetryPolicyM m
 findTaskRetryPolicy = exponentialBackoff 1000000 `mappend` limitRetries 10
 
 form471IntakeAndCertify :: Form471Conf -> Appian Form471Num
-form471IntakeAndCertify conf = do
-    formNum <- form471Intake conf
-    let certConf = CertConf formNum $ conf ^. applicant
-    eRes <- retrying findTaskRetryPolicy shouldRetry (const $ tryAny $ form471Certification certConf)
-    either throwM pure eRes
+form471IntakeAndCertify = error "Broken for Copy FRN!"
+-- form471IntakeAndCertify conf = do
+--     formNum <- form471Intake conf
+--     let certConf = CertConf formNum $ conf ^. applicant
+--     eRes <- retrying findTaskRetryPolicy shouldRetry (const $ tryAny $ form471Certification certConf)
+--     either throwM pure eRes
 
 runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
