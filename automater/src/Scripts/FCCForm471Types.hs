@@ -9,6 +9,7 @@ import ClassyPrelude
 import qualified Data.Csv as Csv
 import Appian.Instances
 import Scripts.Common (HasLogin (..))
+import qualified Data.Attoparsec.Text as T
 
 data Form471Conf = Form471Conf
   { _nFRNs :: Int
@@ -18,6 +19,8 @@ data Form471Conf = Form471Conf
   , _applicant :: Login
   , _lineItemSize :: LineItemSize
   , _form470Search :: Form470SearchType
+  , _createFRNType :: CreateFRNType
+  , _selectOrgMethod :: SelectOrgMethod
   } deriving Show
 
 instance Csv.FromNamedRecord Form471Conf where
@@ -29,6 +32,8 @@ instance Csv.FromNamedRecord Form471Conf where
     <*> Csv.parseNamedRecord r
     <*> r Csv..: "lineItemSize"
     <*> Csv.parseNamedRecord r
+    <*> r Csv..: "Create FRN Mode"
+    <*> r Csv..: "Select Org Method"
 
 data Form470SearchType
   = ByBEN Text
@@ -79,10 +84,52 @@ instance Csv.FromField Category where
     "2" -> return Cat2
     _ -> fail $ show bs <> " does not appear to be a valid category. Use only '1' or '2'"
 
+data CreateFRNType
+  = NewFRN
+  | CopyFRN SearchFRNMethod
+  deriving (Show, Eq)
+
+instance Csv.FromField CreateFRNType where
+  parseField bs = either fail pure $ parseResult
+    where
+      parseResult = T.parseOnly parseCreateFRNType $ decodeUtf8 bs
+      parseCreateFRNType
+        = T.string "New" *> pure NewFRN
+        <|> T.string "Copy " *> (CopyFRN <$> parseFRNMethod)
+
+data SearchFRNMethod
+  = ByFCCForm471 Int
+  | ByFRNNumber Int
+  deriving (Show, Eq)
+
+instance Csv.FromField SearchFRNMethod where
+  parseField bs = either fail pure $ parseResult
+    where
+      parseResult = T.parseOnly parseFRNMethod $ decodeUtf8 bs
+
+parseFRNMethod
+  = T.string "471 " *> (ByFCCForm471 <$> T.decimal)
+  <|> T.string "FRN " *> (ByFRNNumber <$> T.decimal)
+  <|> fail "Could not decode SearchFRNMethod"
+
+data SelectOrgMethod
+  = ByOrgName Text
+  | ByArbitrary
+  deriving (Show, Ord, Eq)
+
+instance Csv.FromField SelectOrgMethod where
+  parseField bs = either failure pure $ parseResult
+    where
+      parseResult = T.parseOnly parseSearchMethod $ decodeUtf8 bs
+      parseSearchMethod = T.string "arbitrary" *> pure ByArbitrary
+        <|> T.string "by name: " *> (ByOrgName <$> T.takeText)
+      failure = const $ fail $ show bs <> " does not appear to be a valid SelectOrgMethod. Please use only 'arbitrary' or 'by name: <orgName>'"
+
 makeLenses ''Form471Conf
 makePrisms ''Form470SearchType
 makePrisms ''Category
 makePrisms ''LineItemSize
+makePrisms ''CreateFRNType
 
 instance HasLogin Form471Conf where
   getLogin conf = conf ^. applicant

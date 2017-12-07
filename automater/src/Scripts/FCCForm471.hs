@@ -30,8 +30,9 @@ import Control.Monad.Time
 import Scripts.FCCForm471Types
 import Scripts.FCCForm471Common (Form471Num(..))
 import Data.Random (MonadRandom)
+import Control.Retry
 
-form471Intake :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => Form471Conf -> AppianT m Form471Num
+form471Intake :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m, MonadIO m) => Form471Conf -> AppianT m Form471Num
 form471Intake conf = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
@@ -43,9 +44,12 @@ form471Intake conf = do
              v <- landingPageActionEx pid
              v' <- case v ^? isMultipleEntities of
                Nothing -> return v
-               Just "FormLayout" -> sendUpdates "Apply for Funding Now" (gridFieldArbitrarySelect -- MonadicFold (to (gridFieldUpdate 0))
-                                                                        <|> MonadicFold (to (buttonUpdate "Apply For Funding Now"))
-                                                                        ) v
+               Just "FormLayout" -> case conf ^. selectOrgMethod of
+                 ByArbitrary -> sendUpdates "Apply for Funding Now" (gridFieldArbitrarySelect -- MonadicFold (to (gridFieldUpdate 0))
+                                                                      <|> MonadicFold (to (buttonUpdate "Apply For Funding Now"))
+                                                                    ) v
+                 ByOrgName targetName -> searchEntities targetName v
+
                Just _ -> fail "There seems to be some change in the 'Apply for Funding Now' page?"
              case v' ^? isWindowClose of
                Nothing -> return v'
@@ -69,11 +73,27 @@ form471Intake conf = do
     True -> sendUpdates "Entity Members" (MonadicFold (to (buttonUpdate "Save & Continue"))) membersPage
     False -> selectMembers membersPage
 
-  sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
+  frnList <- sendUpdates "View Entity Types" (MonadicFold (to (buttonUpdate "Save & Continue"))) entityInformation
     >>= sendUpdates "View Discount Rates" (MonadicFold (to (buttonUpdate "Save & Continue")))
     >>= createFRN conf (conf ^. nFRNs) (conf ^. spin)
-    >>= forLineItems conf
-    >>= ifContinueToCertification
+  val <- case conf ^. createFRNType of
+    NewFRN -> forLineItems conf frnList
+    CopyFRN _ -> clickThroughAllFRNLineItems frnList
+    
+  ifContinueToCertification val
+
+    -- Common!
+searchEntities :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> Value -> AppianT m Value
+searchEntities entityName v = do
+  let orgIdents = (^. runFold ((,) <$> Fold (gfColumns . at "Organization ID" . traverse . _TextCellDynLink . _1) <*> Fold (gfIdentifiers . traverse)) . to (uncurry zip))
+  assign appianValue v
+  forGridRows1_ sendUpdates orgIdents (MonadicFold $ getGridFieldCell . traverse) (selectEntity entityName)
+  use appianValue
+
+selectEntity :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> (Text, GridFieldIdent) -> GridField GridFieldCell -> AppianT m ()
+selectEntity targetName (name, ident) gf
+  | targetName == name = sendUpdates1 ("Select Entity " <> tshow targetName) (MonadicFold $ to (const $ selectCheckbox ident gf) . to toUpdate . to Right)
+  | otherwise = return ()
 
 selectMembers :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Value -> AppianT m Value
 selectMembers v = do
@@ -210,9 +230,12 @@ ifContinueToCertification v = do
       case v ^? getButton "Review FCC Form 471" of
         Just _ -> sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471"))) v
           >> pure formNum
-        Nothing -> sendUpdates "Click Continue to Certification" (MonadicFold (to (buttonUpdate "Continue to Certification"))) v
-          >>= sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471")))
-          >> pure formNum
+        Nothing -> do
+          v' <- sendUpdates "Click Continue to Certification" (MonadicFold (to (buttonUpdate "Continue to Certification"))) v
+          case v' ^? getButton "Review FCC Form 471" of
+            Nothing -> pure formNum
+            Just _ -> sendUpdates "Click Review FCC Form 471" (MonadicFold (to (buttonUpdate "Review FCC Form 471"))) v'
+              >> pure formNum
 
     -- Discards the result of f
 foldDropdown :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> (Value -> AppianT m Value) -> Text -> Value -> AppianT m Value
@@ -240,16 +263,58 @@ getAddAllButton label
   || label == "Add All Schools "
   || label == "Add All Libraries "
 
-createFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => Form471Conf -> Int -> Text -> Value -> AppianT m Value
+createFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m, MonadIO m) => Form471Conf -> Int -> Text -> Value -> AppianT m Value
 createFRN _ 0 _ val = return val
 createFRN conf n spin val = do
   logDebugN $ "Creating FRN with " <> tshow (n - 1) <> " to go."
-  dates <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
-            >>= sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
+  val' <- sendUpdates "Create new FRN" (MonadicFold $ to (buttonUpdate "Add FRN")) val
+  frnList <- case conf ^. createFRNType of
+    NewFRN -> createNewFRN conf spin val'
+    CopyFRN method -> sendUpdates "Funding Request Key Information" (MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
+                                                                     <|> MonadicFold (to $ buttonUpdate "No")
+                                                                     <|> MonadicFold (to $ buttonUpdate "Copy FRN")
+                                                                    ) val'
+                      >>= copyFRN conf method
+                      >>= sendUpdates "Select an FRN & Continue" (gridFieldArbitrarySelect
+                                                                  <|> MonadicFold (to $ buttonUpdate "Continue")
+                                                                 )
+                      >>= (\v -> do
+                              assign appianValue v
+                              retrying refreshRetryPolicy retryRefresh (const $ do
+                                                                           sendUpdates1 "Select refresh" (MonadicFold $ to $ buttonUpdate "Refresh" )
+                                                                           use appianValue
+                                                                       )
+                          )
+                      >>= sendUpdates "Continue to Key Information" (MonadicFold $ to $ buttonUpdate "Continue")
+                      >>= sendUpdates "Continue to Contract" (MonadicFold $ to $ buttonUpdate "Continue")
+                      >>= sendUpdates "Continue to Contract Dates" (MonadicFold $ to $ buttonUpdate "Continue")
+                      -- The below may change based on contract type
+                      >>= setDates
+                      >>= sendUpdates "Save Narrative & Continue" (MonadicFold (to $ buttonUpdate "Save & Continue"))
+
+  createFRN conf (n - 1) spin frnList
+
+refreshRetryPolicy :: RetryPolicy
+refreshRetryPolicy = exponentialBackoff 8000000 `mappend` limitRetries 5
+
+retryRefresh :: MonadIO m => RetryStatus -> Value -> m Bool
+retryRefresh _ v = pure $ not $ has (deep $ hasKeyValue "#v" "FRN has been successfully copied.") v
+
+copyFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => Form471Conf -> SearchFRNMethod -> Value -> AppianT m Value
+copyFRN conf (ByFRNNumber num) = sendUpdates "Search by FRN Number" (MonadicFold (to $ textUpdate "Search by FRN Number" $ tshow num)
+                                                                     <|> MonadicFold (to $ buttonUpdate "Search")
+                                                                    )
+copyFRN conf (ByFCCForm471 num) = sendUpdates "Search by FCC Form 471" (MonadicFold (to $ textUpdate "Search by FCC Form 471" $ tshow num)
+                                                                        <|> MonadicFold (to $ buttonUpdate "Search")
+                                                                       )
+
+createNewFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => Form471Conf -> Text -> Value -> AppianT m Value
+createNewFRN conf spin val = do
+  dates <- sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
                                                <|> MonadicFold (to (buttonUpdate "No"))
                                                <|> MonadicFold (to (dropdownUpdate "Category 1 Service Types" 2))
                                                <|> MonadicFold (to (buttonUpdate "Continue"))
-                                              )
+                                              ) val
             >>= sendUpdates "Select Purchase Type" (MonadicFold (to (buttonUpdate "Tariff"))
                               <|> MonadicFold (to (buttonUpdate "Continue"))
                             )
@@ -281,10 +346,17 @@ createFRN conf n spin val = do
                                                           <|> MonadicFold (to $ buttonUpdate "Continue")
                                                           ) res
 
-  frnList <- sendUpdates "Enter narrative and Continue" (paragraphArbitraryUpdate "Provide a brief explanation of the products and services that you are requesting, or provide any other relevant information regarding this Funding Request. You should also use this field to describe any updates to your entity data, such as revised student counts, entity relationships, etc, that you were unable to make after the close of the Administrative filing window for profile updates. These changes will be addressed during the application review process." 4000
+  sendUpdates "Enter narrative and Continue" (paragraphArbitraryUpdate "Provide a brief explanation of the products and services that you are requesting, or provide any other relevant information regarding this Funding Request. You should also use this field to describe any updates to your entity data, such as revised student counts, entity relationships, etc, that you were unable to make after the close of the Administrative filing window for profile updates. These changes will be addressed during the application review process." 4000
                            <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                          ) narrative
-  createFRN conf (n - 1) spin frnList
+
+setDates :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => Value -> AppianT m Value
+setDates v = do
+  today <- utctDay <$> currentTime
+  sendUpdates "Enter funding dates and Continue" (MonadicFold (to (datePickerUpdate "What is the service start date?" (AppianDate $ Just today)))
+                                                  <|> MonadicFold (to (datePickerUpdate "What is the date your contract expires for the current term of the contract?" (AppianDate $ Just $ addDays 360 today)))
+                                                  <|> MonadicFold (to (buttonUpdate "Continue"))
+                                                 ) v
 
 forLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => Form471Conf -> Value -> AppianT m Value
 forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' conf dyl v)
@@ -378,3 +450,16 @@ parse471Number :: Parser Form471Num
 parse471Number = string "Create FCC Form 471 - " *> (Form471Num <$> decimal)
 -- parse471Number = manyTill anyChar (string " - Form # ") *> (Form471Num <$> decimal)
 
+clickThroughAllFRNLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => Value -> AppianT m Value
+clickThroughAllFRNLineItems val = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> clickThroughFRNLineItems dyl v) val
+
+clickThroughFRNLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => DynamicLink -> Value -> AppianT m Value
+clickThroughFRNLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
+  >>= forGridRows_ sendUpdates (^. gfColumns . at "FRN Line Item Number" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> clickThroughLineItem dyl v)
+  >>= sendUpdates "Continue to FRN Summary" (MonadicFold $ to $ buttonUpdate "Continue")
+
+clickThroughLineItem :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadBase IO m, MonadRandom m) => DynamicLink -> Value -> AppianT m Value
+clickThroughLineItem dyl v = sendUpdates "Click Line Item" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
+  >>= sendUpdates "Continue to Cost Calculation" (MonadicFold $ to $ buttonUpdate "Continue")
+  >>= sendUpdates "Continue to Recipients of Service" (MonadicFold $ to $ buttonUpdate "Save & Continue")
+  >>= sendUpdates "Continue to Line Item Summary" (MonadicFold $ to $ buttonUpdate "Continue")
