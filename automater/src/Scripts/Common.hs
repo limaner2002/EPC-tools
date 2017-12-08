@@ -376,3 +376,6 @@ sendUpdates1' msg fold = do
 
 class HasLogin a where
   getLogin :: a -> Login
+
+instance HasLogin Login where
+  getLogin = id

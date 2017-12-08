@@ -19,9 +19,9 @@ import Scripts.Common
 import Control.Monad.Time
 import Data.Random (MonadRandom)
 
-form486Intake :: (MonadCatch m, MonadLogger m, MonadTime m, MonadGen m, RunClient m, MonadBase IO m, MonadRandom m) => AppianUsername -> AppianT m (Maybe Text)
-form486Intake appianUN = do
-  let un = Identifiers [appianUN]
+form486Intake :: (MonadCatch m, MonadLogger m, MonadTime m, MonadGen m, RunClient m, MonadBase IO m, MonadRandom m) => Login -> AppianT m (Maybe Text)
+form486Intake login = do
+  let un = Identifiers [login ^. username . to AppianUsername]
   v <- myLandingPageAction "FCC Form 486"
 
   v' <- case v ^? hasKeyValue "label" "Existing Organizations" of

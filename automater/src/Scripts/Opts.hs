@@ -84,8 +84,8 @@ runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip 
         logFp = logFilePrefix <> logFilePath suffix
         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
-runInitialReview :: BaseUrl -> String -> LogMode -> Int -> IO ()
-runInitialReview = error "Initial review is broken due to the rewrite such that review stages take the case number as inputs now."
+-- runInitialReview :: BaseUrl -> String -> LogMode -> Int -> IO ()
+-- runInitialReview = error "Initial review is broken due to the rewrite such that review stages take the case number as inputs now."
 -- runInitialReview baseUrl username fp nThreads = do
 --   stderrLn $ intercalate " " [tshow baseUrl, tshow fp, tshow nThreads]
 --   stderrLn "\n********************************************************************************\n"
@@ -159,6 +159,12 @@ run471Intake = runIt form471Intake
 
 run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
 run471IntakeAndCertify = runIt form471IntakeAndCertify
+
+run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException (Maybe Text)]
+run486Intake = runIt form486Intake
+
+runInitialReview :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+runInitialReview = runIt (initialReview spinInitial2017)
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Assign baseUrl logFilePath csvInput n = do
@@ -265,6 +271,8 @@ parseCommands = subparser
   (  command "form471Intake" form471IntakeInfo
   <> command "comadInitial" comadInitialInfo
   <> command "form471IntakeAndCertify" form471IntakeAndCertifyInfo
+  <> command "form486Intake" form486IntakeInfo
+  <> command "initialReview" initialReviewInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
@@ -358,11 +366,45 @@ form471Parser = fmap void $ run471Intake
 form471IntakeAndCertifyInfo :: ParserInfo (IO ())
 form471IntakeAndCertifyInfo = info (helper <*> form471IntakeAndCertifyParser)
   (  fullDesc
-  <> progDesc "Runs the PC COMAD Initial Review script"
+  <> progDesc "Runs the 471 Intake Script followed by the 471 Certification script."
   )
 
 form471IntakeAndCertifyParser :: Parser (IO ())
 form471IntakeAndCertifyParser = fmap void $ run471IntakeAndCertify
+  <$> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
+
+form486IntakeInfo :: ParserInfo (IO ())
+form486IntakeInfo = info (helper <*> form486IntakeParser)
+  (  fullDesc
+  <> progDesc "Runs the FCC Form 486 Intake script"
+  )
+
+form486IntakeParser :: Parser (IO ())
+form486IntakeParser = fmap void $ run486Intake
+  <$> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
+
+initialReviewInfo :: ParserInfo (IO ())
+initialReviewInfo = info (helper <*> initialReviewParser)
+  (  fullDesc
+  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  )
+
+initialReviewParser :: Parser (IO ())
+initialReviewParser = fmap void $ runInitialReview
   <$> boundsParser
   <*> hostUrlParser
   <*> logModeParser
@@ -435,24 +477,24 @@ spinChangeParser = void <$> (runSPINIntake
   <> help "The number of concurrent threads to execute."
   ))
 
-initialReviewInfo :: ParserInfo (IO ())
-initialReviewInfo = info (helper <*> initialReviewParser)
-  (  fullDesc
-  <> progDesc "Runs the Initial Review script."
-  )
+-- initialReviewInfo :: ParserInfo (IO ())
+-- initialReviewInfo = info (helper <*> initialReviewParser)
+--   (  fullDesc
+--   <> progDesc "Runs the Initial Review script."
+--   )
 
-initialReviewParser :: Parser (IO ())
-initialReviewParser = runMultiple
-  <$> (runInitialReview
-   <$> urlParser
-   <*> userParser
-  )
-  <*> logFileParser
-  <*> option auto
-  (  long "num-runs"
-  <> short 'n'
-  )
-  <*> threadsParser
+-- initialReviewParser :: Parser (IO ())
+-- initialReviewParser = runMultiple
+--   <$> (runInitialReview
+--    <$> urlParser
+--    <*> userParser
+--   )
+--   <*> logFileParser
+--   <*> option auto
+--   (  long "num-runs"
+--   <> short 'n'
+--   )
+--   <*> threadsParser
 
 adminIntakeInfo :: ParserInfo (IO ())
 adminIntakeInfo = info (helper <*> adminIntakeParser)
