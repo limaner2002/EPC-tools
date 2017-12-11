@@ -83,3 +83,4 @@ resetConf var chan = do
     putStrLn "Resetting config!"
     S.reread (atomically . tryReadTChan) >>> S.print $ chan
     atomically $ writeTVar var Produce
+

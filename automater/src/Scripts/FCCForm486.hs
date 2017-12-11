@@ -51,11 +51,6 @@ form486Intake login = do
    >>= sendUpdates "Click Certify" (MonadicFold (to (buttonUpdate "Certify")))
    >>= \res -> return (res ^? deep (filtered $ has $ key "label" . _String . prefixed "You have successfully") . key "label" . _String . to parseNumber . traverse)
 
--- checkboxGroupUpdate :: Text -> [Int] -> Value -> Either Text Update
--- checkboxGroupUpdate label selection v = toUpdate <$> (_Right . cbgValue .~ Just selection $ cbg)
---   where
---     cbg = maybeToEither ("Could not locate checkbox group " <> tshow label) $ v ^? getCheckboxGroup label
-
 radioButtonFieldUpdate :: Text -> Int -> Value -> Either Text Update
 radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Just (AppianInteger selection) $ rdg)
   where

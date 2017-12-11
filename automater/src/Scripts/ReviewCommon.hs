@@ -67,6 +67,18 @@ spinSolix2017 = ReviewBaseConf RevSpinChange RevSolix FY2017
 spinUsac2017 :: ReviewBaseConf
 spinUsac2017 = ReviewBaseConf RevSpinChange RevUsac FY2017
 
+spinInitial2016 :: ReviewBaseConf
+spinInitial2016 = ReviewBaseConf RevSpinChange RevInitial FY2016
+
+spinFinal2016 :: ReviewBaseConf
+spinFinal2016 = ReviewBaseConf RevSpinChange RevFinal FY2016
+
+spinSolix2016 :: ReviewBaseConf
+spinSolix2016 = ReviewBaseConf RevSpinChange RevSolix FY2016
+
+spinUsac2016 :: ReviewBaseConf
+spinUsac2016 = ReviewBaseConf RevSpinChange RevUsac FY2016
+
 form486Initial2017 :: ReviewBaseConf
 form486Initial2017 = ReviewBaseConf RevForm486 RevInitial FY2017
 
@@ -102,6 +114,18 @@ form500Solix2017 = ReviewBaseConf RevForm500 RevSolix FY2017
 
 form500Usac2017 :: ReviewBaseConf
 form500Usac2017 = ReviewBaseConf RevForm500 RevUsac FY2017
+
+form500Initial2016 :: ReviewBaseConf
+form500Initial2016 = ReviewBaseConf RevForm500 RevInitial FY2016
+
+form500Final2016 :: ReviewBaseConf
+form500Final2016 = ReviewBaseConf RevForm500 RevFinal FY2016
+
+form500Solix2016 :: ReviewBaseConf
+form500Solix2016 = ReviewBaseConf RevForm500 RevSolix FY2016
+
+form500Usac2016 :: ReviewBaseConf
+form500Usac2016 = ReviewBaseConf RevForm500 RevUsac FY2016
 
 comadInitial2016 :: ReviewBaseConf
 comadInitial2016 = ReviewBaseConf RevCOMAD RevInitial FY2016

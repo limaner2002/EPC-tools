@@ -22,6 +22,7 @@ import Scripts.CreateCSCase
 import Scripts.FCCForm486
 import Scripts.SPINChangeIntake
 import Scripts.InitialReview
+import Scripts.Assignment
 import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
@@ -49,6 +50,7 @@ import Control.Arrow ((>>>))
 import qualified Data.Csv as Csv
 import Scripts.ProducerConsumer
 import Control.Retry
+import qualified Control.Concurrent.Async.Pool as Pool
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -163,8 +165,11 @@ run471IntakeAndCertify = runIt form471IntakeAndCertify
 run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException (Maybe Text)]
 run486Intake = runIt form486Intake
 
-runInitialReview :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
-runInitialReview = runIt (initialReview spinInitial2017)
+runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+runInitialReview conf = runIt (initialReview conf)
+
+runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either SomeException Value]
+runReviewAssign conf = runScriptExhaustive (assignment conf)
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Assign baseUrl logFilePath csvInput n = do
@@ -246,6 +251,25 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput n = do
   dispResults res'
   return res'
 
+exhaustiveProducer :: (Csv.FromNamedRecord a, MonadResource m, MonadLogger m) => TBQueue a -> CsvPath -> m String
+exhaustiveProducer q = csvStreamByName >>> S.mapM_ (atomically . writeTBQueue q)
+
+runScriptExhaustive :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either SomeException b]
+runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numRecords = do
+  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+      appianState = newAppianState bounds
+  confs <- csvStreamByName >>> S.take numRecords >>> S.toList >>> runResourceT >>> runStdoutLoggingT $ csvInput
+  res <- execTaskGroup nThreads (\a -> fmap join $ tryAny $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
+  dispResults res
+  return res
+
+execTaskGroup :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO (t b)
+execTaskGroup (NThreads n) f args = Pool.withTaskGroup n $ \group -> Pool.mapConcurrently group f args
+
+execTaskGroup_ :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO ()
+execTaskGroup_ n f args = execTaskGroup n f args >> return ()
+
 runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException (Maybe Text)]
 runSPINIntake = runIt spinChangeIntake
 
@@ -273,6 +297,7 @@ parseCommands = subparser
   <> command "form471IntakeAndCertify" form471IntakeAndCertifyInfo
   <> command "form486Intake" form486IntakeInfo
   <> command "initialReview" initialReviewInfo
+  <> command "pcAssign" reviewAssignInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
@@ -405,13 +430,36 @@ initialReviewInfo = info (helper <*> initialReviewParser)
 
 initialReviewParser :: Parser (IO ())
 initialReviewParser = fmap void $ runInitialReview
-  <$> boundsParser
+  <$> reviewBaseConfParser
+  <*> boundsParser
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
+  )
+
+reviewAssignInfo :: ParserInfo (IO ())
+reviewAssignInfo = info (helper <*> reviewAssignParser)
+  (  fullDesc
+  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  )
+
+reviewAssignParser :: Parser (IO ())
+reviewAssignParser = fmap void $ runReviewAssign
+  <$> reviewBaseConfParser
+  <*> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> (NThreads <$> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  ))
+  <*> option auto
+  (  long "numRecords"
+  <> help "The total number of records to exhaust."
   )
 
 comadInitialInfo :: ParserInfo (IO ())
@@ -564,6 +612,60 @@ boundsParser = Bounds
   (  long "upper"
   <> help "The maximum for the think timer"
   )
+
+fyParser :: Parser FundingYear
+fyParser = option readFy (long "fy")
+
+readFy :: ReadM FundingYear
+readFy = do
+  str <- readerAsk
+  readFy_ str
+
+readFy_ "fy16" = pure FY2016
+readFy_ "fy17" = pure FY2017
+readFy_ "fy18" = pure FY2018
+readFy_ _ = fail $ "Unrecognized fy! Valid ones are: " <> "fy16, fy17, and fy18"
+
+reviewTypeParser :: Parser ReviewType
+reviewTypeParser = option readReviewType (long "review-type")
+
+readReviewType :: ReadM ReviewType
+readReviewType = do
+  str <- readerAsk
+  readReviewType_ str
+
+readReviewType_ "SPINChange" = pure RevSpinChange
+readReviewType_ "appeal" =  pure RevAppeals
+readReviewType_ "Form486" =  pure RevForm486
+readReviewType_ "COMAD" =  pure RevCOMAD
+readReviewType_ "Form500" =  pure RevForm500
+readReviewType_ "ServSub" =  pure RevServSub
+readReviewType_ "AdminCorrection" =  pure RevAdminCorrection
+readReviewType_ "SRCSSPINChange" =  pure RevSRCSpinChange
+readReviewType_ "BulkSPINChange" =  pure RevBulkSpinChange
+readReviewType_ _ = fail $ "Unrecognized review type! Valid ones are: " <> "SPINChange, appeal, Form486, COMAD, ServSub, AdminCorrection, SRCSPINChange, and BulkSPINChange"
+
+reviewerTypeParser :: Parser ReviewerType
+reviewerTypeParser = option readReviewerType (long "reviewer-type")
+
+readReviewerType :: ReadM ReviewerType
+readReviewerType = do
+  str <- readerAsk
+  readReviewerType_ str
+
+readReviewerType_ "initial" = pure RevInitial
+readReviewerType_ "final" = pure RevInitial
+readReviewerType_ "solix" = pure RevInitial
+readReviewerType_ "usac" = pure RevInitial
+readReviewerType_ "HSInit" = pure RevInitial
+readReviewerType_ "HSFinal" = pure RevInitial
+readReviewerType_ _ = fail $ "Unrecognized reviewer type! Valit ones are: " <> "initial, final, solix, usac, HSInitial, and HSFinal"
+
+reviewBaseConfParser :: Parser ReviewBaseConf
+reviewBaseConfParser = ReviewBaseConf
+  <$> reviewTypeParser
+  <*> reviewerTypeParser
+  <*> fyParser
 
 -- reviewTypeParser :: Parser ReviewType
 -- reviewTypeParser =
