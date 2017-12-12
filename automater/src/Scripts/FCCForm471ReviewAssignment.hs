@@ -88,6 +88,9 @@ instance Csv.FromNamedRecord Form471ReviewConf where
                <*> r Csv..: "revPassword"
         )
 
+instance HasLogin Form471ReviewConf where
+  getLogin conf = conf ^. confReviewer
+
 benToText :: BEN -> Text
 benToText (BEN n) = tshow n
 

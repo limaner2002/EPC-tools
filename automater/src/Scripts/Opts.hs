@@ -180,21 +180,24 @@ run471Assign baseUrl logFilePath csvInput n = do
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
-run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
-run471Review hostUrl logFilePath csvInput n = do
-  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
-  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+-- run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
+-- run471Review hostUrl logFilePath csvInput n = do
+--   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+--   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (f env)
-  dispResults $ fmap (maybe (throwM MissingItemException) id) res
-  where
-    f env conf = do
-      let appianState = newAppianState (Bounds 0 0)
-      eRes <- fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Review conf) appianState env (conf ^. confReviewer)
-      case eRes of
-        Left exc -> return $ Left $ toException $ ScriptException $ (conf ^. confFormNum . to tshow) <> ": " <> tshow exc <> "\n" <> (conf ^. confReviewer . username . to tshow)
-        Right _ -> return eRes
+--   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (f env)
+--   dispResults $ fmap (maybe (throwM MissingItemException) id) res
+--   where
+--     f env conf = do
+--       let appianState = newAppianState (Bounds 0 0)
+--       eRes <- fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Review conf) appianState env (conf ^. confReviewer)
+--       case eRes of
+--         Left exc -> return $ Left $ toException $ ScriptException $ (conf ^. confFormNum . to tshow) <> ": " <> tshow exc <> "\n" <> (conf ^. confReviewer . username . to tshow)
+--         Right _ -> return eRes
   
+run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
+run471Review = runIt form471Review
+
 run471Certify :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
 run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
@@ -247,7 +250,7 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) n = do
         return c
 
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.mapM rampup $ csvStreamByName csvInput) (\a -> do
-                                                                                                               res <- fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
+                                                                                                               res <- fmap join $ tryAnyAsync $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                return res
                                                                                                            )
   let res' = fmap (maybe (throwM MissingItemException) id) res
@@ -263,7 +266,7 @@ runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numReco
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
   confs <- csvStreamByName >>> S.take numRecords >>> S.toList >>> runResourceT >>> runStdoutLoggingT $ csvInput
-  res <- execTaskGroup nThreads (\a -> fmap join $ tryAny $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
+  res <- execTaskGroup nThreads (\a -> fmap join $ tryAnyAsync $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
   dispResults res
   return res
 
@@ -301,6 +304,7 @@ parseCommands = subparser
   <> command "form486Intake" form486IntakeInfo
   <> command "initialReview" initialReviewInfo
   <> command "pcAssign" reviewAssignInfo
+  <> command "form471Review" reviewAssignInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
@@ -438,6 +442,24 @@ initialReviewParser :: Parser (IO ())
 initialReviewParser = fmap void $ runInitialReview
   <$> reviewBaseConfParser
   <*> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> rampupParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
+
+form471ReviewInfo :: ParserInfo (IO ())
+form471ReviewInfo = info (helper <*> form471ReviewParser)
+  (  fullDesc
+  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  )
+
+form471ReviewParser :: Parser (IO ())
+form471ReviewParser = fmap void $ run471Review
+  <$> boundsParser
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
@@ -698,3 +720,6 @@ rampupParser = mkRampup
 --   <> help "The type of case to review."
 --   )
 
+     -- Need to figure out if this is okay or not
+tryAnyAsync :: MonadCatch m => m a -> m (Either SomeException a)
+tryAnyAsync = tryAsync
