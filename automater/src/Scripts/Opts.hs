@@ -156,16 +156,16 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
+run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Form471Num]
 run471Intake = runIt form471Intake
 
-run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Form471Num]
+run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Form471Num]
 run471IntakeAndCertify = runIt form471IntakeAndCertify
 
-run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException (Maybe Text)]
+run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException (Maybe Text)]
 run486Intake = runIt form486Intake
 
-runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
 runInitialReview conf = runIt (initialReview conf)
 
 runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either SomeException Value]
@@ -231,19 +231,22 @@ form471IntakeAndCertify conf = do
     eRes <- retrying findTaskRetryPolicy shouldRetry (const $ tryAny $ form471Certification certConf)
     either throwM pure eRes
 
-runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
-runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException Value]
+runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
 runReview baseConf = runIt (finalReview baseConf)
 
-runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException b]
-runIt f bounds (HostUrl hostUrl) logMode csvInput n = do
+runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException b]
+runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
+      rampup c = do
+        threadDelay (delay `div` n)
+        return c
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\a -> do
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.mapM rampup $ csvStreamByName csvInput) (\a -> do
                                                                                                                res <- fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                return res
                                                                                                            )
@@ -270,7 +273,7 @@ execTaskGroup (NThreads n) f args = Pool.withTaskGroup n $ \group -> Pool.mapCon
 execTaskGroup_ :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO ()
 execTaskGroup_ n f args = execTaskGroup n f args >> return ()
 
-runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> Int -> IO [Either SomeException (Maybe Text)]
+runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException (Maybe Text)]
 runSPINIntake = runIt spinChangeIntake
 
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
@@ -383,6 +386,7 @@ form471Parser = fmap void $ run471Intake
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
+  <*> rampupParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
@@ -400,6 +404,7 @@ form471IntakeAndCertifyParser = fmap void $ run471IntakeAndCertify
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
+  <*> rampupParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
@@ -417,6 +422,7 @@ form486IntakeParser = fmap void $ run486Intake
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
+  <*> rampupParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
@@ -435,6 +441,7 @@ initialReviewParser = fmap void $ runInitialReview
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
+  <*> rampupParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
@@ -475,6 +482,7 @@ comadInitialParser = fmap void $ runComadInitialReview
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
+  <*> rampupParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
@@ -520,6 +528,7 @@ spinChangeParser = void <$> (runSPINIntake
   ))
   <*> logModeParser
   <*> csvConfParser
+  <*> rampupParser
   <*> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
@@ -666,6 +675,19 @@ reviewBaseConfParser = ReviewBaseConf
   <$> reviewTypeParser
   <*> reviewerTypeParser
   <*> fyParser
+
+newtype RampupTime = RampupTime Int
+  deriving (Show, Eq, Num)
+
+mkRampup :: Int -> RampupTime
+mkRampup n = RampupTime $ n * 1000000
+
+rampupParser :: Parser RampupTime
+rampupParser = mkRampup
+  <$> option auto
+     (  long "rampup"
+     <> help "The rampup period (in seconds) for the script"
+     )
 
 -- reviewTypeParser :: Parser ReviewType
 -- reviewTypeParser =
