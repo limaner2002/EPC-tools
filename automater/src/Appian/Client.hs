@@ -586,7 +586,7 @@ dispatchAppianError start label err@(ScriptError scriptError) = logScriptError s
 
 logServantError_ start label err = logServantError start label err >> throwError err
 
-logAppianError start label = flip catchError (logServantError_ start label)
+logAppianError start label = flip catchError (trace "Caught an error!" . logServantError_ start label)
 
 recordTime :: (MonadTime m, MonadLogger m, MonadError ServantError m) => Text -> m a -> m a
 recordTime label f = do

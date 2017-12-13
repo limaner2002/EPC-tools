@@ -306,7 +306,7 @@ parseCommands = subparser
   <> command "form486Intake" form486IntakeInfo
   <> command "initialReview" initialReviewInfo
   <> command "pcAssign" reviewAssignInfo
-  <> command "form471Review" reviewAssignInfo
+  <> command "form471Review" form471ReviewInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
