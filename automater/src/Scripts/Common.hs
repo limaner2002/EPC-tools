@@ -35,7 +35,7 @@ handleValidations (Left ve) = case ve ^. validationsExc . _1 of
     return $ ve ^. validationsExc . _2
   _ -> throwM ve
 
-myLandingPageAction :: (MonadThrow m, RunClient m) => Text -> AppianT m Value
+myLandingPageAction :: (MonadThrow m, RunClient m, MonadError ServantError m) => Text -> AppianT m Value
 myLandingPageAction actionName = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
@@ -70,7 +70,7 @@ foldGridFieldPagesReport rid = foldGridFieldPages_ (sendReportUpdates rid)
 foldGridFieldPages :: (MonadLogger m, RunClient m, MonadTime m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
 foldGridFieldPages = foldGridFieldPages_ sendUpdates
 
-foldGridFieldPages_ :: (MonadLogger m, RunClient m, MonadThrow m) => Updater m -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> (AppianT m (b, Value))) -> b -> Value -> AppianT m b
+foldGridFieldPages_ :: (MonadLogger m, RunClient m, MonadThrow m, MonadError ServantError m) => Updater m -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> (AppianT m (b, Value))) -> b -> Value -> AppianT m b
 foldGridFieldPages_ updateFcn fold f b v = loop b v
   where
     loop accum val = do
@@ -86,10 +86,10 @@ foldGridFieldPages_ updateFcn fold f b v = loop b v
           logDebugN $ "PagingInfo: " <> (tshow $ gf' ^? pagingInfo)
           loop accum' =<< getNextPage_ updateFcn gf gf' val'
 
-forGridRows_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
+forGridRows_ :: (RunClient m, MonadThrow m, MonadError ServantError m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
 forGridRows_ = forGridRowsWith_ (const True)
 
-forGridRowsWith_ :: (RunClient m, MonadThrow m) => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
+forGridRowsWith_ :: (RunClient m, MonadThrow m, MonadError ServantError m) => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> Value -> AppianT m Value) -> Value -> AppianT m Value
 forGridRowsWith_ continueFcn updateFcn colFcn fold f v = do
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
   loop (gf ^. gfTotalCount) v 0
@@ -102,10 +102,10 @@ forGridRowsWith_ continueFcn updateFcn colFcn fold f v = do
             val' <- f b gf val'
             loop total val' (idx + 1)
 
-forGridRows1_ :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRows1_ :: (RunClient m, MonadThrow m, MonadError ServantError m) => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
 forGridRows1_ = forGridRowsWith1_ (const True)
 
-forGridRowsWith1_ :: (RunClient m, MonadThrow m) => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRowsWith1_ :: (RunClient m, MonadThrow m, MonadError ServantError m) => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
 forGridRowsWith1_ continueFcn updateFcn colFcn fold f = do
   v <- use appianValue
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
@@ -122,14 +122,14 @@ forGridRowsWith1_ continueFcn updateFcn colFcn fold f = do
             f b gf
             loop total (idx + 1)
 
-getArbitraryPagedItems :: (RunClient m, MonadThrow m, MonadGen m) => Int -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)
+getArbitraryPagedItems :: (RunClient m, MonadThrow m, MonadGen m, MonadError ServantError m) => Int -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)
 getArbitraryPagedItems nItems updateFcn colFcn fold v = do
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
   let total = gf ^. gfTotalCount
   indices <- genArbitrary $ take nItems <$> shuffle [0 .. total - 1]
   getArbitraryPagedItems_ indices updateFcn colFcn fold v
 
-getArbitraryPagedItems_ :: (RunClient m, MonadThrow m) => [Int] -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)
+getArbitraryPagedItems_ :: (RunClient m, MonadThrow m, MonadError ServantError m) => [Int] -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m ([b], GridField a, Value)
 getArbitraryPagedItems_ indices updateFcn colFcn fold v = F.foldlM getVal Nothing indices >>= handleMissing "Arbitrary items (This needs to be improved)" v
   where
     getVal Nothing idx = do
@@ -157,7 +157,7 @@ instance Arbitrary PagingInfo where
 instance Arbitrary ArbitraryRow where
   arbitrary = ArbitraryRow <$> (getRowIdx <$> (getPositive <$> arbitrary) <*> arbitrary)
 
-getPagedItem :: (RunClient m, MonadThrow m) => Updater m -> (GridField a -> Vector b) -> Int -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m (b, GridField a, Value)
+getPagedItem :: (RunClient m, MonadThrow m, MonadError ServantError m) => Updater m -> (GridField a -> Vector b) -> Int -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m (b, GridField a, Value)
 getPagedItem updateFcn colFcn idx fold val = do
   gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
   pi <- handleMissing "GridField is not pageable" val $ gf ^? pagingInfo
@@ -191,7 +191,7 @@ instance Exception BadPagingException
          -- Fetches the page with the given start index. Will throw an
          -- error if the server responds with a start index that is
          -- not the same as the given start index.
-getPage :: (RunClient m, MonadThrow m) => Updater m -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> StartIndex -> Value -> AppianT m Value
+getPage :: (RunClient m, MonadThrow m, MonadError ServantError m) => Updater m -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> StartIndex -> Value -> AppianT m Value
 getPage updateFcn fold idx val = do
   gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
   case maybe False (== idx) (gf ^? pagingInfo . pgIStartIndex . to StartIndex) of
@@ -276,14 +276,14 @@ notFinished _ = True
 tcItem (Item a) = a
 tcItem _ = error "This should have already terminated!"
 
-openReport :: (RunClient m, MonadThrow m) => Text -> AppianT m (ReportId, Value)
+openReport :: (RunClient m, MonadThrow m, MonadError ServantError m) => Text -> AppianT m (ReportId, Value)
 openReport reportName = do
   v <- reportsTab
   rid <- getReportId reportName v
   v' <- editReport rid
   return (rid, v')
 
-viewRelatedActions :: (RunClient m, MonadThrow m) => Value -> RecordRef -> AppianT m (RecordRef, Value)
+viewRelatedActions :: (RunClient m, MonadThrow m, MonadError ServantError m) => Value -> RecordRef -> AppianT m (RecordRef, Value)
 viewRelatedActions v recordRef = do
   let ref = recordRef
   v' <- viewRecordDashboard ref (Dashboard "summary")
@@ -291,7 +291,7 @@ viewRelatedActions v recordRef = do
   v'' <- viewRecordDashboard ref dashboard
   return (recordRef, v'')
 
-executeRelatedAction :: (RunClient m, MonadThrow m) => Text -> RecordRef -> Value -> AppianT m Value
+executeRelatedAction :: (RunClient m, MonadThrow m, MonadError ServantError m) => Text -> RecordRef -> Value -> AppianT m Value
 executeRelatedAction action recordId val = do
   aid <- handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getRelatedActionId action
   relatedActionEx recordId aid

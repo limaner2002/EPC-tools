@@ -110,7 +110,7 @@ selectMembers v = do
       sendUpdates "Add Members" (MonadicFold (to (buttonUpdate "Add"))) checked
         >>= sendUpdates "Click Save & Continue" (MonadicFold (to (buttonUpdate "Save & Continue")))
 
-validMemberCheckboxes :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => Value -> AppianT m (Value, Result (GridField GridFieldCell))
+validMemberCheckboxes :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadError ServantError m) => Value -> AppianT m (Value, Result (GridField GridFieldCell))
 validMemberCheckboxes v = do
   logDebugN "Getting valid member checkboxes."
   let mRefs = v ^.. getGridFieldRecordRefs "BEN Name" . traverse
@@ -128,7 +128,7 @@ validMemberCheckboxes v = do
           indices = refs ^.. ifolded . filtered (\r -> r `elem` validRefs) . withIndex . _1
       return (v', _Success . gfSelection . _Just . _Selectable . gslSelected .~ idents $ gf)
 
-viewDiscountRates :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m) => RecordRef -> AppianT m Value
+viewDiscountRates :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadError ServantError m) => RecordRef -> AppianT m Value
 viewDiscountRates rid = do
   v <- viewRecordDashboard rid (Dashboard "summary")
   dashboard <- handleMissing "Discount Rate" v $ v ^? getRecordDashboard "Discount Rate"

@@ -157,7 +157,7 @@ clearExceptions dyl _ v = sendUpdates' "Click on Exceptions Link" (MonadicFold $
       _ -> throwM valExc
     handleValidations f (Right v) = f v
 
-clickApplication :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m) => Value -> AppianT m Value
+clickApplication :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadError ServantError m) => Value -> AppianT m Value
 clickApplication val = do
   rref <- handleMissing "Record ref" val $ val ^? dropping 1 getGridFieldCell . traverse . gfColumns . at "Application Number" . traverse . _TextCellLink  . _2 . traverse
   (_, v) <- viewRelatedActions val rref
