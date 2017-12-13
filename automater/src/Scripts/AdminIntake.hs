@@ -22,6 +22,7 @@ import Scripts.ReviewCommon
 import Control.Monad.Time
 import qualified Data.Csv as Csv
 import Data.Random (MonadRandom)
+import Control.Monad.Except
 
 newtype OrganizationName = OrganizationName Text
   deriving (Show, Eq, IsString, Csv.FromField)
@@ -38,7 +39,7 @@ instance Csv.FromNamedRecord AppealIntakeConfig where
     <$> r Csv..: "Organization Name"
     <*> Csv.parseNamedRecord r
 
-adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => AppealIntakeConfig -> AppianT m (Maybe Text)
+adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => AppealIntakeConfig -> AppianT m (Maybe Text)
 adminIntake conf = do
   let user = Identifiers [conf ^. appealApplicant . username]
 

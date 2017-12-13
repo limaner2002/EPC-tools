@@ -9,6 +9,7 @@ module Appian.Client
   ( module Appian.Client
   , Servant.Client.Core.RunClient
   , Control.Monad.Logger.MonadLogger
+  , Servant.Client.ServantError
   ) where
 
 import Servant.API
@@ -35,6 +36,8 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Time
 import Util.Parallel (runParallelFileLoggingT)
 import Data.Random
+import Control.Monad.Except
+import Network.HTTP.Types.Status (statusCode, Status, status200)
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
@@ -101,12 +104,12 @@ remCSRF :: (Contravariant f, Choice p, Applicative f) =>
         -> p (ByteString, ByteString) (f (ByteString, ByteString))
 remCSRF = filtered (hasn't $ _1 . only "__appianCsrfToken")
 
-login :: RunClient m => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
+login :: (RunClient m, MonadError ServantError m, MonadLogger m, MonadTime m) => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
 login (Login un pw) = do
-  res <- navigateSite
+  res <- recordTime "Navigate to site" navigateSite
   let cj = res ^.. getCookies & Cookies
   assign appianCookies cj
-  res' <- login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
+  res' <- recordTime "Login" $ login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
   assign appianCookies $ Cookies $ (cj ^.. unCookies . traverse . filtered removeNew) <> res' ^.. getCookies
   return res'
   where
@@ -150,7 +153,7 @@ recordUpdate upd = do
   where
     recordUpdate_ = toClient Proxy (Proxy :: Proxy (RecordUpdate update))
 
-sendRecordUpdates :: (RunClient m, MonadThrow m, MonadCatch m, MonadTime m, MonadLogger m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendRecordUpdates :: (RunClient m, MonadThrow m, MonadCatch m, MonadTime m, MonadLogger m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
 sendRecordUpdates msg fold = do
   previousVal <- use appianValue
   eVal <- sendUpdates_ recordUpdate msg fold previousVal
@@ -179,10 +182,10 @@ taskUpdate tid upd = do
   where
     taskUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (TaskUpdate update))
 
-taskAccept :: RunClient m => TaskId -> AppianT m NoContent
+taskAccept :: (RunClient m, MonadError ServantError m, MonadLogger m, MonadTime m) => TaskId -> AppianT m NoContent
 taskAccept tid = do
   cj <- use appianCookies
-  taskAccept_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  recordTime "Accept Task" $ taskAccept_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskAccept_ = toClient Proxy (Proxy :: Proxy TaskAccept)
 
@@ -304,11 +307,11 @@ runAppianT' runLogger f appianState env creds = bracket (runClientM' login') (ru
       putStrLn "Successfully logged out!"
     logout' (Left err) = print err
     execFun (Right (_, cookies)) = do
-      (res, _) <- runLogger $ execAppianT f cookies
+      (res, _) <- execAppianT f cookies
       return res
     execFun (Left err) = throwM err
     runClientM' act = do
-      res <- runClientM act env
+      res <- runClientM (runStdoutLoggingT act) env
       return $ bimap toException id $ res
 
     -- Update Functions
@@ -392,15 +395,12 @@ sendUpdate f update = do
 sendUpdate' :: (RunClient m, MonadThrow m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either ValidationsException Value)
 sendUpdate' _ (Left msg) = throwM $ BadUpdateException msg Nothing
 sendUpdate' f (Right x) = do
-  eV <- tryAny $ f x
-  case eV of
-    Left exc -> throwM $ ServerException (exc, x)
-    Right v ->
-      case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
-        [] -> return $ Right v
-        l -> return $ Left $ ValidationsException (l, v, x)
+  v <- f x
+  case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
+    [] -> return $ Right v
+    l -> return $ Left $ ValidationsException (l, v, x)
 
-sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendUpdates_ updateFcn label f v = do
   updates <- lift $ v ^!! runMonadicFold f
   bounds <- use appianBounds
@@ -410,24 +410,24 @@ sendUpdates_ updateFcn label f v = do
     [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
     l -> throwM $ MissingComponentException (intercalate "\n" l, v)
 
-sendReportUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendReportUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendReportUpdates reportId label f v = do
   eRes <- sendReportUpdates' reportId label f v
   case eRes of
     Left v -> throwM v
     Right res -> return res
 
-sendReportUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendReportUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
 
-sendUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendUpdates :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendUpdates label f v = do
   eRes <- sendUpdates' label f v
   case eRes of
     Left v -> throwM v
     Right res -> return res
 
-sendUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
+sendUpdates' :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ValidationsException Value)
 sendUpdates' label f v = do
   taskId <- getTaskId v
   sendUpdates_ (taskUpdate taskId) label f v
@@ -535,12 +535,12 @@ instance Show ValidationsException where
 
 instance Exception ValidationsException
 
-newtype ServerException = ServerException { _serverExc :: (SomeException, UiConfig (SaveRequestList Update)) }
+-- newtype ServerException = ServerException { _serverExc :: (SomeException, UiConfig (SaveRequestList Update)) }
 
-instance Show ServerException where
-  show (ServerException exc) = "ServerException: " <> show (exc ^. _1)
+-- instance Show ServerException where
+--   show (ServerException exc) = "ServerException: " <> show (exc ^. _1)
 
-instance Exception ServerException
+-- instance Exception ServerException
 
 newtype ClientException = ClientException Text
 
@@ -549,19 +549,36 @@ instance Show ClientException where
 
 instance Exception ClientException
 
-recordTime :: (MonadTime m, MonadLogger m) => Text -> m a -> m a
+logServantError :: (MonadLogger m, MonadError ServantError m, MonadTime m) => UTCTime -> Text -> ServantError -> m a
+logServantError start label err@(FailureResponse resp) = do -- (logErrorN $ tshow $ responseStatusCode resp) >> throwError err
+  end <- currentTime
+  logResponse start end label $ responseStatusCode resp
+  throwError err
+logServantError start label err@(DecodeFailure t resp) = (logErrorN $ t <> (tshow $ responseStatusCode resp)) >> throwError err
+logServantError start label err@(UnsupportedContentType mt resp) = (logErrorN $ tshow mt <> (tshow $ responseStatusCode resp)) >> throwError err
+logServantError start label err@(InvalidContentTypeHeader resp) = (logErrorN $ tshow $ responseStatusCode resp) >> throwError err
+logServantError start label err@(ConnectionError txt) = (logErrorN txt) >> throwError err
+
+logAppianError start label = flip catchError (logServantError start label)
+
+recordTime :: (MonadTime m, MonadLogger m, MonadError ServantError m) => Text -> m a -> m a
 recordTime label f = do
   start <- currentTime
-  res <- f
+  res <- logAppianError start label f
   end <- currentTime
-  let elapsed = diffUTCTime end start
+  logResponse start end label status200
+  return res
+
+logResponse :: MonadLogger m => UTCTime -> UTCTime -> Text -> Status -> m ()
+logResponse start end label status =
   logInfoN $ intercalate ","
     [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
     , tshow (diffToMS elapsed)
     , label
-    , "200"
+    , tshow (statusCode status)
     ]
-  return res
+  where
+    elapsed = diffUTCTime end start
 
 thinkTimer :: (MonadBase IO m, MonadRandom m) => Bounds -> m a -> m a
 thinkTimer bounds f = do

@@ -28,6 +28,7 @@ import Data.CaseInsensitive
 import Data.Aeson
 import Data.Random
 import Data.Random.Source
+import Control.Monad.Except
 
 newtype Cookies = Cookies { _unCookies :: [(ByteString, ByteString)] }
   deriving (Show, Semigroup, Monoid)
@@ -56,7 +57,7 @@ type Appian = AppianT (LoggingT ClientM)
 
 newtype AppianT (m :: * -> *) a = AppianT
   { unAppian :: StateT AppianState m a
-  } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadTrans, MonadLogger, MonadMask, (MonadState AppianState))
+  } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadTrans, MonadLogger, MonadMask, (MonadState AppianState), MonadError e)
 
 deriving instance MonadBase IO m => MonadBase IO (AppianT m)
 

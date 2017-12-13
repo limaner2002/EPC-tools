@@ -23,6 +23,7 @@ import qualified Streaming.Prelude as S
 import Control.Monad.Logger
 import Control.Arrow
 import Control.Monad.Time
+import Control.Monad.Except
 
 import Control.Monad.Trans.Resource hiding (throwM)
 import Data.Random (MonadRandom)
@@ -63,10 +64,10 @@ foldGridField' f b gf = do
 type Updater m = (Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value)
 
     -- Make this use state as soon as the new servant can be used. 
-foldGridFieldPagesReport :: (MonadLogger m, RunClient m, MonadTime m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReportId -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
+foldGridFieldPagesReport :: (MonadLogger m, RunClient m, MonadTime m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReportId -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
 foldGridFieldPagesReport rid = foldGridFieldPages_ (sendReportUpdates rid)
 
-foldGridFieldPages :: (MonadLogger m, RunClient m, MonadTime m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
+foldGridFieldPages :: (MonadLogger m, RunClient m, MonadTime m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m (b, Value)) -> b -> Value -> AppianT m b
 foldGridFieldPages = foldGridFieldPages_ sendUpdates
 
 foldGridFieldPages_ :: (MonadLogger m, RunClient m, MonadThrow m) => Updater m -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> (AppianT m (b, Value))) -> b -> Value -> AppianT m b
@@ -357,14 +358,14 @@ instance Parseable FundingYear where
   parseElement "2017" = pure FY2017
   parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Funding Year."
 
-sendUpdates1 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendUpdates1 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
 sendUpdates1 msg fold = do
   previousVal <- use appianValue
   newVal <- sendUpdates msg fold previousVal
   res <- deltaUpdate previousVal newVal
   assign appianValue res
 
-sendUpdates1' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m (Either ValidationsException ())
+sendUpdates1' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m (Either ValidationsException ())
 sendUpdates1' msg fold = do
   previousVal <- use appianValue
   eNewVal <- sendUpdates' msg fold previousVal

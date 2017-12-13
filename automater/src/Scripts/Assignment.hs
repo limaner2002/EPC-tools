@@ -18,8 +18,9 @@ import Scripts.Common
 import Scripts.ReviewCommon
 import Control.Monad.Time
 import Data.Random (MonadRandom)
+import Control.Monad.Except
 
-assignment :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
+assignment :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 assignment baseConf conf = do
   let un = Identifiers [conf ^. reviewer . username . to AppianUsername]
   (rid, v) <- openReport "Post-Commit Assignments"
