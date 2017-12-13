@@ -250,7 +250,7 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) n = do
         return c
 
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.mapM rampup $ csvStreamByName csvInput) (\a -> do
-                                                                                                               res <- fmap join $ tryAnyAsync $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
+                                                                                                               res <- fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                return res
                                                                                                            )
   let res' = fmap (maybe (throwM MissingItemException) id) res
@@ -266,7 +266,7 @@ runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numReco
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
   confs <- csvStreamByName >>> S.take numRecords >>> S.toList >>> runResourceT >>> runStdoutLoggingT $ csvInput
-  res <- execTaskGroup nThreads (\a -> fmap join $ tryAnyAsync $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
+  res <- execTaskGroup nThreads (\a -> fmap join $ tryAny $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
   dispResults res
   return res
 
@@ -721,5 +721,6 @@ rampupParser = mkRampup
 --   )
 
      -- Need to figure out if this is okay or not
+     -- - Seems to introduce a deadlock
 tryAnyAsync :: MonadCatch m => m a -> m (Either SomeException a)
 tryAnyAsync = tryAsync

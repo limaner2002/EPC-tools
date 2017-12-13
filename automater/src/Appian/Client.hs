@@ -553,19 +553,19 @@ instance Exception ValidationsException
 -- instance Exception ClientException
 
 logServantError :: (MonadLogger m, MonadTime m) => UTCTime -> Text -> ServantError -> m ()
-logServantError start label (FailureResponse resp) = do -- (logErrorN $ tshow $ responseStatusCode resp) >> throwError err
+logServantError start label (FailureResponse resp) = do
   end <- currentTime
   logResponse start end label $ responseStatusCode resp
-logServantError start label (DecodeFailure t resp) = do -- (logErrorN $ t <> (tshow $ responseStatusCode resp)) >> throwError err
+logServantError start label (DecodeFailure t resp) = do
   end <- currentTime
   logResponse start end label $ responseStatusCode resp
-logServantError start label (UnsupportedContentType mt resp) = do -- (logErrorN $ tshow mt <> (tshow $ responseStatusCode resp)) >> throwError err
+logServantError start label (UnsupportedContentType mt resp) = do
   end <- currentTime
   logResponse start end label $ responseStatusCode resp
-logServantError start label (InvalidContentTypeHeader resp) = do -- (logErrorN $ tshow $ responseStatusCode resp) >> throwError err
+logServantError start label (InvalidContentTypeHeader resp) = do
   end <- currentTime
   logResponse start end label $ responseStatusCode resp
-logServantError start label (ConnectionError msg) = do -- (logErrorN txt) >> throwError err
+logServantError start label (ConnectionError msg) = do
   end <- currentTime
   logResponse start end label (status400 { statusMessage = encodeUtf8 msg })
 
@@ -631,7 +631,3 @@ makePrisms ''AppianError
 makePrisms ''ScriptError
 makeLenses ''ScriptError
 
--- instance MonadError ServantError m => MonadError AppianError (AppianT m) where
---   throwError err@(ScriptError _) = throwError err
---   throwError (ServerError servantError) = lift $ throwError servantError
---   catchError = undefined
