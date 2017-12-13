@@ -107,14 +107,12 @@ remCSRF :: (Contravariant f, Choice p, Applicative f) =>
         -> p (ByteString, ByteString) (f (ByteString, ByteString))
 remCSRF = filtered (hasn't $ _1 . only "__appianCsrfToken")
 
-login :: (RunClient m, MonadLogger m) => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
+login :: (RunClient m, MonadLogger m, MonadError ServantError m, MonadTime m) => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
 login (Login un pw) = do
-  -- res <- recordTime "Navigate to site" navigateSite
-  res <- navigateSite
+  res <- recordTime "Navigate to site" navigateSite
   let cj = res ^.. getCookies & Cookies
   assign appianCookies cj
-  -- res' <- recordTime "Login" $ login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
-  res' <- login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
+  res' <- recordTime "Login" $ login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
   assign appianCookies $ Cookies $ (cj ^.. unCookies . traverse . filtered removeNew) <> res' ^.. getCookies
   return res'
   where
@@ -134,8 +132,8 @@ recordsTab' = do
 reportsTab :: RunClient m => AppianT m Value
 reportsTab = toClient Proxy (Proxy :: Proxy ReportsTab)
 
-logout :: RunClient m => AppianT m ByteString
-logout = toClient Proxy (Proxy :: Proxy LogoutAPI)
+logout :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => AppianT m ByteString
+logout = recordTime "Logout" $ toClient Proxy (Proxy :: Proxy LogoutAPI)
 
 tasksTab :: RunClient m => Maybe UTCTime -> AppianT m Value
 tasksTab mUtcTime = do
