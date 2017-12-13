@@ -245,11 +245,13 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
-      rampup c = do
-        threadDelay (delay `div` n)
-        return c
+      -- rampup c = do
+      --   threadDelay (delay `div` n)
+      --   return c
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.mapM rampup $ csvStreamByName csvInput) (\a -> do
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
+                                                                                                               let d = (i * (delay `div` n))
+                                                                                                               threadDelay $ trace (show d) d
                                                                                                                res <- fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                return res
                                                                                                            )
