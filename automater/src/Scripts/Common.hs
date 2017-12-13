@@ -349,6 +349,8 @@ data FundingYear
   | FY2016
   | FY2017
   | FY2018
+  | FY2019
+  | FY2020
   deriving (Show, Eq, Read)
 
 instance Parseable FundingYear where
@@ -356,6 +358,9 @@ instance Parseable FundingYear where
   parseElement "--Select a Funding Year--" = pure FYSelect
   parseElement "2016" = pure FY2016
   parseElement "2017" = pure FY2017
+  parseElement "2018" = pure FY2018
+  parseElement "2019" = pure FY2019
+  parseElement "2020" = pure FY2020
   parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Funding Year."
 
 sendUpdates1 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()

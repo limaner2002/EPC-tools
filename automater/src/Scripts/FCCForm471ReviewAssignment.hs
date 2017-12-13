@@ -165,10 +165,16 @@ clickApplication val = do
 
 addDecision :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => PIAReviewerType -> Value -> AppianT m Value
 addDecision PIAInitial v = sendUpdates "Click 'Add Decision'" (MonadicFold $ to $ buttonUpdate "Add Decision") v
-  >>= sendUpdates "Select Decision" (MonadicFold (to $ dropdownUpdate "Select Decision" 2))
+  -- >>= sendUpdates "Select Decision" (MonadicFold (to $ dropdownUpdate "Select Decision" 2))
   >>= sendUpdates "Select Reason" (MonadicFold (to $ dropdownUpdate "Select Reason" 2))
   >>= sendUpdates "Add FCDL Comment" (MonadicFold $ to $ dynamicLinkUpdate "Add FCDL Comment")
-  >>= sendUpdates "Select FCDL" (MonadicFold $ to $ dropdownUpdate "FCDL Comments" 2)
+  >>= sendUpdates "Select FCDL" (MonadicFold (to $ dropdownUpdate "FCDL Comments" 2)
+                                <|> MonadicFold (hasType "ParagraphField" . _JSON . to (pgfValue .~ "FCDL Comment without special characters.") . to toUpdate . to Right)
+                                )
   >>= sendUpdates "Save FCDL" (MonadicFold $ to $ buttonUpdate "Save FCDL")
 addDecision _ v = pure v
   
+selectReason :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadGen m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+selectReason v = case has (getDropdown "Select Reason") v of
+  True -> sendUpdates "Select Reason" (MonadicFold (to $ dropdownUpdate "Select Reason" 2)) v
+  False -> return v

@@ -411,7 +411,7 @@ sendUpdates_ updateFcn label f v = do
 
   case errors of
     [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
-    l -> throwError . ConnectionError . tshow $ MissingComponentException (intercalate "\n" l, v)
+    l -> throwM $ MissingComponentException (intercalate "\n" l, v)
 
 sendReportUpdates :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendReportUpdates reportId label f v = do
