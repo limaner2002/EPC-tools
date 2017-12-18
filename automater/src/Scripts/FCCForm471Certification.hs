@@ -39,6 +39,9 @@ instance Csv.FromNamedRecord CertConf where
     <$> r Csv..: "formNum"
     <*> Csv.parseNamedRecord r
 
+instance HasLogin CertConf where
+  getLogin conf = conf ^. certLogin
+
 form471Certification :: (RunClient m, MonadThrow m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => CertConf -> AppianT m Form471Num
 form471Certification conf = do
   tasksList <- tasksTab Nothing

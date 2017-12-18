@@ -35,7 +35,7 @@ handleValidations (Left ve) = case ve ^. validationsExc . _1 of
     return $ ve ^. validationsExc . _2
   _ -> throwM ve
 
-myLandingPageAction :: (MonadThrow m, RunClient m, MonadError ServantError m) => Text -> AppianT m Value
+myLandingPageAction :: (MonadThrow m, RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m) => Text -> AppianT m Value
 myLandingPageAction actionName = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
@@ -276,7 +276,7 @@ notFinished _ = True
 tcItem (Item a) = a
 tcItem _ = error "This should have already terminated!"
 
-openReport :: (RunClient m, MonadThrow m, MonadError ServantError m) => Text -> AppianT m (ReportId, Value)
+openReport :: (RunClient m, MonadThrow m, MonadError ServantError m, MonadTime m, MonadLogger m) => Text -> AppianT m (ReportId, Value)
 openReport reportName = do
   v <- reportsTab
   rid <- getReportId reportName v

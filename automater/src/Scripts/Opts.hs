@@ -27,6 +27,7 @@ import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
 import Scripts.ComadReview
+import Scripts.ComadReview
 import Appian.Client ( runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT'
                      , LogMode (..), HostUrl (..), MissingComponentException (..), badUpdateExceptionMsg
                      )
@@ -51,6 +52,7 @@ import qualified Data.Csv as Csv
 import Scripts.ProducerConsumer
 import Control.Retry
 import qualified Control.Concurrent.Async.Pool as Pool
+import Scripts.Noise
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -180,6 +182,9 @@ run471Assign baseUrl logFilePath csvInput n = do
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
+runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException ()]
+runNoise = runIt noise
+
 -- run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
 -- run471Review hostUrl logFilePath csvInput n = do
 --   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
@@ -234,6 +239,9 @@ form471IntakeAndCertify conf = do
     eRes <- retrying findTaskRetryPolicy shouldRetry (const $ tryAny $ form471Certification certConf)
     either throwM pure eRes
 
+run471Certification :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Form471Num]
+run471Certification = runIt form471Certification
+
 runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
@@ -268,7 +276,7 @@ runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numReco
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
   confs <- csvStreamByName >>> S.take numRecords >>> S.toList >>> runResourceT >>> runStdoutLoggingT $ csvInput
-  res <- execTaskGroup nThreads (\a -> fmap join $ tryAny $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
+  res <- execTaskGroup nThreads (\a -> fmap join $ tryAnyAsync $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
   dispResults res
   return res
 
@@ -307,6 +315,7 @@ parseCommands = subparser
   <> command "initialReview" initialReviewInfo
   <> command "pcAssign" reviewAssignInfo
   <> command "form471Review" form471ReviewInfo
+  <> command "noise" noiseInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
@@ -461,6 +470,24 @@ form471ReviewInfo = info (helper <*> form471ReviewParser)
 
 form471ReviewParser :: Parser (IO ())
 form471ReviewParser = fmap void $ run471Review
+  <$> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> rampupParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
+
+noiseInfo :: ParserInfo (IO ())
+noiseInfo = info (helper <*> noiseParser)
+  (  fullDesc
+  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  )
+
+noiseParser :: Parser (IO ())
+noiseParser = fmap void $ runNoise
   <$> boundsParser
   <*> hostUrlParser
   <*> logModeParser

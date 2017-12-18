@@ -119,26 +119,26 @@ login (Login un pw) = do
     login_ = toClient Proxy (Proxy :: Proxy LoginAPI)
     removeNew (n, _) = not (n == "JSESSIONID" || n == "__appianCsrfToken")
 
-recordsTab :: (RunClient m, MonadLogger m) => AppianT m Value
-recordsTab = logDebugN "Viewing records tab now!" >> recordsTab_ (Just defUserAgent)
+recordsTab :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m) => AppianT m Value
+recordsTab = recordTime "Opening Records Tab" $ recordsTab_ (Just defUserAgent)
   where
     recordsTab_ = toClient Proxy (Proxy :: Proxy RecordsTab)
 
-recordsTab' :: (RunClient m, MonadLogger m) => AppianT m ()
+recordsTab' :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m) => AppianT m ()
 recordsTab' = do
   v <- recordsTab
   assign appianValue v
 
-reportsTab :: RunClient m => AppianT m Value
-reportsTab = toClient Proxy (Proxy :: Proxy ReportsTab)
+reportsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => AppianT m Value
+reportsTab = recordTime "Opening Reports Tab" $ toClient Proxy (Proxy :: Proxy ReportsTab)
 
 logout :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => AppianT m ByteString
 logout = recordTime "Logout" $ toClient Proxy (Proxy :: Proxy LogoutAPI)
 
-tasksTab :: RunClient m => Maybe UTCTime -> AppianT m Value
+tasksTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => Maybe UTCTime -> AppianT m Value
 tasksTab mUtcTime = do
   cj <- use appianCookies
-  tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  recordTime "Opening Tasks Tab" $ tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
 
@@ -230,10 +230,10 @@ relatedActionEx ref aid = do
     where
       relatedActionEx_ = toClient Proxy (Proxy :: Proxy RelatedActionEx)
 
-actionsTab :: RunClient m => AppianT m Value
+actionsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => AppianT m Value
 actionsTab = do
   cj <- use appianCookies
-  actionsTab_ (Just "e4bc") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  recordTime "Opening Actions Tab" $ actionsTab_ (Just "e4bc") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       actionsTab_ = toClient Proxy (Proxy :: Proxy ActionsTab)
 
