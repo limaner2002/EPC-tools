@@ -27,6 +27,7 @@ import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
 import Scripts.ComadReview
+import Scripts.ComadReview
 import Appian.Client ( runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT'
                      , LogMode (..), HostUrl (..), ScriptError (..), Appian, _BadUpdateError
                      )
@@ -52,6 +53,7 @@ import Scripts.ProducerConsumer
 import Control.Retry
 import qualified Control.Concurrent.Async.Pool as Pool
 import Control.Monad.Except (catchError, throwError)
+import Scripts.Noise
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -181,6 +183,9 @@ run471Assign baseUrl logFilePath csvInput n = do
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
+runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException ()]
+runNoise = runIt noise
+
 -- run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
 -- run471Review hostUrl logFilePath csvInput n = do
 --   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
@@ -307,6 +312,7 @@ parseCommands = subparser
   <> command "initialReview" initialReviewInfo
   <> command "pcAssign" reviewAssignInfo
   <> command "form471Review" form471ReviewInfo
+  <> command "noise" noiseInfo
   -- <> command "scripts" scriptsInfo
   -- <> command "form486Intake" form486Info
   -- <> command "spinChangeIntake" spinChangeInfo
@@ -461,6 +467,24 @@ form471ReviewInfo = info (helper <*> form471ReviewParser)
 
 form471ReviewParser :: Parser (IO ())
 form471ReviewParser = fmap void $ run471Review
+  <$> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> csvConfParser
+  <*> rampupParser
+  <*> option auto
+  (  long "nThreads"
+  <> help "The number of concurrent threads to execute."
+  )
+
+noiseInfo :: ParserInfo (IO ())
+noiseInfo = info (helper <*> noiseParser)
+  (  fullDesc
+  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  )
+
+noiseParser :: Parser (IO ())
+noiseParser = fmap void $ runNoise
   <$> boundsParser
   <*> hostUrlParser
   <*> logModeParser

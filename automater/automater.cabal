@@ -36,6 +36,7 @@ library
                      , Scripts.AdminIntake
                      , Scripts.ComadReview
                      , Scripts.ComadReviewTypes
+                     , Scripts.Noise
                      , Util.Parallel
                      , Scripts.ProducerConsumer
                      , Appian.Internal.Appian
