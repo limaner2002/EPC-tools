@@ -233,7 +233,7 @@ getAllLinks :: (RunClient m, MonadLogger m, MonadThrow m, MonadTime m, MonadCatc
 getAllLinks rid v = do
   mIdents <- lift $ foldGridFieldPagesReport rid (MonadicFold $ getGridFieldCell . traverse) (accumLinks v) (Just mempty) v
   case mIdents of
-    Nothing -> throwM $ MissingComponentException ("There are no identifiers!", v)
+    Nothing -> throwError $ MissingComponentError ("There are no identifiers!", v)
     Just idents -> S.each $ fmap Item idents <> pure Finished
 
 accumLinks :: Monad m => Value -> Maybe (Vector RecordRef) -> GridField GridFieldCell -> AppianT m (Maybe (Vector RecordRef), Value)

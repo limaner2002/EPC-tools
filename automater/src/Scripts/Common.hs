@@ -28,12 +28,11 @@ import Control.Monad.Except
 import Control.Monad.Trans.Resource hiding (throwM)
 import Data.Random (MonadRandom)
 
-handleValidations :: MonadThrow m => Either ValidationsException Value -> AppianT m Value
+handleValidations :: MonadThrow m => Either ScriptError Value -> AppianT m Value
 handleValidations (Right v) = return v
-handleValidations (Left ve) = case ve ^. validationsExc . _1 of
-  ["You must associate at least one Funding Request"] -> do
-    return $ ve ^. validationsExc . _2
-  _ -> throwM ve
+handleValidations (Left se) = case se ^? _ValidationsError . runFold ((,) <$> Fold _1 <*> Fold _2) of
+  Just ((["You must associate at least one Funding Request"], v)) -> return v
+  _ -> throwError se
 
 myLandingPageAction :: (MonadThrow m, RunClient m, MonadError ServantError m) => Text -> AppianT m Value
 myLandingPageAction actionName = do
@@ -370,7 +369,7 @@ sendUpdates1 msg fold = do
   res <- deltaUpdate previousVal newVal
   assign appianValue res
 
-sendUpdates1' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m (Either ValidationsException ())
+sendUpdates1' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m (Either ScriptError ())
 sendUpdates1' msg fold = do
   previousVal <- use appianValue
   eNewVal <- sendUpdates' msg fold previousVal

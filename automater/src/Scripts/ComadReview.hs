@@ -103,11 +103,11 @@ addViolation val ident = do
                                                         ) val
     >>= handleNoViolation
     
-handleNoViolation :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Either ValidationsException Value -> AppianT m Value
-handleNoViolation (Left ve) = case ve ^. validationsExc . _1 of
-  ["You cannot add a Violation to an FRN that you have marked as \"No Violation\""] -> return $ ve ^. validationsExc . _2
-  [] -> error "Violations not implemented yet!"
-  _ -> throwM ve
+handleNoViolation :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Either ScriptError Value -> AppianT m Value
+handleNoViolation (Left se) = case se ^? _ValidationsError . runFold ((,) <$> Fold _1 <*> Fold _2) of
+  Just (["You cannot add a Violation to an FRN that you have marked as \"No Violation\""], v) -> return v
+  Just ([], _) -> error "Violations not implemented yet!"
+  _ -> throwError se
 handleNoViolation (Right v) =
   sendUpdates "Add Violation Button" (MonadicFold $ to $ buttonUpdate "Add Violation") v
     >>= sendUpdates "Add Violation" (MonadicFold $ dropping 1 getGridFieldCell . traverse . gfColumns . at "" . traverse . _TextCellDynLink . _2 . traverse . to toUpdate . to Right)
@@ -121,10 +121,10 @@ handleNoViolation (Right v) =
     >>= sendUpdates "Back to Violations" (MonadicFold $ to $ buttonUpdate "Back")
     >>= sendUpdates "Back to Review COMAD Request" (MonadicFold $ to $ buttonUpdate "Back")
 
-handleDecisionValidation :: MonadThrow m => Either ValidationsException Value -> AppianT m Value
-handleDecisionValidation (Left ve) = case ve ^. validationsExc . _1 . to (all $ isPrefixOf "You must select a Decision for FRN") of
-  True -> return $ ve ^. validationsExc . _2
-  False -> throwM ve
+handleDecisionValidation :: MonadThrow m => Either ScriptError Value -> AppianT m Value
+handleDecisionValidation (Left se) = case se ^? _ValidationsError . runFold ((,) <$> Fold (_1 . to (all $ isPrefixOf "You must select a Decision for FRN")) <*> Fold _2) of
+  Just (True, v) -> return v
+  _ -> throwError se
 handleDecisionValidation (Right v) = return v
 
 pageDecisions :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
@@ -144,7 +144,9 @@ addDecision val ident = do
   eRes <- sendUpdates' "Decisions: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
   val' <- case eRes of
     Right v -> return v
-    Left ve -> return $ ve ^. validationsExc . _2
+    Left se -> case se ^? _ValidationsError . _2 of
+      Just v -> return v
+      _ -> throwError se
   df <- handleMissing "FRN Decision Dropdown" val' $ val' ^? getDropdown "FRN Decision"
 
   let choices
@@ -160,7 +162,7 @@ data DecisionState
 
     -- Retries an arbitrary decision until one succeeds or there are none left to chose from.
 addDecision_ :: (RunClient m, MonadGen m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => DecisionState -> GridFieldIdent -> Value -> [Int] -> AppianT m Value
-addDecision_ decState ident val [] = throwM $ MissingComponentException ("There are no available decisions to make! ident: " <> tshow ident, val)
+addDecision_ decState ident val [] = throwError $ MissingComponentError ("There are no available decisions to make! ident: " <> tshow ident, val)
 addDecision_ decState ident val l = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse
   val' <- case decState of
@@ -169,7 +171,9 @@ addDecision_ decState ident val l = do
       eRes <- sendUpdates' "Decisions: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
       case eRes of
         Right v -> return v
-        Left ve -> return $ ve ^. validationsExc . _2
+        Left se -> case se ^? _ValidationsError . _2 of
+          Just v -> return v
+          _ -> throwError se
       
   
   idx <- genArbitrary $ QC.elements l
@@ -179,7 +183,7 @@ addDecision_ decState ident val l = do
   case eRes of
     Right val'' -> return val''
     -- Left ve -> addDecision_ Retry ident (ve ^. validationsExc . _2) (delete idx l)
-    Left ve -> case ve ^. validationsExc . _1 . to (all $ isPrefixOf "You must select a Decision for FRN") of
-                 True -> return $ ve ^. validationsExc . _2
-                 False -> addDecision_ Retry ident (ve ^. validationsExc . _2) (delete idx l)
+    Left se -> case se ^? _ValidationsError . runFold ((,) <$> Fold (_1 . to (all $ isPrefixOf "You must select a Decision for FRN")) <*> Fold _2) of
+                 Just (True, v) -> return v
+                 Just (False, v) -> addDecision_ Retry ident v (delete idx l)
 

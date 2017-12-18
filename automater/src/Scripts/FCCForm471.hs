@@ -101,7 +101,7 @@ selectMembers :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadBa
 selectMembers v = do
   (v', rGridField) <- validMemberCheckboxes v
   case rGridField of
-    Error msg -> throwM $ MissingComponentException ("selectMembers: " <> pack msg, v')
+    Error msg -> throwError $ MissingComponentError ("selectMembers: " <> pack msg, v')
     Success gridField -> do
       taskId <- getTaskId v'
       let updates = toUpdate gridField
@@ -115,7 +115,7 @@ validMemberCheckboxes v = do
   logDebugN "Getting valid member checkboxes."
   let mRefs = v ^.. getGridFieldRecordRefs "BEN Name" . traverse
   case mRefs of
-    [] -> throwM $ BadUpdateException "There are no entity members!" (Just v)
+    [] -> throwError $ BadUpdateError "There are no entity members!" (Just v)
     refs -> do
       discountRates <- mapM (\r -> (,) <$> pure r <*> viewDiscountRates r) refs
       taskId <- getTaskId v

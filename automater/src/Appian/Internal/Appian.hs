@@ -10,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE TemplateHaskell    #-}
 {-# LANGUAGE Rank2Types    #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Appian.Internal.Appian where
 
@@ -29,6 +30,7 @@ import Data.Aeson
 import Data.Random
 import Data.Random.Source
 import Control.Monad.Except
+import Control.Monad.Trans.Compose
 
 newtype Cookies = Cookies { _unCookies :: [(ByteString, ByteString)] }
   deriving (Show, Semigroup, Monoid)
@@ -53,15 +55,28 @@ makeLenses ''AppianState
 newtype NThreads = NThreads Int
     deriving (Show, Eq, Ord, Num)
 
-type Appian = AppianT (LoggingT ClientM)
+-- type Appian = AppianT (LoggingT ClientM)
+-- type AppianT = forall err. AppianT' err
 
-newtype AppianT (m :: * -> *) a = AppianT
-  { unAppian :: StateT AppianState m a
-  } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadTrans, MonadLogger, MonadMask, (MonadState AppianState), MonadError e)
+infixr 9 :.:
+type (:.:) = ComposeT
 
-deriving instance MonadBase IO m => MonadBase IO (AppianT m)
+deriving instance MonadLogger (f (g m)) => MonadLogger (ComposeT f g m)
+deriving instance MonadThrow (f (g m)) => MonadThrow (ComposeT f g m)
+deriving instance MonadCatch (f (g m)) => MonadCatch (ComposeT f g m)
+deriving instance MonadMask (f (g m)) => MonadMask (ComposeT f g m)
+deriving instance MonadBase IO (f (g m)) => MonadBase IO (ComposeT f g m)
 
-instance MonadRandom m => MonadRandom (AppianT m) where
+newtype AppianET err (m :: * -> *) a = AppianET
+  { unAppian :: (ExceptT err :.: StateT AppianState) m a
+  } deriving (Functor, Applicative, Monad, MonadIO, MonadTrans, (MonadState AppianState), MonadError err)
+
+deriving instance MonadBase IO m => MonadBase IO (AppianET err m)
+deriving instance MonadThrow m => MonadThrow (AppianET err m)
+deriving instance MonadCatch m => MonadCatch (AppianET err m)
+deriving instance MonadLogger m => MonadLogger (AppianET err m)
+
+instance MonadRandom m => MonadRandom (AppianET err m) where
   getRandomWord8 = lift getRandomWord8
   getRandomWord16 = lift getRandomWord16
   getRandomWord32 = lift getRandomWord32
@@ -70,7 +85,7 @@ instance MonadRandom m => MonadRandom (AppianT m) where
 
   getRandomNByteInteger = lift . getRandomNByteInteger
 
-instance RunClient m => RunClient (AppianT m) where
+instance RunClient m => RunClient (AppianET err m) where
   runRequest req = do
     cookies <- use appianCookies
     let cookieHeader = (mk "Cookie", cookies ^. unCookies . to renderCookieHeader)
@@ -80,11 +95,11 @@ instance RunClient m => RunClient (AppianT m) where
   throwServantError = lift . throwServantError
   catchServantError m c = mkAppianT $ \cs -> execAppianT m cs `catchServantError` \e -> execAppianT (c e) cs
 
-execAppianT :: AppianT m a -> AppianState -> m (a, AppianState)
-execAppianT = runStateT . unAppian
+execAppianT :: AppianET err m a -> AppianState -> m (Either err a, AppianState)
+execAppianT = runStateT . runExceptT . getComposeT . unAppian
 
-mkAppianT :: (AppianState -> m (a, AppianState)) -> AppianT m a
-mkAppianT = AppianT . StateT
+mkAppianT :: (AppianState -> m (Either err a, AppianState)) -> AppianET err m a
+mkAppianT = AppianET . ComposeT . ExceptT . StateT
 
 newtype UserAgent = UserAgent
   { _unUserAgent :: ByteString
@@ -102,8 +117,11 @@ instance ToHttpApiData Cookies where
 defUserAgent :: UserAgent
 defUserAgent = UserAgent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36"
 
-usesValue :: Monad m => (Value -> a) -> AppianT m a
+usesValue :: Monad m => (Value -> a) -> AppianET err m a
 usesValue = uses appianValue
 
 newAppianState :: Bounds -> AppianState
 newAppianState = AppianState mempty Null
+
+catchServerError :: (MonadError ServantError m) => AppianET err m a -> (ServantError -> m (Either err a, AppianState)) -> AppianET err m a
+catchServerError f g = mkAppianT $ \n -> (execAppianT f n) `catchError` g

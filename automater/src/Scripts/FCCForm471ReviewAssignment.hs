@@ -152,9 +152,9 @@ clearExceptions dyl _ v = sendUpdates' "Click on Exceptions Link" (MonadicFold $
         )
   >>= sendUpdates "Click Go Back" (MonadicFold (to $ buttonUpdate "Go Back"))
   where
-    handleValidations _ (Left valExc) = case valExc ^. validationsExc . _1 of
-      ["You can only take action on Pending Exceptions."] -> return $ valExc ^. validationsExc . _2
-      _ -> throwM valExc
+    handleValidations _ (Left se) = case se ^? _ValidationsError . runFold ((,) <$> Fold _1 <*> Fold _2) of
+      Just (["You can only take action on Pending Exceptions."], v) -> return v
+      _ -> throwError se
     handleValidations f (Right v) = f v
 
 clickApplication :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadError ServantError m) => Value -> AppianT m Value

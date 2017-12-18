@@ -28,7 +28,7 @@ import Scripts.AdminReview
 import Scripts.AdminIntake
 import Scripts.ComadReview
 import Appian.Client ( runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT'
-                     , LogMode (..), HostUrl (..), MissingComponentException (..), badUpdateExceptionMsg
+                     , LogMode (..), HostUrl (..), ScriptError (..), Appian, _BadUpdateError
                      )
 import Appian.Instances
 import Appian.Types (AppianUsername (..))
@@ -51,6 +51,7 @@ import qualified Data.Csv as Csv
 import Scripts.ProducerConsumer
 import Control.Retry
 import qualified Control.Concurrent.Async.Pool as Pool
+import Control.Monad.Except (catchError, throwError)
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -110,19 +111,19 @@ runAdminIntake = error "Appeal intake has been broken!"
 --   where
 --     action login = adminIntake $ login ^. username . to AppianUsername
   
-runConsumer :: (Login -> Appian a) -> BaseUrl -> LogMode -> FilePath -> Int -> IO ()
-runConsumer f baseUrl fp userFile nThreads = do
-  chan <- atomically newTChan
-  mgr <- liftIO $ newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
-  results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
-  putStrLn "Done!"
-    where
-      runIt mgr login = do
-        let appianState = newAppianState (Bounds 0 0)
-        res <- join <$> (tryAny $ runAppianT fp (f login) appianState (ClientEnv mgr baseUrl) login)
-        case res of
-          Left exc -> print exc
-          Right _ -> putStrLn "Success!"
+-- runConsumer :: (Login -> Appian a) -> BaseUrl -> LogMode -> FilePath -> Int -> IO ()
+-- runConsumer f baseUrl fp userFile nThreads = do
+--   chan <- atomically newTChan
+--   mgr <- liftIO $ newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
+--   results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
+--   putStrLn "Done!"
+--     where
+--       runIt mgr login = do
+--         let appianState = newAppianState (Bounds 0 0)
+--         res <- join <$> (tryAny $ runAppianT fp (f login) appianState (ClientEnv mgr baseUrl) login)
+--         case res of
+--           Left exc -> print exc
+--           Right _ -> putStrLn "Success!"
 
 newtype UnsupportedReviewException = UnsupportedReviewException Text
 
@@ -156,19 +157,19 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Form471Num]
+run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Form471Num)]
 run471Intake = runIt form471Intake
 
-run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Form471Num]
+run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Form471Num)]
 run471IntakeAndCertify = runIt form471IntakeAndCertify
 
-run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException (Maybe Text)]
+run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError (Maybe Text))]
 run486Intake = runIt form486Intake
 
-runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
+runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
 runInitialReview conf = runIt (initialReview conf)
 
-runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either SomeException Value]
+runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either ServantError (Either ScriptError Value)]
 runReviewAssign conf = runScriptExhaustive (assignment conf)
 
 run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
@@ -177,7 +178,7 @@ run471Assign baseUrl logFilePath csvInput n = do
   let env = ClientEnv mgr baseUrl
       appianState = newAppianState (Bounds 0 0)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 -- run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
@@ -195,7 +196,7 @@ run471Assign baseUrl logFilePath csvInput n = do
 --         Left exc -> return $ Left $ toException $ ScriptException $ (conf ^. confFormNum . to tshow) <> ": " <> tshow exc <> "\n" <> (conf ^. confReviewer . username . to tshow)
 --         Right _ -> return eRes
   
-run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
+run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
 run471Review = runIt form471Review
 
 run471Certify :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
@@ -204,7 +205,7 @@ run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState (Bounds 0 0)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> fmap join $ tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) appianState env (conf ^. certLogin))
+  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) appianState env (conf ^. certLogin))
   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 -- run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> LogFilePath -> IO ()
@@ -216,12 +217,10 @@ run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
 --         logFp = logFilePrefix <> logFilePath suffix
 --         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
-shouldRetry :: Monad m => RetryStatus -> Either SomeException a -> m Bool
-shouldRetry _ (Left exc) = case exc ^? to fromException . traverse . badUpdateExceptionMsg of
+shouldRetry :: Monad m => RetryStatus -> Either ScriptError a -> m Bool
+shouldRetry _ (Left err) = case err ^? _BadUpdateError . _1 of -- to fromException . traverse . badUpdateExceptionMsg of
     Nothing -> pure False
     Just txt -> pure $ isPrefixOf "Cannot find task for " txt
-    where
-        fromMissing (MissingComponentException tpl) = tpl
 shouldRetry _ (Right _) = pure False
 
 findTaskRetryPolicy :: Monad m => RetryPolicyM m
@@ -231,45 +230,46 @@ form471IntakeAndCertify :: Form471Conf -> Appian Form471Num
 form471IntakeAndCertify conf = do
     formNum <- form471Intake conf
     let certConf = CertConf formNum $ conf ^. applicant
-    eRes <- retrying findTaskRetryPolicy shouldRetry (const $ tryAny $ form471Certification certConf)
-    either throwM pure eRes
+        certify = do
+          res <- form471Certification certConf
+          return $ Right res
+        certifyCatch = return . Left
+    eRes <- retrying findTaskRetryPolicy shouldRetry (const (certify `catchError` certifyCatch))
+    either throwError pure eRes
 
-runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
+runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
-runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException Value]
+runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
 runReview baseConf = runIt (finalReview baseConf)
 
-runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException b]
+runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError b)]
 runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) n = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
-      -- rampup c = do
-      --   threadDelay (delay `div` n)
-      --   return c
 
   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
                                                                                                                let d = (i * (delay `div` n))
                                                                                                                threadDelay $ trace (show d) d
-                                                                                                               res <- fmap join $ tryAny $ liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
+                                                                                                               res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                return res
                                                                                                            )
-  let res' = fmap (maybe (throwM MissingItemException) id) res
-  dispResults res'
-  return res'
+  -- let res' = fmap (maybe (throwM MissingItemException) id) res
+  -- dispResults res'
+  return res
 
 exhaustiveProducer :: (Csv.FromNamedRecord a, MonadResource m, MonadLogger m) => TBQueue a -> CsvPath -> m String
 exhaustiveProducer q = csvStreamByName >>> S.mapM_ (atomically . writeTBQueue q)
 
-runScriptExhaustive :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either SomeException b]
+runScriptExhaustive :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either ServantError (Either ScriptError b)]
 runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numRecords = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
   confs <- csvStreamByName >>> S.take numRecords >>> S.toList >>> runResourceT >>> runStdoutLoggingT $ csvInput
-  res <- execTaskGroup nThreads (\a -> fmap join $ tryAny $ runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
-  dispResults res
+  res <- execTaskGroup nThreads (\a -> runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
+  -- dispResults res
   return res
 
 execTaskGroup :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO (t b)
@@ -278,7 +278,7 @@ execTaskGroup (NThreads n) f args = Pool.withTaskGroup n $ \group -> Pool.mapCon
 execTaskGroup_ :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO ()
 execTaskGroup_ n f args = execTaskGroup n f args >> return ()
 
-runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException (Maybe Text)]
+runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError (Maybe Text))]
 runSPINIntake = runIt spinChangeIntake
 
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
