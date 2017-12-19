@@ -225,7 +225,7 @@ run471Review = runIt form471Review
 shouldRetry :: Monad m => RetryStatus -> Either ScriptError a -> m Bool
 shouldRetry _ (Left err) = case err ^? _BadUpdateError . _1 of -- to fromException . traverse . badUpdateExceptionMsg of
     Nothing -> pure False
-    Just txt -> pure $ isPrefixOf "Cannot find task for " txt
+    Just txt -> pure $ isInfixOf "Cannot find task for " txt
 shouldRetry _ (Right _) = pure False
 
 findTaskRetryPolicy :: Monad m => RetryPolicyM m
@@ -239,7 +239,7 @@ form471IntakeAndCertify conf = do
           res <- form471Certification certConf
           return $ Right res
         certifyCatch = return . Left
-    eRes <- retrying findTaskRetryPolicy shouldRetry (const (certify `catchError` certifyCatch))
+    eRes <- retrying findTaskRetryPolicy shouldRetry (const $ (certify `catchError` certifyCatch))
     either throwError pure eRes
 
 runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]

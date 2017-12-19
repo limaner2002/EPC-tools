@@ -107,7 +107,7 @@ remCSRF :: (Contravariant f, Choice p, Applicative f) =>
         -> p (ByteString, ByteString) (f (ByteString, ByteString))
 remCSRF = filtered (hasn't $ _1 . only "__appianCsrfToken")
 
-login :: (RunClient m, MonadLogger m, MonadTime m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadThreadId m) => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
+login :: RapidFire m => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
 login (Login un pw) = do
   bounds <- use appianBounds
   res <- thinkTimer bounds $ recordTime "Navigate to site" navigateSite
@@ -122,29 +122,29 @@ login (Login un pw) = do
     login_ = toClient Proxy (Proxy :: Proxy LoginAPI)
     removeNew (n, _) = not (n == "JSESSIONID" || n == "__appianCsrfToken")
 
-recordsTab :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m, MonadDelay m, MonadRandom m, MonadThreadId m) => AppianT m Value
+recordsTab :: RapidFire m => AppianT m Value
 recordsTab = do
   bounds <- use appianBounds
   thinkTimer bounds $ recordTime "Opening Records Tab" $ recordsTab_ (Just defUserAgent)
   where
     recordsTab_ = toClient Proxy (Proxy :: Proxy RecordsTab)
 
-recordsTab' :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m, MonadDelay m, MonadRandom m, MonadThreadId m) => AppianT m ()
+recordsTab' :: RapidFire m => AppianT m ()
 recordsTab' = do
   v <- recordsTab
   assign appianValue v
 
-reportsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m, MonadDelay m, MonadRandom m, MonadThreadId m) => AppianT m Value
+reportsTab :: RapidFire m => AppianT m Value
 reportsTab = do
   bounds <- use appianBounds
   thinkTimer bounds $ recordTime "Opening Reports Tab" $ toClient Proxy (Proxy :: Proxy ReportsTab)
 
-logout :: (RunClient m, MonadTime m, MonadLogger m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => AppianT m ByteString
+logout :: RapidFire m => AppianT m ByteString
 logout = do
   bounds <- use appianBounds
   thinkTimer bounds $ recordTime "Logout" $ toClient Proxy (Proxy :: Proxy LogoutAPI)
 
-tasksTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m, MonadRandom m, MonadDelay m, MonadThreadId m) => Maybe UTCTime -> AppianT m Value
+tasksTab :: RapidFire m => Maybe UTCTime -> AppianT m Value
 tasksTab mUtcTime = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -152,7 +152,7 @@ tasksTab mUtcTime = do
   where
     tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
 
-viewRecord :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => RecordId -> AppianT m Value
+viewRecord :: RapidFire m => RecordId -> AppianT m Value
 viewRecord rid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -167,7 +167,7 @@ recordUpdate upd = do
   where
     recordUpdate_ = toClient Proxy (Proxy :: Proxy (RecordUpdate update))
 
-sendRecordUpdates :: (RunClient m, MonadCatch m, MonadTime m, MonadLogger m, MonadThreadId m, MonadRandom m, MonadError ServantError m, MonadDelay m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendRecordUpdates :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
 sendRecordUpdates msg fold = do
   previousVal <- use appianValue
   eVal <- sendUpdates_ recordUpdate msg fold previousVal
@@ -177,7 +177,7 @@ sendRecordUpdates msg fold = do
       res <- deltaUpdate previousVal newVal
       assign appianValue res
 
-editReport :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m, MonadThreadId m) => ReportId -> AppianT m Value
+editReport :: RapidFire m => ReportId -> AppianT m Value
 editReport rid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -197,7 +197,7 @@ taskUpdate tid upd = do
   where
     taskUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (TaskUpdate update))
 
-taskAccept :: (RunClient m, MonadError ServantError m, MonadLogger m, MonadTime m, MonadRandom m, MonadDelay m, MonadThreadId m) => TaskId -> AppianT m NoContent
+taskAccept :: RapidFire m => TaskId -> AppianT m NoContent
 taskAccept tid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -205,7 +205,7 @@ taskAccept tid = do
   where
     taskAccept_ = toClient Proxy (Proxy :: Proxy TaskAccept)
 
-taskOpen :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => TTaskId -> AppianT m Value
+taskOpen :: RapidFire m => TTaskId -> AppianT m Value
 taskOpen tid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -213,7 +213,7 @@ taskOpen tid = do
   where
     taskOpen_ = toClient Proxy (Proxy :: Proxy TaskOpen)
 
-taskStatus :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => TaskId -> AppianT m Value
+taskStatus :: RapidFire m => TaskId -> AppianT m Value
 taskStatus tid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -221,7 +221,7 @@ taskStatus tid = do
   where
     taskStatus_ = toClient Proxy (Proxy :: Proxy TaskStatus)
 
-landingPageAction :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => ActionId -> AppianT m ProcessModelId
+landingPageAction :: RapidFire m => ActionId -> AppianT m ProcessModelId
 landingPageAction aid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -236,14 +236,14 @@ landingPageActionEx pid = do
     where
       landingPageActionEx_ = toClient Proxy (Proxy :: Proxy LandingPageActionEx)
 
-viewRecordDashboard :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => RecordRef -> Dashboard -> AppianT m Value
+viewRecordDashboard :: RapidFire m => RecordRef -> Dashboard -> AppianT m Value
 viewRecordDashboard rref dashboard = do
   bounds <- use appianBounds
   thinkTimer bounds $ recordTime ("View Record Dashboard: " <> tshow dashboard) $ viewRecordDashboard_ rref dashboard
     where
       viewRecordDashboard_ = toClient Proxy (Proxy :: Proxy ViewRecordDashboard)
 
-relatedActionEx :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => RecordRef -> ActionId -> AppianT m Value
+relatedActionEx :: RapidFire m => RecordRef -> ActionId -> AppianT m Value
 relatedActionEx ref aid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -251,7 +251,7 @@ relatedActionEx ref aid = do
     where
       relatedActionEx_ = toClient Proxy (Proxy :: Proxy RelatedActionEx)
 
-actionsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m, MonadRandom m, MonadDelay m, MonadThreadId m) => AppianT m Value
+actionsTab :: RapidFire m => AppianT m Value
 actionsTab = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -261,7 +261,7 @@ actionsTab = do
 
     -- Environments
 
-actionEx :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => ProcessModelId -> AppianT m Value
+actionEx :: RapidFire m => ProcessModelId -> AppianT m Value
 actionEx pid = do
   cj <- use appianCookies
   bounds <- use appianBounds
@@ -409,14 +409,14 @@ checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgV
 radioButtonUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> AppianInteger -> Over (->) f s s (Either Text Update) (Either Text Update)
 radioButtonUpdate label selection = failing (getRadioButtonField label . to (rdgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find RadioButtonField " <> tshow label)
 
-sendUpdate :: (RunClient m, MonadError ServantError m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m Value
+sendUpdate :: (RunClient m, MonadError ServantError m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m Value
 sendUpdate f update = do
   eRes <- sendUpdate' f update
   case eRes of
     Left v -> throwError v
     Right res -> return res
 
-sendUpdate' :: (RunClient m, MonadError ServantError m, MonadCatch m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either ScriptError Value)
+sendUpdate' :: (RunClient m, MonadError ServantError m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either ScriptError Value)
 sendUpdate' _ (Left msg) = throwError $ BadUpdateError msg Nothing
 sendUpdate' f (Right x) = do
   v <- f x
@@ -424,7 +424,7 @@ sendUpdate' f (Right x) = do
     [] -> return $ Right v
     l -> return $ Left $ ValidationsError (l, v, x)
 
-sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadThreadId m, MonadRandom m, MonadError ServantError m, MonadThreadId m, MonadDelay m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendUpdates_ :: RapidFire m => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
 sendUpdates_ updateFcn label f v = do
   updates <- lift $ v ^!! runMonadicFold f
   bounds <- use appianBounds
@@ -434,24 +434,24 @@ sendUpdates_ updateFcn label f v = do
     [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
     l -> throwError $ MissingComponentError (intercalate "\n" l, v)
 
-sendReportUpdates :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendReportUpdates :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendReportUpdates reportId label f v = do
   eRes <- sendReportUpdates' reportId label f v
   case eRes of
     Left v -> throwError v
     Right res -> return res
 
-sendReportUpdates' :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendReportUpdates' :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
 sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
 
-sendUpdates :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendUpdates :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendUpdates label f v = do
   eRes <- sendUpdates' label f v
   case eRes of
     Left v -> throwError v
     Right res -> return res
 
-sendUpdates' :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendUpdates' :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
 sendUpdates' label f v = do
   taskId <- getTaskId v
   sendUpdates_ (taskUpdate taskId) label f v

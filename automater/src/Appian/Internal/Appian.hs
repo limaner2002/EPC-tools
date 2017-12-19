@@ -12,6 +12,7 @@
 {-# LANGUAGE Rank2Types    #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Appian.Internal.Appian where
 
@@ -32,6 +33,7 @@ import Data.Random
 import Data.Random.Source
 import Control.Monad.Except
 import Control.Monad.Trans.Compose
+import Control.Monad.Time
 
 newtype Cookies = Cookies { _unCookies :: [(ByteString, ByteString)] }
   deriving (Show, Semigroup, Monoid)
@@ -72,7 +74,6 @@ newtype AppianET err (m :: * -> *) a = AppianET
   { unAppian :: (ExceptT err :.: StateT AppianState) m a
   } deriving (Functor, Applicative, Monad, MonadIO, MonadTrans, (MonadState AppianState), MonadError err)
 
-deriving instance MonadBase IO m => MonadBase IO (AppianET err m)
 deriving instance MonadThrow m => MonadThrow (AppianET err m)
 deriving instance MonadCatch m => MonadCatch (AppianET err m)
 deriving instance MonadLogger m => MonadLogger (AppianET err m)
@@ -150,3 +151,5 @@ instance MonadDelay ClientM where
 
 instance (MonadDelay m, MonadTrans t, Monad (t m)) => MonadDelay (t m) where
   delay = lift . delay
+
+type RapidFire m = (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m)
