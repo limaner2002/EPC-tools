@@ -81,6 +81,6 @@ makeChans = do
 resetConf :: (Show a, MonadIO m) => TVar DistributeTask -> TChan (ThreadControl a) -> m ()
 resetConf var chan = do
     putStrLn "Resetting config!"
-    S.reread (atomically . tryReadTChan) >>> S.print $ chan
+    -- S.reread (atomically . tryReadTChan) >>> S.print $ chan
     atomically $ writeTVar var Produce
 

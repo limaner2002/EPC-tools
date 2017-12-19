@@ -11,6 +11,7 @@
 {-# LANGUAGE TemplateHaskell    #-}
 {-# LANGUAGE Rank2Types    #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Appian.Internal.Appian where
 
@@ -125,3 +126,27 @@ newAppianState = AppianState mempty Null
 
 catchServerError :: (MonadError ServantError m) => AppianET err m a -> (ServantError -> m (Either err a, AppianState)) -> AppianET err m a
 catchServerError f g = mkAppianT $ \n -> (execAppianT f n) `catchError` g
+
+class Monad m => MonadThreadId (m :: * -> *) where
+  threadId :: m ThreadId
+
+instance MonadThreadId IO where
+  threadId = myThreadId
+
+instance MonadThreadId ClientM where
+  threadId = liftIO threadId
+
+instance (MonadThreadId m, MonadTrans t, Monad (t m)) => MonadThreadId (t m) where
+  threadId = lift threadId
+
+class Monad m => MonadDelay (m :: * -> *) where
+  delay :: Int -> m ()
+
+instance MonadDelay IO where
+  delay = threadDelay
+
+instance MonadDelay ClientM where
+  delay = liftIO . delay
+
+instance (MonadDelay m, MonadTrans t, Monad (t m)) => MonadDelay (t m) where
+  delay = lift . delay

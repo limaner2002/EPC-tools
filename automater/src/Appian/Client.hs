@@ -107,47 +107,56 @@ remCSRF :: (Contravariant f, Choice p, Applicative f) =>
         -> p (ByteString, ByteString) (f (ByteString, ByteString))
 remCSRF = filtered (hasn't $ _1 . only "__appianCsrfToken")
 
-login :: (RunClient m, MonadLogger m, MonadTime m) => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
+login :: (RunClient m, MonadLogger m, MonadTime m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadThreadId m) => Login -> AppianT m (Headers '[Header "Set-Cookie" Text] ByteString)
 login (Login un pw) = do
-  -- res <- recordTime "Navigate to site" navigateSite
-  res <- navigateSite
+  bounds <- use appianBounds
+  res <- thinkTimer bounds $ recordTime "Navigate to site" navigateSite
+  -- res <- navigateSite
   let cj = res ^.. getCookies & Cookies
   assign appianCookies cj
-  -- res' <- recordTime "Login" $ login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
-  res' <- login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
+  res' <- thinkTimer bounds $ recordTime "Login" $ login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
+  -- res' <- login_ (Just "TEMPO") (Just un) (Just pw) (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just defUserAgent)
   assign appianCookies $ Cookies $ (cj ^.. unCookies . traverse . filtered removeNew) <> res' ^.. getCookies
   return res'
   where
     login_ = toClient Proxy (Proxy :: Proxy LoginAPI)
     removeNew (n, _) = not (n == "JSESSIONID" || n == "__appianCsrfToken")
 
-recordsTab :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m) => AppianT m Value
-recordsTab = recordTime "Opening Records Tab" $ recordsTab_ (Just defUserAgent)
+recordsTab :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m, MonadDelay m, MonadRandom m, MonadThreadId m) => AppianT m Value
+recordsTab = do
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "Opening Records Tab" $ recordsTab_ (Just defUserAgent)
   where
     recordsTab_ = toClient Proxy (Proxy :: Proxy RecordsTab)
 
-recordsTab' :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m) => AppianT m ()
+recordsTab' :: (RunClient m, MonadLogger m, MonadTime m, MonadError ServantError m, MonadDelay m, MonadRandom m, MonadThreadId m) => AppianT m ()
 recordsTab' = do
   v <- recordsTab
   assign appianValue v
 
-reportsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => AppianT m Value
-reportsTab = recordTime "Opening Reports Tab" $ toClient Proxy (Proxy :: Proxy ReportsTab)
+reportsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m, MonadDelay m, MonadRandom m, MonadThreadId m) => AppianT m Value
+reportsTab = do
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "Opening Reports Tab" $ toClient Proxy (Proxy :: Proxy ReportsTab)
 
-logout :: (RunClient m, MonadTime m, MonadLogger m) => AppianT m ByteString
-logout = toClient Proxy (Proxy :: Proxy LogoutAPI)
+logout :: (RunClient m, MonadTime m, MonadLogger m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => AppianT m ByteString
+logout = do
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "Logout" $ toClient Proxy (Proxy :: Proxy LogoutAPI)
 
-tasksTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => Maybe UTCTime -> AppianT m Value
+tasksTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m, MonadRandom m, MonadDelay m, MonadThreadId m) => Maybe UTCTime -> AppianT m Value
 tasksTab mUtcTime = do
   cj <- use appianCookies
-  recordTime "Opening Tasks Tab" $ tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "Opening Tasks Tab" $ tasksTab_ (Just "menu-tasks") (Just "t") (Just "pt") (Just "%5Bstatus-open%5D") mUtcTime (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     tasksTab_ = toClient Proxy (Proxy :: Proxy TasksTab)
 
-viewRecord :: RunClient m => RecordId -> AppianT m Value
+viewRecord :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => RecordId -> AppianT m Value
 viewRecord rid = do
   cj <- use appianCookies
-  viewRecord_ rid (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "View Record" $ viewRecord_ rid (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     viewRecord_ = toClient Proxy (Proxy :: Proxy ViewRecord)
 
@@ -158,7 +167,7 @@ recordUpdate upd = do
   where
     recordUpdate_ = toClient Proxy (Proxy :: Proxy (RecordUpdate update))
 
-sendRecordUpdates :: (RunClient m, MonadCatch m, MonadTime m, MonadLogger m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendRecordUpdates :: (RunClient m, MonadCatch m, MonadTime m, MonadLogger m, MonadThreadId m, MonadRandom m, MonadError ServantError m, MonadDelay m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
 sendRecordUpdates msg fold = do
   previousVal <- use appianValue
   eVal <- sendUpdates_ recordUpdate msg fold previousVal
@@ -168,10 +177,11 @@ sendRecordUpdates msg fold = do
       res <- deltaUpdate previousVal newVal
       assign appianValue res
 
-editReport :: RunClient m => ReportId -> AppianT m Value
+editReport :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m, MonadThreadId m) => ReportId -> AppianT m Value
 editReport rid = do
   cj <- use appianCookies
-  toClient Proxy (Proxy :: Proxy EditReport) rid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime ("Edit Report " <> tshow rid) $ toClient Proxy (Proxy :: Proxy EditReport) rid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
 
 reportUpdate :: (RunClient m, ToJSON update) => ReportId -> UiConfig update -> AppianT m Value
 reportUpdate rid upd = do
@@ -187,31 +197,35 @@ taskUpdate tid upd = do
   where
     taskUpdate_ = toClient Proxy (Proxy :: ToJSON update => Proxy (TaskUpdate update))
 
-taskAccept :: (RunClient m, MonadError ServantError m, MonadLogger m, MonadTime m) => TaskId -> AppianT m NoContent
+taskAccept :: (RunClient m, MonadError ServantError m, MonadLogger m, MonadTime m, MonadRandom m, MonadDelay m, MonadThreadId m) => TaskId -> AppianT m NoContent
 taskAccept tid = do
   cj <- use appianCookies
-  recordTime "Accept Task" $ taskAccept_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime ("Accept Task: "<> tshow tid) $ taskAccept_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskAccept_ = toClient Proxy (Proxy :: Proxy TaskAccept)
 
-taskOpen :: RunClient m => TTaskId -> AppianT m Value
+taskOpen :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => TTaskId -> AppianT m Value
 taskOpen tid = do
   cj <- use appianCookies
-  taskOpen_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime ("Open task: " <> tshow tid) $ taskOpen_ tid (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     taskOpen_ = toClient Proxy (Proxy :: Proxy TaskOpen)
 
-taskStatus :: RunClient m => TaskId -> AppianT m Value
+taskStatus :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => TaskId -> AppianT m Value
 taskStatus tid = do
   cj <- use appianCookies
-  taskStatus_ tid "accepted" (Just "ceebc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just "PUT")
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime ("Task Status: " <> tshow tid) $ taskStatus_ tid "accepted" (Just "ceebc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8) (Just "PUT")
   where
     taskStatus_ = toClient Proxy (Proxy :: Proxy TaskStatus)
 
-landingPageAction :: RunClient m => ActionId -> AppianT m ProcessModelId
+landingPageAction :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => ActionId -> AppianT m ProcessModelId
 landingPageAction aid = do
   cj <- use appianCookies
-  landingPageAction_ aid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime ("Launch Action: " <> tshow aid) $ landingPageAction_ aid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       landingPageAction_ = toClient Proxy (Proxy :: Proxy LandingPageAction)
 
@@ -222,29 +236,36 @@ landingPageActionEx pid = do
     where
       landingPageActionEx_ = toClient Proxy (Proxy :: Proxy LandingPageActionEx)
 
-viewRecordDashboard :: RunClient m => RecordRef -> Dashboard -> AppianT m Value
-viewRecordDashboard = toClient Proxy (Proxy :: Proxy ViewRecordDashboard)
+viewRecordDashboard :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => RecordRef -> Dashboard -> AppianT m Value
+viewRecordDashboard rref dashboard = do
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime ("View Record Dashboard: " <> tshow dashboard) $ viewRecordDashboard_ rref dashboard
+    where
+      viewRecordDashboard_ = toClient Proxy (Proxy :: Proxy ViewRecordDashboard)
 
-relatedActionEx :: RunClient m => RecordRef -> ActionId -> AppianT m Value
+relatedActionEx :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => RecordRef -> ActionId -> AppianT m Value
 relatedActionEx ref aid = do
   cj <- use appianCookies
-  relatedActionEx_ ref aid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "View Related Actions" $ relatedActionEx_ ref aid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       relatedActionEx_ = toClient Proxy (Proxy :: Proxy RelatedActionEx)
 
-actionsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m) => AppianT m Value
+actionsTab :: (RunClient m, MonadTime m, MonadError ServantError m, MonadLogger m, MonadRandom m, MonadDelay m, MonadThreadId m) => AppianT m Value
 actionsTab = do
   cj <- use appianCookies
-  recordTime "Opening Actions Tab" $ actionsTab_ (Just "e4bc") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "Opening Actions Tab" $ actionsTab_ (Just "e4bc") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       actionsTab_ = toClient Proxy (Proxy :: Proxy ActionsTab)
 
     -- Environments
 
-actionEx :: RunClient m => ProcessModelId -> AppianT m Value
+actionEx :: (RunClient m, MonadRandom m, MonadError ServantError m, MonadDelay m, MonadLogger m, MonadTime m, MonadThreadId m) => ProcessModelId -> AppianT m Value
 actionEx pid = do
   cj <- use appianCookies
-  actionEx_ pid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime ("Execute Action: " <> tshow pid) $ actionEx_ pid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       actionEx_ = toClient Proxy (Proxy :: Proxy ActionEx)
 
@@ -403,7 +424,7 @@ sendUpdate' f (Right x) = do
     [] -> return $ Right v
     l -> return $ Left $ ValidationsError (l, v, x)
 
-sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendUpdates_ :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadThreadId m, MonadRandom m, MonadError ServantError m, MonadThreadId m, MonadDelay m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
 sendUpdates_ updateFcn label f v = do
   updates <- lift $ v ^!! runMonadicFold f
   bounds <- use appianBounds
@@ -413,29 +434,29 @@ sendUpdates_ updateFcn label f v = do
     [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
     l -> throwError $ MissingComponentError (intercalate "\n" l, v)
 
-sendReportUpdates :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendReportUpdates :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendReportUpdates reportId label f v = do
   eRes <- sendReportUpdates' reportId label f v
   case eRes of
     Left v -> throwError v
     Right res -> return res
 
-sendReportUpdates' :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendReportUpdates' :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
 sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
 
-sendUpdates :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
+sendUpdates :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendUpdates label f v = do
   eRes <- sendUpdates' label f v
   case eRes of
     Left v -> throwError v
     Right res -> return res
 
-sendUpdates' :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadBase IO m, MonadRandom m, MonadError ServantError m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendUpdates' :: (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m) => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
 sendUpdates' label f v = do
   taskId <- getTaskId v
   sendUpdates_ (taskUpdate taskId) label f v
 
-deltaUpdate :: (Monad m, MonadError ServantError m) => Value -> Value -> AppianT m Value
+deltaUpdate :: (Monad m, MonadError ServantError m, MonadThreadId m) => Value -> Value -> AppianT m Value
 deltaUpdate full delta =
     case has (key "ui" . key "#t" . _String . only "UiComponentsDelta") delta of
       False -> return $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack)  delta
@@ -453,7 +474,7 @@ updateComponent fullResp componentVal = do
 
 --     -- Utility functions
 
-getTaskId :: MonadError ServantError m => Value -> AppianT m TaskId
+getTaskId :: (MonadError ServantError m, MonadThreadId m) => Value -> AppianT m TaskId
 getTaskId v = handleMissing "taskId" v $ v ^? key "taskId" . _String . to TaskId
 
 diffToMS :: NominalDiffTime -> Int
@@ -463,8 +484,10 @@ resultToEither :: Result a -> Either Text a
 resultToEither (Error msg) = Left $ pack msg
 resultToEither (Success a) = Right a
 
-handleMissing :: Monad m => Text -> Value -> Maybe a -> AppianT m a
-handleMissing label v Nothing = throwError $ BadUpdateError label (Just v)
+handleMissing :: MonadThreadId m => Text -> Value -> Maybe a -> AppianT m a
+handleMissing label v Nothing = do
+  tid <- threadId
+  throwError $ BadUpdateError (tshow tid <> ": " <> label) (Just v)
 handleMissing label _ (Just component) = return component
 
 getReportLink :: Text -> Value -> Maybe Text
@@ -473,7 +496,7 @@ getReportLink label v = v ^? deep (filtered $ has $ key "title" . _String . only
 parseReportId :: Text -> Maybe ReportId
 parseReportId = parseLinkId ReportId
 
-getReportId :: MonadError ServantError m => Text -> Value -> AppianT m ReportId
+getReportId :: (MonadError ServantError m, MonadThreadId m) => Text -> Value -> AppianT m ReportId
 getReportId label v = handleMissing label v $ (getReportLink label >=> parseReportId) v
 
 landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
@@ -552,16 +575,18 @@ maybeToEither c = maybe (Left c) Right
 
 -- -- instance Exception ClientException
 
-logServantError :: (MonadLogger m, MonadTime m) => UTCTime -> Text -> ServantError -> m ()
+logServantError :: (MonadLogger m, MonadTime m, MonadDelay m, MonadThreadId m) => UTCTime -> Text -> ServantError -> m ()
 logServantError start label (FailureResponse resp) = do
   end <- currentTime
   logResponse start end label $ responseStatusCode resp
 logServantError start label (DecodeFailure t resp) = do
   end <- currentTime
-  logResponse start end label $ responseStatusCode resp
+  let status = responseStatusCode resp
+  logResponse start end label (status { statusMessage = "Decode Failure!" })
 logServantError start label (UnsupportedContentType mt resp) = do
   end <- currentTime
-  logResponse start end label $ responseStatusCode resp
+  let status = responseStatusCode resp
+  logResponse start end label (status { statusMessage = "Unsupported Content Type" } )
 logServantError start label (InvalidContentTypeHeader resp) = do
   end <- currentTime
   logResponse start end label $ responseStatusCode resp
@@ -569,16 +594,16 @@ logServantError start label (ConnectionError msg) = do
   end <- currentTime
   logResponse start end label (status400 { statusMessage = encodeUtf8 msg })
 
--- logScriptError :: (MonadLogger m, MonadTime m) => UTCTime -> Text -> ScriptError -> m ()
--- logScriptError start label err@(ValidationsError (errMsgs, _, _)) = do
---   end <- currentTime
---   logResponse start end label (status400 { statusMessage = encodeUtf8 $ tshow errMsgs })
--- logScriptError start label err@(MissingComponentError (msg, _)) = do
---   end <- currentTime
---   logResponse start end label (status400 { statusMessage = encodeUtf8 msg })
--- logScriptError start label err@(BadUpdateError msg _) = do
---   end <- currentTime
---   logResponse start end label (status400 { statusMessage = encodeUtf8 msg })
+logScriptError :: (MonadLogger m, MonadTime m, MonadDelay m, MonadThreadId m) => UTCTime -> Text -> ScriptError -> m ()
+logScriptError start label err@(ValidationsError (errMsgs, _, _)) = do
+  end <- currentTime
+  logResponse start end label (status400 { statusMessage = encodeUtf8 $ tshow errMsgs })
+logScriptError start label err@(MissingComponentError (msg, _)) = do
+  end <- currentTime
+  logResponse start end label (status400 { statusMessage = encodeUtf8 msg })
+logScriptError start label err@(BadUpdateError msg _) = do
+  end <- currentTime
+  logResponse start end label (status400 { statusMessage = encodeUtf8 msg })
 
 -- -- dispatchAppianError :: (MonadLogger m, MonadError AppianError m, MonadTime m) => UTCTime -> Text -> AppianError -> m a
 -- -- dispatchAppianError start label err@(ServerError servantError) = logServantError start label servantError >> throwError err
@@ -586,9 +611,11 @@ logServantError start label (ConnectionError msg) = do
 
 logServantError_ start label err = logServantError start label err >> throwError err
 
-logAppianError start label f = f `catchServerError` (trace "Caught an error!" . logServantError_ start label)
+logScriptError_ start label err = trace "Caught Script Error!" $ logScriptError start label err >> throwError err
 
-recordTime :: (MonadTime m, MonadLogger m, MonadError ServantError m) => Text -> AppianT m a -> AppianT m a
+logAppianError start label f = (f `catchServerError` (logServantError_ start label)) `catchError` logScriptError_ start label
+
+recordTime :: (MonadTime m, MonadLogger m, MonadError ServantError m, MonadDelay m, MonadThreadId m) => Text -> AppianT m a -> AppianT m a
 recordTime label f = do
   start <- currentTime
   res <- logAppianError start label f
@@ -596,22 +623,24 @@ recordTime label f = do
   logResponse start end label status200
   return res
 
-logResponse :: MonadLogger m => UTCTime -> UTCTime -> Text -> Status -> m ()
-logResponse start end label status =
+logResponse :: (MonadLogger m, MonadDelay m, MonadThreadId m) => UTCTime -> UTCTime -> Text -> Status -> m ()
+logResponse start end label status = do
+  tid <- threadId
   logInfoN $ intercalate ","
     [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
     , tshow (diffToMS elapsed)
     , label
     , tshow (statusCode status)
     , decodeUtf8 (statusMessage status)
+    , tshow tid
     ]
   where
     elapsed = diffUTCTime end start
 
-thinkTimer :: (MonadBase IO m, MonadRandom m) => Bounds -> m a -> m a
+thinkTimer :: (MonadDelay m, MonadRandom m, MonadDelay m) => Bounds -> m a -> m a
 thinkTimer bounds f = do
     secs <- sample $ uniform (bounds ^. lowerBound) (bounds ^. upperBound)
-    threadDelay (secs * 1000000)
+    delay (secs * 1000000)
     f
 
 data ScriptError
@@ -621,7 +650,11 @@ data ScriptError
     { _badUpdateErrorMsg :: Text
     , _badUpdateErrorVal :: Maybe Value
     }
-  deriving Show
+
+instance Show ScriptError where
+  show (ValidationsError (msgs, _, _)) = "ValidationsError: " <> (intercalate "\n" $ fmap unpack msgs)
+  show (MissingComponentError (msg, _)) = "MissingComponentError: " <> unpack msg
+  show (BadUpdateError msg _) = "BadUpdateError: " <> unpack msg
 
 type AppianT = AppianET ScriptError
 

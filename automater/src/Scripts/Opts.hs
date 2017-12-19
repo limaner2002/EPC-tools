@@ -174,16 +174,16 @@ runInitialReview conf = runIt (initialReview conf)
 runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either ServantError (Either ScriptError Value)]
 runReviewAssign conf = runScriptExhaustive (assignment conf)
 
-run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
-run471Assign baseUrl logFilePath csvInput n = do
-  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
-  let env = ClientEnv mgr baseUrl
-      appianState = newAppianState (Bounds 0 0)
+-- run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
+-- run471Assign baseUrl logFilePath csvInput n = do
+--   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+--   let env = ClientEnv mgr baseUrl
+--       appianState = newAppianState (Bounds 0 0)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
-  dispResults $ fmap (maybe (throwM MissingItemException) id) res
+--   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
+--   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
-runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either SomeException ()]
+runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError ())]
 runNoise = runIt noise
 
 -- run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
@@ -204,14 +204,14 @@ runNoise = runIt noise
 run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
 run471Review = runIt form471Review
 
-run471Certify :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
-run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
-  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
-  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
-      appianState = newAppianState (Bounds 0 0)
+-- run471Certify :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
+-- run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
+--   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+--   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+--       appianState = newAppianState (Bounds 0 0)
 
-  res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) appianState env (conf ^. certLogin))
-  dispResults $ fmap (maybe (throwM MissingItemException) id) res
+--   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) appianState env (conf ^. certLogin))
+--   dispResults $ fmap (maybe (throwM MissingItemException) id) res
 
 -- run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> LogFilePath -> IO ()
 -- run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
@@ -260,9 +260,11 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) n = do
                                                                                                                res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                return res
                                                                                                            )
-  -- let res' = fmap (maybe (throwM MissingItemException) id) res
-  -- dispResults res'
-  return res
+  let justs = fmap fromJust . filter isJust
+      fromJust (Just v) = v
+      res' = justs res
+  dispResults res'
+  return res'
 
 exhaustiveProducer :: (Csv.FromNamedRecord a, MonadResource m, MonadLogger m) => TBQueue a -> CsvPath -> m String
 exhaustiveProducer q = csvStreamByName >>> S.mapM_ (atomically . writeTBQueue q)
@@ -274,7 +276,7 @@ runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numReco
       appianState = newAppianState bounds
   confs <- csvStreamByName >>> S.take numRecords >>> S.toList >>> runResourceT >>> runStdoutLoggingT $ csvInput
   res <- execTaskGroup nThreads (\a -> runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
-  -- dispResults res
+  dispResults res
   return res
 
 execTaskGroup :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO (t b)
@@ -289,13 +291,16 @@ runSPINIntake = runIt spinChangeIntake
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
 setTimeout timeout settings = settings { managerResponseTimeout = timeout }
 
-dispResults :: [Either SomeException a] -> IO ()
+dispResults :: [Either ServantError (Either ScriptError a)] -> IO ()
 dispResults results = do
-  let appianErrors = results ^.. traverse . _Left
-      successes = results ^.. traverse . _Right
+  let appianErrors = results ^.. traverse . _Right . _Left
+      serverErrors = results ^.. traverse . _Left
+      successes = results ^.. traverse . _Right . _Right
+  mapM_ print serverErrors
   mapM_ print appianErrors
   putStrLn $ "Successfully executed: " <> tshow (length successes)
-  putStrLn $ "Appian Errors: " <> tshow (length appianErrors)
+  putStrLn $ "Script Errors: " <> tshow (length appianErrors)
+  putStrLn $ "Server Errors: " <> tshow (length serverErrors)
 
 commandsInfo :: ParserInfo (IO ())
 commandsInfo = info (helper <*> parseCommands)
