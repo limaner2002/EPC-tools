@@ -58,29 +58,6 @@ import Scripts.Noise
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
 
--- runScript :: Script -> BaseUrl -> String -> LogMode -> Int -> IO ()
--- runScript (CSScript script) baseUrl username fp nThreads = do
---   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
---   password <- getPassword
---   let login = Login (pack username) (pack password)
-
---   results <- mapConcurrently (const $ tryAny $ runAppianT fp script (ClientEnv mgr baseUrl) login) $ [1..nThreads]
-
---   dispResults results
-
--- runScript (Form486 script userFile) baseUrl _ fp nThreads = do
---   stderrLn $ intercalate " " [tshow userFile, tshow baseUrl, tshow fp, tshow nThreads]
---   stderrLn "\n********************************************************************************\n"
---   stderrLn "Waiting for 2 mins. Does the above look correct?"
---   threadDelay (120000000)
---   stderrLn "Starting 486 intake now!"
---   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
---   logins <- S.fst' <$> (csvStreamByName >>> S.toList >>> runResourceT >>> runNoLoggingT $ userFile)
-
---   results <- mapConcurrently (\login -> tryAny $ runAppianT fp (script $ login ^. username . to AppianUsername) (ClientEnv mgr baseUrl) login) $ take nThreads logins
-
---   dispResults results
-
 runMultiple :: (LogMode -> Int -> IO ()) -> LogFilePath -> Int -> [Int] -> IO ()
 runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip [1..nRuns] . repeat) nUserList
   where
@@ -89,44 +66,12 @@ runMultiple script logFilePrefix nRuns nUserList = mapM_ (mapM_ runScript . zip 
         logFp = logFilePrefix <> logFilePath suffix
         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
--- runInitialReview :: BaseUrl -> String -> LogMode -> Int -> IO ()
--- runInitialReview = error "Initial review is broken due to the rewrite such that review stages take the case number as inputs now."
--- runInitialReview baseUrl username fp nThreads = do
---   stderrLn $ intercalate " " [tshow baseUrl, tshow fp, tshow nThreads]
---   stderrLn "\n********************************************************************************\n"
---   stderrLn "Waiting for 2 mins. Does the above look correct?"
---   threadDelay (120000000)
---   stderrLn "Starting SPIN Change initial review now!"
---   password <- getPassword
---   conf <- newReviewConf
---   let actions = take nThreads $ repeat (initialReview conf adminInitial2017)
---       login = Login (pack username) $ pack password
---   mgr <- newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
-
---   results <- mapConcurrently (\f -> tryAny $ runAppianT fp f (ClientEnv mgr baseUrl) login) actions
-
---   dispResults results
-
 runAdminIntake :: FilePath -> Int -> BaseUrl -> LogMode -> IO ()
 runAdminIntake = error "Appeal intake has been broken!"
 -- runAdminIntake userFile nThreads baseUrl fp = runConsumer action baseUrl fp userFile nThreads
 --   where
 --     action login = adminIntake $ login ^. username . to AppianUsername
   
--- runConsumer :: (Login -> Appian a) -> BaseUrl -> LogMode -> FilePath -> Int -> IO ()
--- runConsumer f baseUrl fp userFile nThreads = do
---   chan <- atomically newTChan
---   mgr <- liftIO $ newManager (setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings)
---   results <- mapConcurrently (flip loginConsumer (runIt mgr)) $ take nThreads $ repeat chan
---   putStrLn "Done!"
---     where
---       runIt mgr login = do
---         let appianState = newAppianState (Bounds 0 0)
---         res <- join <$> (tryAny $ runAppianT fp (f login) appianState (ClientEnv mgr baseUrl) login)
---         case res of
---           Left exc -> print exc
---           Right _ -> putStrLn "Success!"
-
 newtype UnsupportedReviewException = UnsupportedReviewException Text
 
 instance Show UnsupportedReviewException where
@@ -159,68 +104,26 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Form471Num)]
+run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError Form471Num)]
 run471Intake = runIt form471Intake
 
-run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Form471Num)]
+run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError Form471Num)]
 run471IntakeAndCertify = runIt form471IntakeAndCertify
 
-run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError (Maybe Text))]
+run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError (Maybe Text))]
 run486Intake = runIt form486Intake
 
-runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
+runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError Value)]
 runInitialReview conf = runIt (initialReview conf)
 
 runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO [Either ServantError (Either ScriptError Value)]
 runReviewAssign conf = runScriptExhaustive (assignment conf)
 
--- run471Assign :: BaseUrl -> LogMode -> CsvPath -> Int -> IO ()
--- run471Assign baseUrl logFilePath csvInput n = do
---   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
---   let env = ClientEnv mgr baseUrl
---       appianState = newAppianState (Bounds 0 0)
-
---   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT logFilePath (form471Assign conf) appianState env (conf ^. confReviewMgr))
---   dispResults $ fmap (maybe (throwM MissingItemException) id) res
-
-runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError ())]
+runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError ())]
 runNoise = runIt noise
 
--- run471Review :: String -> LogMode -> CsvPath -> Int -> IO ()
--- run471Review hostUrl logFilePath csvInput n = do
---   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
---   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
-
---   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (f env)
---   dispResults $ fmap (maybe (throwM MissingItemException) id) res
---   where
---     f env conf = do
---       let appianState = newAppianState (Bounds 0 0)
---       eRes <- fmap join $ tryAny $ liftIO $ runAppianT logFilePath (form471Review conf) appianState env (conf ^. confReviewer)
---       case eRes of
---         Left exc -> return $ Left $ toException $ ScriptException $ (conf ^. confFormNum . to tshow) <> ": " <> tshow exc <> "\n" <> (conf ^. confReviewer . username . to tshow)
---         Right _ -> return eRes
-  
-run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
+run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError Value)]
 run471Review = runIt form471Review
-
--- run471Certify :: HostUrl -> LogMode -> CsvPath -> Int -> IO ()
--- run471Certify (HostUrl hostUrl) logFilePath csvInput n = do
---   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
---   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
---       appianState = newAppianState (Bounds 0 0)
-
---   res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (csvStreamByName csvInput) (\conf -> tryAny $ liftIO $ runAppianT' runStderrLoggingT (form471Certification conf) appianState env (conf ^. certLogin))
---   dispResults $ fmap (maybe (throwM MissingItemException) id) res
-
--- run486Intake :: BaseUrl -> FilePath -> Int -> [Int] -> LogFilePath -> IO ()
--- run486Intake baseUrl fpPrefix nRuns nUserList logFilePrefix = mapM_ (mapM_ run486Intake . zip [1..nRuns] . repeat) nUserList
---   where
---     run486Intake (run, nUsers) = runScript (Form486 form486Intake $ fromString userFp) baseUrl mempty (LogFile logFp) nUsers
---       where
---         userFp = fpPrefix <> suffix
---         logFp = logFilePrefix <> logFilePath suffix
---         suffix = "_" <> show nUsers <> "_" <> show run <> ".csv"
 
 shouldRetry :: Monad m => RetryStatus -> Either ScriptError a -> m Bool
 shouldRetry _ (Left err) = case err ^? _BadUpdateError . _1 of -- to fromException . traverse . badUpdateExceptionMsg of
@@ -242,14 +145,14 @@ form471IntakeAndCertify conf = do
     eRes <- retrying findTaskRetryPolicy shouldRetry (const $ (certify `catchError` certifyCatch))
     either throwError pure eRes
 
-runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
+runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError Value)]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
-runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError Value)]
+runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError Value)]
 runReview baseConf = runIt (finalReview baseConf)
 
-runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError b)]
-runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) n = do
+runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError b)]
+runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n) = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
@@ -285,7 +188,7 @@ execTaskGroup (NThreads n) f args = Pool.withTaskGroup n $ \group -> Pool.mapCon
 execTaskGroup_ :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO ()
 execTaskGroup_ n f args = execTaskGroup n f args >> return ()
 
-runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> Int -> IO [Either ServantError (Either ScriptError (Maybe Text))]
+runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Either ServantError (Either ScriptError (Maybe Text))]
 runSPINIntake = runIt spinChangeIntake
 
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
@@ -318,42 +221,7 @@ parseCommands = subparser
   <> command "pcAssign" reviewAssignInfo
   <> command "form471Review" form471ReviewInfo
   <> command "noise" noiseInfo
-  -- <> command "scripts" scriptsInfo
-  -- <> command "form486Intake" form486Info
-  -- <> command "spinChangeIntake" spinChangeInfo
-  -- <> command "initialReview" initialReviewInfo
-  -- <> command "review" reviewInfo
-  -- <> command "adminIntake" adminIntakeInfo
   )
-
--- scriptsInfo :: ParserInfo (IO ())
--- scriptsInfo = info (helper <*> scriptsParser)
---   (  fullDesc
---   <> progDesc "Various scripts written for the EPC system."
---   )
-
--- scriptsParser :: Parser (IO ())
--- scriptsParser = runScript
---   <$> option scriptParser
---   (  long "run-script"
---   <> short 'r'
---   )
---   <*> urlParser
---   <*> strOption
---   (  long "username"
---   <> short 'u'
---   )
---   <*> logModeParser
---   -- <*> strOption
---   -- (  long "log-file-path"
---   -- <> short 'l'
---   -- <> help "The path of the file to write the logs to."
---   -- )
---   <*> option auto
---   (  long "nThreads"
---   <> short 'n'
---   <> help "The number of threads to execute with."
---   )
 
 urlParser :: Parser BaseUrl
 urlParser = BaseUrl
@@ -382,15 +250,6 @@ hostUrlParser = HostUrl
   <> help "The hostname of the server to use."
   )
 
--- scriptParser :: ReadM Script
--- scriptParser = do
---   name <- readerAsk
---   let conf = Form471Conf {_nFRNs = 5, _spin = "143000413", _applicant = Login {_username = "mcmechd@gardencityschools.com", _password = "EPCPassword123!"}}
---   case name of
---     "cscase" -> return $ CSScript createCSCase
---     "form471" -> return $ Form471 (form471Intake conf)
---     _ -> fail $ show name <> " is not a valid script name!"
-
 form471IntakeInfo :: ParserInfo (IO ())
 form471IntakeInfo = info (helper <*> form471Parser)
   (  fullDesc
@@ -404,10 +263,7 @@ form471Parser = fmap void $ run471Intake
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+  <*> nthreadParser
 
 form471IntakeAndCertifyInfo :: ParserInfo (IO ())
 form471IntakeAndCertifyInfo = info (helper <*> form471IntakeAndCertifyParser)
@@ -422,10 +278,7 @@ form471IntakeAndCertifyParser = fmap void $ run471IntakeAndCertify
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+  <*> nthreadParser
 
 form486IntakeInfo :: ParserInfo (IO ())
 form486IntakeInfo = info (helper <*> form486IntakeParser)
@@ -440,10 +293,7 @@ form486IntakeParser = fmap void $ run486Intake
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+  <*> nthreadParser
 
 initialReviewInfo :: ParserInfo (IO ())
 initialReviewInfo = info (helper <*> initialReviewParser)
@@ -459,10 +309,7 @@ initialReviewParser = fmap void $ runInitialReview
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+  <*> nthreadParser
 
 form471ReviewInfo :: ParserInfo (IO ())
 form471ReviewInfo = info (helper <*> form471ReviewParser)
@@ -477,10 +324,7 @@ form471ReviewParser = fmap void $ run471Review
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+  <*> nthreadParser
 
 noiseInfo :: ParserInfo (IO ())
 noiseInfo = info (helper <*> noiseParser)
@@ -495,10 +339,7 @@ noiseParser = fmap void $ runNoise
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+  <*> nthreadParser
 
 reviewAssignInfo :: ParserInfo (IO ())
 reviewAssignInfo = info (helper <*> reviewAssignParser)
@@ -513,10 +354,7 @@ reviewAssignParser = fmap void $ runReviewAssign
   <*> hostUrlParser
   <*> logModeParser
   <*> csvConfParser
-  <*> (NThreads <$> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  ))
+  <*> nthreadParser
   <*> option auto
   (  long "numRecords"
   <> help "The total number of records to exhaust."
@@ -536,10 +374,7 @@ comadInitialParser = fmap void $ runComadInitialReview
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+  <*> nthreadParser
 
 csvConfParser :: Parser CsvPath
 csvConfParser = fromString <$>
@@ -548,23 +383,6 @@ csvConfParser = fromString <$>
   <> short 'i'
   <> help "The csv config file for 471 intake."
   )
-
--- form486Info :: ParserInfo (IO ())
--- form486Info = info (helper <*> form486Parser)
---   (  fullDesc
---   <> progDesc "Runs the FCC Form 486 intake performance script"
---   )
-
--- form486Parser :: Parser (IO ())
--- form486Parser = run486Intake
---   <$> urlParser
---   <*> userParser
---   <*> option auto
---   (  long "num-runs"
---   <> short 'n'
---   )
---   <*> threadsParser
---   <*> logFileParser
 
 spinChangeInfo :: ParserInfo (IO ())
 spinChangeInfo = info (helper <*> spinChangeParser)
@@ -582,29 +400,15 @@ spinChangeParser = void <$> (runSPINIntake
   <*> logModeParser
   <*> csvConfParser
   <*> rampupParser
-  <*> option auto
+  <*> nthreadParser
+                            )
+
+nthreadParser :: Parser NThreads
+nthreadParser = NThreads
+  <$> option auto
   (  long "nThreads"
   <> help "The number of concurrent threads to execute."
-  ))
-
--- initialReviewInfo :: ParserInfo (IO ())
--- initialReviewInfo = info (helper <*> initialReviewParser)
---   (  fullDesc
---   <> progDesc "Runs the Initial Review script."
---   )
-
--- initialReviewParser :: Parser (IO ())
--- initialReviewParser = runMultiple
---   <$> (runInitialReview
---    <$> urlParser
---    <*> userParser
---   )
---   <*> logFileParser
---   <*> option auto
---   (  long "num-runs"
---   <> short 'n'
---   )
---   <*> threadsParser
+  )
 
 adminIntakeInfo :: ParserInfo (IO ())
 adminIntakeInfo = info (helper <*> adminIntakeParser)
@@ -741,17 +545,3 @@ rampupParser = mkRampup
      (  long "rampup"
      <> help "The rampup period (in seconds) for the script"
      )
-
--- reviewTypeParser :: Parser ReviewType
--- reviewTypeParser =
---   (parseElement . pack)
---   <$>  
---   strOption
---   (  long "reviewType"
---   <> help "The type of case to review."
---   )
-
-     -- Need to figure out if this is okay or not
-     -- - Seems to introduce a deadlock
-tryAnyAsync :: MonadCatch m => m a -> m (Either SomeException a)
-tryAnyAsync = tryAsync

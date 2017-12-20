@@ -18,7 +18,7 @@ module Appian.Client
 import Servant.API
 import Servant.Client hiding (responseStatus, HasClient, Client)
 import Servant.Client.Core hiding (ServantError, BaseUrl, Https)
-import Control.Lens hiding (cons)
+import Control.Lens hiding (cons, index)
 import Control.Lens.Action.Reified
 import Control.Lens.Action
 import ClassyPrelude
@@ -129,10 +129,10 @@ recordsTab = do
   where
     recordsTab_ = toClient Proxy (Proxy :: Proxy RecordsTab)
 
-recordsTab' :: RapidFire m => AppianT m ()
-recordsTab' = do
-  v <- recordsTab
-  assign appianValue v
+-- recordsTab' :: RapidFire m => AppianT m ()
+-- recordsTab' = do
+--   v <- recordsTab
+--   assign appianValue v
 
 reportsTab :: RapidFire m => AppianT m Value
 reportsTab = do
@@ -650,11 +650,13 @@ data ScriptError
     { _badUpdateErrorMsg :: Text
     , _badUpdateErrorVal :: Maybe Value
     }
+  | BadPagingError
 
 instance Show ScriptError where
   show (ValidationsError (msgs, _, _)) = "ValidationsError: " <> (intercalate "\n" $ fmap unpack msgs)
   show (MissingComponentError (msg, _)) = "MissingComponentError: " <> unpack msg
   show (BadUpdateError msg _) = "BadUpdateError: " <> unpack msg
+  show BadPagingError = "It looks like paging is not working correctly!"
 
 type AppianT = AppianET ScriptError
 
@@ -667,4 +669,157 @@ type Appian = AppianT (LoggingT ClientM)
 -- makePrisms ''AppianError
 makePrisms ''ScriptError
 makeLenses ''ScriptError
+
+newtype RecordName = RecordName Text
+    deriving (Show, Eq, IsString)
+
+  -- Stateful versions
+-- Same as recordsTab but keeps the JSON Value in the state of the AppianT transformer
+recordsTab' :: RapidFire m => AppianT m ()
+recordsTab' = do
+  v <- recordsTab
+  assign appianValue v
+
+-- Same as viewRecord but keeps the JSON Value in the state of the AppianT transformer
+viewRecord' :: RapidFire m => RecordId -> AppianT m ()
+viewRecord' rid = do
+  v <- viewRecord rid
+  assign appianValue v
+
+-- Allows one to view a record by using the label displayed in the Records tab.
+viewRecordByName :: RapidFire m => RecordName -> AppianT m ()
+viewRecordByName (RecordName recordName) = do
+    recordsTab'
+    mRid <- usesValue (^? hasKeyValue "title" recordName . key "link" . key "value" . key "urlstub" . _String . to RecordId)
+    case mRid of
+        Nothing -> fail $ "Could not find recordId for the record " <> show recordName
+        Just rid -> viewRecord' rid
+        
+-- Same as relatedActionEx but keeps the JSON Value in the state of the AppianT transformer
+executeRelatedAction' :: RapidFire m => Text -> RecordRef -> AppianT m ()
+executeRelatedAction' label rref = do
+    v <- use appianValue
+    v' <- executeRelatedAction label rref v
+    assign appianValue v'
+    
+-- Same as handleMissing but uses the JSON Value in the state of the AppianT transformer
+handleMissing' :: RapidFire m => Text -> Maybe a -> AppianT m a
+handleMissing' message mVal = do
+    v <- use appianValue
+    handleMissing message v mVal
+
+-- Takes a RecordRef and stores the JSON Value of the record in the AppianT transformer
+viewRelatedActions' :: RapidFire m => RecordRef -> AppianT m ()
+viewRelatedActions' rref = do
+    v <- use appianValue
+    (_, v') <- viewRelatedActions v rref
+    assign appianValue v'
+
+executeRelatedAction :: RapidFire m => Text -> RecordRef -> Value -> AppianT m Value
+executeRelatedAction action recordId val = do
+  aid <- handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getRelatedActionId action
+  relatedActionEx recordId aid
+
+viewRelatedActions :: RapidFire m => Value -> RecordRef -> AppianT m (RecordRef, Value)
+viewRelatedActions v recordRef = do
+  let ref = recordRef
+  v' <- viewRecordDashboard ref (Dashboard "summary")
+  dashboard <- handleMissing "Related Actions Dashboard" v' $ v' ^? getRecordDashboard "Related Actions"
+  v'' <- viewRecordDashboard ref dashboard
+  return (recordRef, v'')
+
+sendUpdates1 :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendUpdates1 msg fold = do
+  previousVal <- use appianValue
+  newVal <- sendUpdates msg fold previousVal
+  res <- deltaUpdate previousVal newVal
+  assign appianValue res
+
+sendUpdates1' :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m (Either ScriptError ())
+sendUpdates1' msg fold = do
+  previousVal <- use appianValue
+  eNewVal <- sendUpdates' msg fold previousVal
+  case eNewVal of
+    Left ve -> return $ Left ve
+    Right newVal -> do
+      res <- deltaUpdate previousVal newVal
+      Right <$> assign appianValue res
+
+type Updater m = (Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value)
+
+forGridRows1_ :: RapidFire m => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRows1_ = forGridRowsWith1_ (const True)
+
+forGridRowsWith1_ :: RapidFire m => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRowsWith1_ continueFcn updateFcn colFcn fold f = do
+  v <- use appianValue
+  gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
+  loop (gf ^. gfTotalCount) 0
+    where
+      loop total idx = do
+        val <- use appianValue
+        case (idx < total && continueFcn idx) of
+          False -> assign appianValue val
+          True -> do
+            (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
+            res <- deltaUpdate val val'
+            assign appianValue res
+            f b gf
+            loop total (idx + 1)
+
+getPagedItem :: RapidFire m => Updater m -> (GridField a -> Vector b) -> Int -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m (b, GridField a, Value)
+getPagedItem updateFcn colFcn idx fold val = do
+  gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
+  pi <- handleMissing "GridField is not pageable" val $ gf ^? pagingInfo
+
+  let (startIdx, (RowIndex rowIdx)) = getRowIdx idx pi
+
+  val' <- getPage updateFcn fold startIdx val
+  gf <- handleMissing "GridField" val' =<< (val' ^!? runMonadicFold fold)
+  res <- handleMissing ("Row idx: " <> tshow rowIdx) val' $ flip index rowIdx $ colFcn gf
+  return $ (res, gf, val')
+
+newtype RowIndex = RowIndex Int
+  deriving (Show, Eq)
+
+newtype StartIndex = StartIndex Int
+  deriving (Show, Eq)
+
+pagingInfo :: Applicative f => (PagingInfo -> f PagingInfo) -> GridField a -> f (GridField a)
+pagingInfo = gfSelection . traverse . failing (_Selectable . gslPagingInfo) _NonSelectable
+
+getRowIdx :: Int -> PagingInfo -> (StartIndex, RowIndex)
+getRowIdx idx pi = (startIdx, rowIdx)
+  where
+    pageNo = idx `div` pi ^. pgIBatchSize
+    startIdx
+      | pi ^. pgIBatchSize == (-1) = StartIndex 1
+      | otherwise = StartIndex $ pageNo * pi ^. pgIBatchSize + 1
+    rowIdx = RowIndex (idx `rem` pi ^. pgIBatchSize)
+
+         -- Fetches the page with the given start index. Will throw an
+         -- error if the server responds with a start index that is
+         -- not the same as the given start index.
+getPage :: RapidFire m => Updater m -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> StartIndex -> Value -> AppianT m Value
+getPage updateFcn fold idx val = do
+  gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
+  case maybe False (== idx) (gf ^? pagingInfo . pgIStartIndex . to StartIndex) of
+    True -> return val
+    False -> do
+      let gf' = setStartIndex idx gf
+          msg = "Getting page with startIndex: " <> tshow idx
+
+      val' <- updateFcn msg (MonadicFold $ to $ const $ Right $ toUpdate gf') val
+      gf'' <- handleMissing ("No GridField on the page with startIndex: " <> tshow idx) val' =<< (val' ^!? runMonadicFold fold)
+      case checkPaging idx gf'' of
+        True -> return val'
+        False -> throwError BadPagingError
+
+setStartIndex :: StartIndex -> GridField a -> GridField a
+setStartIndex (StartIndex idx) = pagingInfo . pgIStartIndex .~ idx
+
+checkPaging :: StartIndex -> GridField a -> Bool
+checkPaging (StartIndex idx) gf = maybe False (== idx) si
+  where
+    si = gf ^? pagingInfo . pgIStartIndex
 
