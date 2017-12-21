@@ -287,8 +287,8 @@ instance HasLogin ReviewConf' where
   getLogin conf = conf ^. reviewer
 
   -- This needs to be renamed to replace the myAssignedReport function below.
-myAssignedReportTemp :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Maybe CaseNumber -> ReviewBaseConf -> AppianT m (ReportId, Value)
-myAssignedReportTemp mCaseNum conf = do
+myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Maybe CaseNumber -> ReviewBaseConf -> AppianT m (ReportId, Value)
+myAssignedReport mCaseNum conf = do
   (rid, v) <- openReport "My Assigned Post-Commit Assignments"
   let filterCase v = case mCaseNum of
         Nothing -> return v
@@ -302,6 +302,6 @@ myAssignedReportTemp mCaseNum conf = do
 --    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
   return (rid, res)
 
-    -- Needs to be replaced by myAssignedReportTemp above
-myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> AppianT m (ReportId, Value)
-myAssignedReport = myAssignedReportTemp Nothing
+--     -- Needs to be replaced by myAssignedReportTemp above
+-- myAssignedReport :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> AppianT m (ReportId, Value)
+-- myAssignedReport = myAssignedReportTemp Nothing

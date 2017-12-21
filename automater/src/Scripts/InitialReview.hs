@@ -24,7 +24,7 @@ import Control.Monad.Except
 
 initialReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 initialReview baseConf conf = do
-  (rid, v) <- myAssignedReportTemp (conf ^? frnCaseNumber) baseConf
+  (rid, v) <- myAssignedReport (conf ^? frnCaseNumber) baseConf
   rref <- handleMissing "Select FRN Case: Empty FRN Case Grid" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
   viewRelatedActions v rref
     >>= executeRelatedAction "Review Request Decision" rref . snd
@@ -35,7 +35,7 @@ initialReview baseConf conf = do
 
 manageAppealDetails :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 manageAppealDetails baseConf conf = do
-  (rid, v) <- myAssignedReportTemp (conf ^? frnCaseNumber) baseConf
+  (rid, v) <- myAssignedReport (conf ^? frnCaseNumber) baseConf
   rref <- handleMissing "recordRef" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
   viewRelatedActions v rref
     >>= executeRelatedAction "Manage Appeal Details" rref . snd
@@ -53,7 +53,7 @@ adminInitial conf baseConf = manageAppealDetails baseConf conf >> initialReview 
 
 finalReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 finalReview bConf conf = do
-  (rid, v) <- myAssignedReportTemp (conf ^? frnCaseNumber) bConf
+  (rid, v) <- myAssignedReport (conf ^? frnCaseNumber) bConf
   rref <- handleMissing "Select FRN Case: Empty FRN Case Grid" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
   viewRelatedActions v rref
     >>= executeRelatedAction "Add Review Notes" rref . snd

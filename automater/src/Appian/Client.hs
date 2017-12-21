@@ -41,6 +41,7 @@ import Util.Parallel (runParallelFileLoggingT)
 import Data.Random
 import Control.Monad.Except
 import Network.HTTP.Types.Status (statusCode, statusMessage, Status, status200, status400)
+import qualified Data.Csv as Csv
 
 type HomepageAPI = Get '[HTML] (Headers '[Header "Set-Cookie" Text] NoContent)
 type LoginAPI = "suite" :> "auth" :> QueryParam "appian_environment" Text :> QueryParam "un" Text :> QueryParam "pw" Text :> QueryParam "X-APPIAN-CSRF-TOKEN" Text
@@ -409,15 +410,17 @@ checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgV
 radioButtonUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> AppianInteger -> Over (->) f s s (Either Text Update) (Either Text Update)
 radioButtonUpdate label selection = failing (getRadioButtonField label . to (rdgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find RadioButtonField " <> tshow label)
 
-sendUpdate :: (RunClient m, MonadError ServantError m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m Value
+sendUpdate :: (RunClient m, MonadError ServantError m, MonadThreadId m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m Value
 sendUpdate f update = do
   eRes <- sendUpdate' f update
   case eRes of
     Left v -> throwError v
     Right res -> return res
 
-sendUpdate' :: (RunClient m, MonadError ServantError m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either ScriptError Value)
-sendUpdate' _ (Left msg) = throwError $ BadUpdateError msg Nothing
+sendUpdate' :: (RunClient m, MonadError ServantError m, MonadThreadId m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either ScriptError Value)
+sendUpdate' _ (Left msg) = do
+  tid <- threadId
+  throwError $ BadUpdateError (tshow tid <> ": " <> msg) Nothing
 sendUpdate' f (Right x) = do
   v <- f x
   case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
@@ -432,7 +435,9 @@ sendUpdates_ updateFcn label f v = do
 
   case errors of
     [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
-    l -> throwError $ MissingComponentError (intercalate "\n" l, v)
+    l -> do
+      tid <- threadId
+      throwError $ MissingComponentError (tshow tid <> "\n" <> intercalate "\n" l, v)
 
 sendReportUpdates :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendReportUpdates reportId label f v = do
@@ -497,7 +502,7 @@ parseReportId :: Text -> Maybe ReportId
 parseReportId = parseLinkId ReportId
 
 getReportId :: (MonadError ServantError m, MonadThreadId m) => Text -> Value -> AppianT m ReportId
-getReportId label v = handleMissing label v $ (getReportLink label >=> parseReportId) v
+getReportId label v = handleMissing ("Cannot find Report: " <> label) v $ (getReportLink label >=> parseReportId) v
 
 landingPageLink :: (AsValue s, Plated s, Applicative f) => Text -> (Text -> f Text) -> s -> f s
 landingPageLink label = deep (filtered $ has $ key "values" . key "values" . _Array . traverse . key "#v" . _String . only label) . key "link" . key "uri" . _String
@@ -626,14 +631,21 @@ recordTime label f = do
 logResponse :: (MonadLogger m, MonadDelay m, MonadThreadId m) => UTCTime -> UTCTime -> Text -> Status -> m ()
 logResponse start end label status = do
   tid <- threadId
-  logInfoN $ intercalate ","
-    [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
-    , tshow (diffToMS elapsed)
-    , label
-    , tshow (statusCode status)
-    , decodeUtf8 (statusMessage status)
-    , tshow tid
-    ]
+  let textList =
+        [ toUrlPiece (1000 * utcTimeToPOSIXSeconds start)
+        , tshow (diffToMS elapsed)
+        , label
+        , tshow (statusCode status)
+        , decodeUtf8 (statusMessage status)
+        , tshow tid
+        ]
+      encoded = Csv.encode $ [textList]
+  msg <- case stripSuffix "\r\n" encoded of
+    Nothing -> case stripSuffix "\n" encoded of
+                    Nothing -> fail "Could not stript the newline off of the log message for some reason"
+                    Just bs -> return bs
+    Just bs -> return bs
+  logInfoN . toStrict . decodeUtf8 $ msg
   where
     elapsed = diffUTCTime end start
 
@@ -650,13 +662,13 @@ data ScriptError
     { _badUpdateErrorMsg :: Text
     , _badUpdateErrorVal :: Maybe Value
     }
-  | BadPagingError
+  | BadPagingError ThreadId
 
 instance Show ScriptError where
   show (ValidationsError (msgs, _, _)) = "ValidationsError: " <> (intercalate "\n" $ fmap unpack msgs)
   show (MissingComponentError (msg, _)) = "MissingComponentError: " <> unpack msg
   show (BadUpdateError msg _) = "BadUpdateError: " <> unpack msg
-  show BadPagingError = "It looks like paging is not working correctly!"
+  show (BadPagingError tid) = show tid <> ": It looks like paging is not working correctly!"
 
 type AppianT = AppianET ScriptError
 
@@ -813,7 +825,9 @@ getPage updateFcn fold idx val = do
       gf'' <- handleMissing ("No GridField on the page with startIndex: " <> tshow idx) val' =<< (val' ^!? runMonadicFold fold)
       case checkPaging idx gf'' of
         True -> return val'
-        False -> throwError BadPagingError
+        False -> do
+          tid <- threadId
+          throwError $ BadPagingError tid
 
 setStartIndex :: StartIndex -> GridField a -> GridField a
 setStartIndex (StartIndex idx) = pagingInfo . pgIStartIndex .~ idx

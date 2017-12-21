@@ -40,10 +40,10 @@ unfoldRecordsByName :: (MonadLogger m, FromNamedRecord a) => Either String (Head
 unfoldRecordsByName eRecs = loop eRecs
   where
     loop (Left msg) = do
-      logDebugN $ pack msg
+      logErrorN $ pack msg
       return $ Left msg
     loop (Right (h, Cons (Left msg) resume)) = do
-      logDebugN $ pack msg
+      logErrorN $ pack msg
       loop $ Right (h, resume)
     loop (Right (h, Cons (Right a) resume)) = return $ Right (a, Right (h, resume))
     loop (Right (h, Nil msg rest))

@@ -25,7 +25,7 @@ import Control.Monad.Except
 
 comadInitialReview :: (RunClient m, MonadTime m, MonadGen m, MonadIO m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> ComadReviewConf -> AppianT m Value
 comadInitialReview baseConf conf = do
-  (rid, v) <- myAssignedReportTemp (conf ^? comadId) baseConf
+  (rid, v) <- myAssignedReport (conf ^? comadId) baseConf
   rref <- handleMissing "recordRef" v $ v ^? getGridFieldCell . traverse . gfColumns . at "Application/Request Number" . traverse . _TextCellLink . _2 . traverse
   -- distributeLinks_ (\rid -> editAdjustmentAmounts rid >> reviewComadRequest rid) rid conf v
   editAdjustmentAmounts rref

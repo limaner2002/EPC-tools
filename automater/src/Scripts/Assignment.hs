@@ -32,7 +32,7 @@ assignment baseConf conf = do
                                                                        )
     >>= sendReportUpdates rid "Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
     >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
-    >>= sendReportUpdates rid "Select Case" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [0]) . to toUpdate . to Right)
+    >>= sendReportUpdates rid ("Select Case: " <> (conf ^. frnCaseNumber . caseNumber . to tshow)) (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [0]) . to toUpdate . to Right)
     >>= sendReportUpdates rid "Select & Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un)
                                                  <|> MonadicFold (to (buttonUpdate "Assign Case(s) to Reviewer"))
                                                 )
