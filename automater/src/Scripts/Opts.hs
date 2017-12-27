@@ -143,6 +143,9 @@ form471IntakeAndCertify conf = do
           return $ Right res
         certifyCatch = return . Left
     eRes <- retrying findTaskRetryPolicy shouldRetry (const $ (certify `catchError` certifyCatch))
+            -- If still unsuccessful after all retries then re-throw
+            -- the error up the stack. Otherwise return the result
+            -- unchanged.
     either throwError pure eRes
 
 runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()

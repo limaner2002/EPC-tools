@@ -45,5 +45,12 @@ plotSystem start end filePrefix nodePairs column yAxisTitle = do
 plotSystem' start end filePrefix column yAxisTitle = plotSystem start end filePrefix nodePairs column yAxisTitle
   where
     nodePairs = zip (repeat filePrefix)
-        [ "node1"
+        [ "node1873"
+        , "node1894"
+        , "node1895"
+        , "node1896"
+        , "node1897"
+        , "node1898"
+        , "node1899"
+        , "node1900"
         ]
