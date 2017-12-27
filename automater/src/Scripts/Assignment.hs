@@ -20,7 +20,7 @@ import Control.Monad.Time
 import Data.Random (MonadRandom)
 import Control.Monad.Except
 
-assignment :: (RunClient m, MonadTime m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
+assignment :: RapidFire m => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 assignment baseConf conf = do
   let un = Identifiers [conf ^. reviewer . username . to AppianUsername]
   (rid, v) <- openReport "Post-Commit Assignments"

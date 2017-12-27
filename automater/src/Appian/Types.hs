@@ -28,7 +28,7 @@ newtype AppianText = AppianText Text
   deriving (Show, Eq)
 
 newtype AppianList a = AppianList [a]
-  deriving Show
+  deriving (Show, Monoid)
 
 newtype AppianBoolean = AppianBoolean Bool
   deriving (Show, Eq)
@@ -106,6 +106,18 @@ instance ToJSON (AppianList Int) where
   toJSON (AppianList l) = object
     [ "#v" .= l
     , ("#t", "Integer?list")
+    ]
+
+instance ToJSON (AppianList Text) where
+  toJSON (AppianList l) = object
+    [ "#v" .= l
+    , ("#t", "Text?list")
+    ]
+
+instance ToJSON (AppianList Dictionary) where
+  toJSON (AppianList l) = object
+    [ "#v" .= l
+    , ("#t", "Dictionary?list")
     ]
 
 instance ToJSON AppianString where
@@ -224,7 +236,10 @@ data Identifier = Identifier
   , _idfViewData :: Text
   , _idfView :: Text
   , _idfPageUrlStub :: Text
-  } deriving Show
+  }
+  | DesignObject
+    { _objOpaqueId :: Text
+    } deriving Show
 
 data TextField = TextField
   { _tfSaveInto :: [Text]
@@ -326,6 +341,32 @@ data GridField a = GridField
   , _gfTotalCount :: Int
   }
   deriving Show
+
+data ExpressionEditorWidget = ExpressionEditorWidget
+  { _expwVariableBindings :: Value -- AppianList Dictionary
+  , _expwHeight :: Text
+  , _expwIndentOnTab :: Text
+  , _expwSaveInto :: [Text]
+  , _expwSize :: Text
+  , _expwEnableToolbar :: Bool
+  , _expwDisableFormatting :: Bool
+  , _expwValue :: Text
+  , _expwCid :: Text
+  , _expwTooltip :: Text
+  , _expwShortcutsDocUri :: Text
+  , _expwTestLabel :: Text
+  , _expwReadOnly :: Bool
+  , _expwRefreshAfter :: Text
+  } deriving Show
+
+data ExpressionInfoPanel = ExpressionInfoPanel
+  { _editor :: ExpressionEditorWidget
+  } deriving Show
+
+data Dictionary = Dictionary
+  { _dictValue :: AppianText
+  , _dictUsageMetrics :: AppianList Text
+  } deriving Show
 
 data GridFieldIdent
   = IntIdent AppianInt
@@ -430,10 +471,14 @@ makeLenses ''CollaborationDocument
 makeLenses ''CheckboxField
 makeLenses ''GridFieldColumn
 makeLenses ''Identifier
+makeLenses ''ExpressionEditorWidget
+makeLenses ''ExpressionInfoPanel
+makeLenses ''Dictionary
 
 makePrisms ''GridFieldCell
 makePrisms ''GridValue
 makePrisms ''GridField
+makePrisms ''Identifier
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith "DropdownField" (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -718,13 +763,17 @@ instance ToJSON a => ToJSON (UiConfig a) where
     )
 
 instance ToJSON Identifier where
-  toJSON idf = object
+  toJSON idf@(Identifier _ _ _ _ _) = object
     [ "siteUrlStub" .= (idf ^. idfSiteUrlStub)
     , "urlStub" .= (idf ^. idfUrlStub)
     , ("#t", "RecordInstanceListIdentifier")
     , "viewData" .= (idf ^. idfViewData)
     , "view" .= (idf ^. idfView)
     , "pageUrlStub" .= (idf ^. idfPageUrlStub)
+    ]
+  toJSON idf@(DesignObject _) = object
+    [ ("#t", "DesignObject")
+    , "opaqueId" .= (idf ^. objOpaqueId)
     ]
 
 instance ToJSON ImageCell where
@@ -738,6 +787,40 @@ instance ToJSON CollaborationDocument where
   toJSON doc = object
     [ "id" .= (doc ^. docId)
     , ("#t", "DocumentImage")
+    ]
+
+instance ToJSON ExpressionEditorWidget where
+  toJSON expw = object
+    [ "variableBindings" .= (expw ^. expwVariableBindings)
+    , "height" .= (expw ^. expwHeight)
+    , "indentOnTab" .= (expw ^. expwIndentOnTab)
+    , "saveInto" .= (expw ^. expwSaveInto)
+    , "size" .= (expw ^. expwSize)
+    , "enableToolbar" .= (expw ^. expwEnableToolbar)
+    , "disableFormatting" .= (expw ^. expwDisableFormatting)
+    , "value" .= (expw ^. expwValue)
+    , "_cId" .= (expw ^. expwCid)
+    , ("#t", "ExpressionEditorWidget")
+    , "tooltip" .= (expw ^. expwTooltip)
+    , "shortcutsDocUri" .= (expw ^. expwShortcutsDocUri)
+    , "testLabel" .= (expw ^. expwTestLabel)
+    , "readOnly" .= (expw ^. expwReadOnly)
+    , "refreshAfter" .= (expw ^. expwRefreshAfter)
+    ]
+
+instance ToJSON ExpressionInfoPanel where
+  toJSON panel = object
+    [ "editor" .= (panel ^. editor)
+    ]
+
+instance ToJSON Dictionary where
+  toJSON dict = object
+    [ ("#t", "Dictionary")
+    , ("#v", object
+        [ "value" .= (dict ^. dictValue)
+        , "usageMetricsKeys" .= (dict ^. dictUsageMetrics)
+        ]
+      )
     ]
 
 instance FromJSON CollaborationDocument where
@@ -766,6 +849,7 @@ instance FromJSON a => FromJSON (UiConfig a) where
 
 instance FromJSON Identifier where
   parseJSON val@(Object o) = parseAppianType "RecordInstanceListIdentifier" mkIdent val
+    <|> parseAppianType "DesignObject" mkDesignObj val
     where
       mkIdent = Identifier
         <$> o .: "siteUrlStub"
@@ -773,6 +857,8 @@ instance FromJSON Identifier where
         <*> o .: "viewData"
         <*> o .: "view"
         <*> o .: "pageUrlStub"
+      mkDesignObj = DesignObject
+        <$> o .: "opaqueId"
 
 instance FromJSON TextField where
   parseJSON val@(Object o) = parseAppianTypeWith "TextField" (\t -> isSuffixOf "TextField" t || isSuffixOf "TextWidget" t) mkField val
@@ -846,6 +932,34 @@ instance FromJSON DatePicker where
         <*> o .: "align"
         <*> o .: "placeholder"
         <*> o .: "todayLabel"
+
+instance FromJSON ExpressionEditorWidget where
+  parseJSON val@(Object o) = ExpressionEditorWidget
+        <$> o .:? "variableBindings" .!= (fromMaybe $ decode "{\"ri\": {\"#v\": [], \"#t\": \"Dictionary?list\"}}")
+        <*> o .:? "height" .!= "FIT"
+        <*> o .: "indentOnTab"
+        <*> o .: "saveInto"
+        <*> o .: "size"
+        <*> o .:? "enableToolbar" .!= True
+        <*> o .:? "disableFormatting" .!= False
+        <*> o .: "value"
+        <*> o .: "_cId"
+        <*> o .: "tooltip"
+        <*> o .:? "shortcutsDocUri" .!= "https://docs.appian.com/suite/help/17.2/Expressions.html#keyboard-shortcuts"
+        <*> o .: "testLabel"
+        <*> o .: "readOnly"
+        <*> o .: "refreshAfter"
+    where
+      fromMaybe (Just v) = v
+
+instance FromJSON ExpressionInfoPanel where
+  parseJSON val@(Object o) = parseAppianTypeWith "ExpressionInfoPanel" (\typ -> isSuffixOf "ExpressionInfoPanel" typ) mkExprInfoPanel val
+    where
+      mkExprInfoPanel = ExpressionInfoPanel
+        <$> o .: "editor"
+
+-- instance FromJSON Dictionary where
+  
 
 instance FromJSON DynamicLink where
   parseJSON val@(Object o) = parseAppianType "DynamicLink" mkDynLink val
@@ -1008,3 +1122,14 @@ instance ToUpdate RadioButtonField where
     , "_cId" .= (rdg ^. rdgCid)
     , "model" .= rdg
     ]
+
+instance ToUpdate ExpressionEditorWidget where
+  toUpdate expw = Update $ object
+    [ "saveInto" .= (expw ^. expwSaveInto)
+    , "value" .= (expw ^. expwValue . to mkDict)
+    , ("saveType", "PRIMARY")
+    , "_cId" .= (expw ^. expwCid)
+    , "model" .= expw
+    ]
+    where
+      mkDict txt = Dictionary (AppianText txt) (AppianList [])

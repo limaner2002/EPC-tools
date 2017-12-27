@@ -33,7 +33,7 @@ import Data.Random (MonadRandom)
 import Control.Retry
 import Control.Monad.Except hiding (foldM)
 
-form471Intake :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadIO m, MonadError ServantError m) => Form471Conf -> AppianT m Form471Num
+form471Intake :: (RapidFire m, MonadGen m, MonadIO m) => Form471Conf -> AppianT m Form471Num
 form471Intake conf = do
   v <- reportsTab
   rid <- getReportId "My Landing Page" v
@@ -84,7 +84,7 @@ form471Intake conf = do
   ifContinueToCertification val
 
     -- Common!
-searchEntities :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Text -> Value -> AppianT m Value
+searchEntities :: (RapidFire m, MonadGen m) => Text -> Value -> AppianT m Value
 searchEntities entityName v = do
   let orgIdents = (^. runFold ((,) <$> Fold (gfColumns . at "Organization ID" . traverse . _TextCellLink . _1) <*> Fold (gfIdentifiers . traverse)) . to (uncurry zip))
   assign appianValue v
@@ -92,12 +92,12 @@ searchEntities entityName v = do
   sendUpdates1 "Click Apply for Funding Now" (MonadicFold $ to $ buttonUpdate "Apply For Funding Now")
   use appianValue
 
-selectEntity :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Text -> (Text, GridFieldIdent) -> GridField GridFieldCell -> AppianT m ()
+selectEntity :: (RapidFire m, MonadGen m) => Text -> (Text, GridFieldIdent) -> GridField GridFieldCell -> AppianT m ()
 selectEntity targetName (name, ident) gf
   | targetName == name = sendUpdates1 ("Select Entity " <> tshow targetName) (MonadicFold $ to (const $ selectCheckbox ident gf) . to toUpdate . to Right)
   | otherwise = return ()
 
-selectMembers :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+selectMembers :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectMembers v = do
   (v', rGridField) <- validMemberCheckboxes v
   case rGridField of
@@ -110,7 +110,7 @@ selectMembers v = do
       sendUpdates "Add Members" (MonadicFold (to (buttonUpdate "Add"))) checked
         >>= sendUpdates "Click Save & Continue" (MonadicFold (to (buttonUpdate "Save & Continue")))
 
-validMemberCheckboxes :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadError ServantError m, MonadRandom m, MonadDelay m, MonadThreadId m) => Value -> AppianT m (Value, Result (GridField GridFieldCell))
+validMemberCheckboxes :: (RapidFire m, MonadGen m) => Value -> AppianT m (Value, Result (GridField GridFieldCell))
 validMemberCheckboxes v = do
   logDebugN "Getting valid member checkboxes."
   let mRefs = v ^.. getGridFieldRecordRefs "BEN Name" . traverse
@@ -128,7 +128,7 @@ validMemberCheckboxes v = do
           indices = refs ^.. ifolded . filtered (\r -> r `elem` validRefs) . withIndex . _1
       return (v', _Success . gfSelection . _Just . _Selectable . gslSelected .~ idents $ gf)
 
-viewDiscountRates :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadError ServantError m, MonadRandom m, MonadDelay m, MonadThreadId m) => RecordRef -> AppianT m Value
+viewDiscountRates :: (RapidFire m, MonadGen m) => RecordRef -> AppianT m Value
 viewDiscountRates rid = do
   v <- viewRecordDashboard rid (Dashboard "summary")
   dashboard <- handleMissing "Discount Rate" v $ v ^? getRecordDashboard "Discount Rate"
@@ -166,14 +166,14 @@ selectConsortiumMembers v = case v ^? getButton "Select an Entity by Consortium 
   Nothing -> False
   Just _ -> True
 
-selectEntities :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+selectEntities :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectEntities v = case selectConsortiumMembers v of
   True -> selectEntitiesReceivingService v
   False -> sendUpdates "Manage Recipients of Service" (MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
                                                        <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                                                       ) v
 
-selectEntitiesReceivingService :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+selectEntitiesReceivingService :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectEntitiesReceivingService v
       = sendUpdates "Select Consortia Members" (MonadicFold (to (buttonUpdate "Select an Entity by Consortium Members"))) v
     >>= foldDropdown "Select Consortium Member Entity Type"
@@ -187,7 +187,7 @@ selectEntitiesReceivingService v
     -- >>= sendUpdates "Manage Recipients of Service" (MonadicFold (to (buttonUpdate "Save & Continue")))
     >>= sendUpdates "Manage Recipients of Service" (buttonUpdateWith (\label -> label == "Save & Continue" || label == "Continue") "Could not locate 'Continue' button")
 
-isShared :: (RunClient m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+isShared :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 isShared v = case has (getTextField "Are the costs shared equally among all of the entities?") v of
   True -> sendUpdates "Select Yes (Equally Shared Costs)" (MonadicFold (to (buttonUpdate "Yes"))
                                                            <|> MonadicFold (to (buttonUpdate "Save & Continue"))
@@ -199,7 +199,7 @@ isEmpty470Grid v = case v ^? hasType "GridField" . key "numRowsToDisplay" . _Num
   Just _ -> True
   Nothing -> False
 
-search470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Form470SearchType -> Value -> AppianT m Value
+search470 :: (RapidFire m, MonadGen m) => Form470SearchType -> Value -> AppianT m Value
 search470 (ByBEN ben) = sendUpdates "Search for 470 by BEN" (MonadicFold (to $ textUpdate "Search by BEN" ben)
                                                       <|> MonadicFold (to (buttonUpdate "Search"))
                                                      )
@@ -214,7 +214,7 @@ search470 (By470 form470ID) = sendUpdates "Search for 470 by 470 ID" (MonadicFol
 search470 No470 = sendUpdates "Click Search" (MonadicFold (to $ buttonUpdate "Search"))
                   >=> select470
 
-select470 :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+select470 :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 select470 v = case isEmpty470Grid v of
   True -> sendUpdates "No Form 470" (MonadicFold (to (buttonUpdate "No"))
                                     <|> MonadicFold (to (buttonUpdate "Continue"))
@@ -223,7 +223,7 @@ select470 v = case isEmpty470Grid v of
                              <|> MonadicFold (to (buttonUpdate "Continue"))
                             ) v
 
-ifContinueToCertification :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Form471Num
+ifContinueToCertification :: (RapidFire m, MonadGen m) => Value -> AppianT m Form471Num
 ifContinueToCertification v = do
   formNum <- handleMissing "Could not find 471 number!" v $ v ^? deep (key "title" . _String . to (parseOnly parse471Number) . traverse)
   case has (key "ui" . key "#t" . _String . only "FormLayout") v of
@@ -240,7 +240,7 @@ ifContinueToCertification v = do
               >> pure formNum
 
     -- Discards the result of f
-foldDropdown :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Text -> (Value -> AppianT m Value) -> Text -> Value -> AppianT m Value
+foldDropdown :: (RapidFire m, MonadGen m) => Text -> (Value -> AppianT m Value) -> Text -> Value -> AppianT m Value
 foldDropdown label f dfLabel val = foldM go Null indices
   where
     go _ n = do
@@ -265,7 +265,7 @@ getAddAllButton label
   || label == "Add All Schools "
   || label == "Add All Libraries "
 
-createFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadIO m, MonadError ServantError m) => Form471Conf -> Int -> Text -> Value -> AppianT m Value
+createFRN :: (RapidFire m, MonadGen m, MonadIO m) => Form471Conf -> Int -> Text -> Value -> AppianT m Value
 createFRN _ 0 _ val = return val
 createFRN conf n spin val = do
   logDebugN $ "Creating FRN with " <> tshow (n - 1) <> " to go."
@@ -302,7 +302,7 @@ refreshRetryPolicy = exponentialBackoff 8000000 `mappend` limitRetries 5
 retryRefresh :: MonadIO m => RetryStatus -> Value -> m Bool
 retryRefresh _ v = pure $ not $ has (deep $ hasKeyValue "#v" "FRN has been successfully copied.") v
 
-copyFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Form471Conf -> SearchFRNMethod -> Value -> AppianT m Value
+copyFRN :: (RapidFire m, MonadGen m) => Form471Conf -> SearchFRNMethod -> Value -> AppianT m Value
 copyFRN conf (ByFRNNumber num) = sendUpdates "Search by FRN Number" (MonadicFold (to $ textUpdate "Search by FRN Number" $ tshow num)
                                                                      <|> MonadicFold (to $ buttonUpdate "Search")
                                                                     )
@@ -310,7 +310,7 @@ copyFRN conf (ByFCCForm471 num) = sendUpdates "Search by FCC Form 471" (MonadicF
                                                                         <|> MonadicFold (to $ buttonUpdate "Search")
                                                                        )
 
-createNewFRN :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Form471Conf -> Text -> Value -> AppianT m Value
+createNewFRN :: (RapidFire m, MonadGen m) => Form471Conf -> Text -> Value -> AppianT m Value
 createNewFRN conf spin val = do
   dates <- sendUpdates "Funding Request Key Information" (    MonadicFold (textFieldArbitrary "Please enter a Funding Request Nickname here" 255)
                                                <|> MonadicFold (to (buttonUpdate "No"))
@@ -352,7 +352,7 @@ createNewFRN conf spin val = do
                            <|> MonadicFold (to (buttonUpdate "Save & Continue"))
                          ) narrative
 
-setDates :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+setDates :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 setDates v = do
   today <- utctDay <$> currentTime
   sendUpdates "Enter funding dates and Continue" (MonadicFold (to (datePickerUpdate "What is the service start date?" (AppianDate $ Just today)))
@@ -360,10 +360,10 @@ setDates v = do
                                                   <|> MonadicFold (to (buttonUpdate "Continue"))
                                                  ) v
 
-forLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Form471Conf -> Value -> AppianT m Value
+forLineItems :: (RapidFire m, MonadGen m) => Form471Conf -> Value -> AppianT m Value
 forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' conf dyl v)
 
-addLineItem' :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
+addLineItem' :: (RapidFire m, MonadGen m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
 addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' (conf ^. nLineItems)
   >>= sendUpdates "Review FRN Line Items" (buttonUpdateWith (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
@@ -379,7 +379,7 @@ addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const d
         >>= sendUpdates "Review Recpients" (MonadicFold (to (buttonUpdate "Continue")))
         >>= (\v -> addLineItem'' (n - 1) v)
 
-selectFunction :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+selectFunction :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectFunction v =
   case has (getDropdown "Function") v of
     True -> sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2))) v
@@ -399,7 +399,7 @@ selectFunction v =
                                                                    <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                   ) v
 
-handleDataQuestions :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+handleDataQuestions :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 handleDataQuestions v = do
   logDebugN "Handling Data Questions"
   case v ^? hasKeyValue "value" "Please enter Bandwidth Speed Information for this Data Transmission and/or Internet Access Line Item" of
@@ -409,7 +409,7 @@ handleDataQuestions v = do
                                                      ) v
                 >>= handleConnections
 
-handleConnections :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+handleConnections :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 handleConnections v = do
   case has (getDropdown "Connection used by") v of
     True -> sendUpdates "Select All No & Continue" (MonadicFold (getButtonWith (\l -> l == "No" || l == "No ✓") . to toUpdate . to Right)
@@ -420,7 +420,7 @@ handleConnections v = do
                                                      <|> MonadicFold (to (buttonUpdate "Continue"))
                                                    ) v
 
-enterCosts :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Form471Conf -> Value -> AppianT m Value
+enterCosts :: (RapidFire m, MonadGen m) => Form471Conf -> Value -> AppianT m Value
 enterCosts conf v =
   case conf ^. category of
     Cat1 -> case has (hasKeyValue "_cId" "d2d5fc7028c296c76a2a9698ed79bd69") v of
@@ -452,15 +452,15 @@ parse471Number :: Parser Form471Num
 parse471Number = string "Create FCC Form 471 - " *> (Form471Num <$> decimal)
 -- parse471Number = manyTill anyChar (string " - Form # ") *> (Form471Num <$> decimal)
 
-clickThroughAllFRNLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+clickThroughAllFRNLineItems :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 clickThroughAllFRNLineItems val = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> clickThroughFRNLineItems dyl v) val
 
-clickThroughFRNLineItems :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => DynamicLink -> Value -> AppianT m Value
+clickThroughFRNLineItems :: (RapidFire m, MonadGen m) => DynamicLink -> Value -> AppianT m Value
 clickThroughFRNLineItems dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= forGridRows_ sendUpdates (^. gfColumns . at "FRN Line Item Number" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> clickThroughLineItem dyl v)
   >>= sendUpdates "Continue to FRN Summary" (MonadicFold $ to $ buttonUpdate "Continue")
 
-clickThroughLineItem :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadGen m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => DynamicLink -> Value -> AppianT m Value
+clickThroughLineItem :: (RapidFire m, MonadGen m) => DynamicLink -> Value -> AppianT m Value
 clickThroughLineItem dyl v = sendUpdates "Click Line Item" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= sendUpdates "Continue to Cost Calculation" (MonadicFold $ to $ buttonUpdate "Continue")
   >>= sendUpdates "Continue to Recipients of Service" (MonadicFold $ to $ buttonUpdate "Save & Continue")

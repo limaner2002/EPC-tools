@@ -88,6 +88,9 @@ type ActionsTab = "suite" :> "api" :> "tempo" :> "open-a-case" :> "available-act
 type ActionEx = "suite" :> "rest" :> "a" :> "model" :> "latest" :> Capture "processModelId" ProcessModelId
   :> ReqBody '[EmptyAppianTV] EmptyAppianTV :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 
+type NewRule = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "design" :> "rule"
+               :> Header "X-Appian-Features" Text :> Header "X-Appian-Ui-State" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[AppianTVUI] Value
+
 getCookies :: (Applicative f, GetHeaders ls, Contravariant f) =>
   ((ByteString, ByteString) -> f (ByteString, ByteString)) -> ls -> f ls
 getCookies = to getHeaders . traverse . traverse . to (splitSeq "\n") . traverse . to WC.parseCookies . to (take 1) . traverse
@@ -162,9 +165,15 @@ viewRecord rid = do
     viewRecord_ = toClient Proxy (Proxy :: Proxy ViewRecord)
 
 recordUpdate :: (RunClient m, ToJSON update) => UiConfig update -> AppianT m Value
-recordUpdate upd = do
+recordUpdate = applicationUpdate (Just "TEMPO")
+
+ruleUpdate :: (RunClient m, ToJSON update) => UiConfig update -> AppianT m Value
+ruleUpdate = applicationUpdate (Just "DESIGN")
+
+applicationUpdate :: (RunClient m, ToJSON update) => Maybe Text -> UiConfig update -> AppianT m Value
+applicationUpdate clientMode upd = do
   cj <- use appianCookies
-  recordUpdate_ upd (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  recordUpdate_ upd (Just ("ceebc" :: Text)) (Just ("en-US,en;q=0.8" :: Text)) (Just "stateful") clientMode (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     recordUpdate_ = toClient Proxy (Proxy :: Proxy (RecordUpdate update))
 
@@ -172,6 +181,16 @@ sendRecordUpdates :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either T
 sendRecordUpdates msg fold = do
   previousVal <- use appianValue
   eVal <- sendUpdates_ recordUpdate msg fold previousVal
+  case eVal of
+    Left v -> throwError v
+    Right newVal -> do
+      res <- deltaUpdate previousVal newVal
+      assign appianValue res
+
+sendRuleUpdates :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendRuleUpdates msg fold = do
+  previousVal <- use appianValue
+  eVal <- sendUpdates_ ruleUpdate msg fold previousVal
   case eVal of
     Left v -> throwError v
     Right newVal -> do
@@ -269,6 +288,14 @@ actionEx pid = do
   thinkTimer bounds $ recordTime ("Execute Action: " <> tshow pid) $ actionEx_ pid EmptyAppianTV (Just "ceebc") (Just "stateful") (Just "TEMPO") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
     where
       actionEx_ = toClient Proxy (Proxy :: Proxy ActionEx)
+
+newRule :: RapidFire m => AppianT m Value
+newRule = do
+  cj <- use appianCookies
+  bounds <- use appianBounds
+  thinkTimer bounds $ recordTime "Creating a new rule" $ newRule_ (Just "e4bc") (Just "stateful") (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+    where
+      newRule_ = toClient Proxy (Proxy :: Proxy NewRule)
 
 newtype HostUrl = HostUrl String
   deriving (Show, Eq, IsString)

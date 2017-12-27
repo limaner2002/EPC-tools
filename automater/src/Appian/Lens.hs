@@ -134,6 +134,9 @@ getRecordDashboard dashboardName = hasKeyValue "title" dashboardName . key "rel"
 getDatePicker :: (Contravariant f, Applicative f, Plated s, AsValue s, AsJSON s) => Text -> (DatePicker -> f DatePicker) -> s -> f s
 getDatePicker label = hasLabel label
 
+getExpressionInfoPanel :: (Applicative f, Contravariant f) => (Result ExpressionInfoPanel -> f (Result ExpressionInfoPanel)) -> Value -> f Value
+getExpressionInfoPanel = hasTypeWith (\typ -> isSuffixOf "ExpressionInfoPanel" typ)
+
 suffixed
   :: (Eq (Element a), IsSequence a, Choice p, Applicative f) =>
      a -> p () (f ()) -> p a (f a)

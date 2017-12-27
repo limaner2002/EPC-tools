@@ -19,7 +19,7 @@ import Data.Random
 import Control.Monad.Time
 import Control.Monad.Except
 
-createCSCase :: (RunClient m, MonadLogger m, MonadTime m, MonadCatch m, MonadThreadId m, MonadRandom m, MonadError ServantError m, MonadDelay m) => AppianT m Text
+createCSCase :: RapidFire m => AppianT m Text
 createCSCase = do
   v <- actionsTab
     >>= (\v -> handleResult $ v ^. getTaskProcId "Create a Customer Service Case")

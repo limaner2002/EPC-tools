@@ -39,7 +39,7 @@ instance Csv.FromNamedRecord AppealIntakeConfig where
     <$> r Csv..: "Organization Name"
     <*> Csv.parseNamedRecord r
 
-adminIntake :: (RunClient m, MonadTime m, MonadGen m, MonadThrow m, MonadLogger m, MonadCatch m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => AppealIntakeConfig -> AppianT m (Maybe Text)
+adminIntake :: (RapidFire m, MonadGen m) => AppealIntakeConfig -> AppianT m (Maybe Text)
 adminIntake conf = do
   let user = Identifiers [conf ^. appealApplicant . username]
 

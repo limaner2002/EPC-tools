@@ -20,7 +20,7 @@ import Control.Monad.Time
 import Data.Random (MonadRandom)
 import Control.Monad.Except
 
-form486Intake :: (MonadCatch m, MonadLogger m, MonadTime m, MonadGen m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Login -> AppianT m (Maybe Text)
+form486Intake :: (RapidFire m, MonadGen m) => Login -> AppianT m (Maybe Text)
 form486Intake login = do
   let un = Identifiers [login ^. username . to AppianUsername]
   v <- myLandingPageAction "FCC Form 486"
@@ -57,7 +57,7 @@ radioButtonFieldUpdate label selection v = toUpdate <$> (_Right . rdgValue .~ Ju
   where
     rdg = maybeToEither ("Could not locate RadioButtonField " <> tshow label) $ v ^? getRadioButtonField label
 
-handleWaiver :: (MonadCatch m, MonadLogger m, MonadTime m, RunClient m, MonadDelay m, MonadThreadId m, MonadRandom m, MonadError ServantError m) => Value -> AppianT m Value
+handleWaiver :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 handleWaiver v = do
   case v ^? getRadioButtonField "Waiver Clarification" of
     Nothing -> return v
