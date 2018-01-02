@@ -37,6 +37,7 @@ library
                      , Scripts.ComadReview
                      , Scripts.ComadReviewTypes
                      , Scripts.Noise
+                     , Scripts.ExpressionTest
                      , Util.Parallel
                      , Scripts.ProducerConsumer
                      , Appian.Internal.Appian
@@ -72,6 +73,7 @@ library
                      , random-source
                      , http-types
                      , mmorph
+                     , formatting
   default-language:    Haskell2010
 
 test-suite automater-test

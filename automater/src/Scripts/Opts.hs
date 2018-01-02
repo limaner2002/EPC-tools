@@ -54,6 +54,8 @@ import Control.Retry
 import qualified Control.Concurrent.Async.Pool as Pool
 import Control.Monad.Except (catchError, throwError)
 import Scripts.Noise
+import Test.QuickCheck
+import Scripts.ExpressionTest
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -71,7 +73,7 @@ runAdminIntake = error "Appeal intake has been broken!"
 -- runAdminIntake userFile nThreads baseUrl fp = runConsumer action baseUrl fp userFile nThreads
 --   where
 --     action login = adminIntake $ login ^. username . to AppianUsername
-  
+
 newtype UnsupportedReviewException = UnsupportedReviewException Text
 
 instance Show UnsupportedReviewException where
@@ -151,6 +153,17 @@ form471IntakeAndCertify conf = do
 runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
+newtype MaxSize = MaxSize Int
+  deriving (Num, Show, Eq, Ord)
+
+runSortTest :: Bounds -> HostUrl -> LogMode -> Login -> MaxSize -> IO ()
+runSortTest bounds (HostUrl hostUrl) logMode login (MaxSize n) = do
+  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+      appianState = newAppianState bounds
+  
+  quickCheckWith (stdArgs { maxSize = n } ) (prop_sortList logMode appianState env login)
+
 runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
 runReview baseConf = runIt (finalReview baseConf)
 
@@ -167,17 +180,6 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n
                                                                                                                logResult res
                                                                                                            )
   return ()
-  -- res <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
-  --                                                                                                              let d = (i * (delay `div` n))
-  --                                                                                                              threadDelay $ trace (show d) d
-  --                                                                                                              res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
-  --                                                                                                              return res
-  --                                                                                                          )
-  -- let justs = fmap fromJust . filter isJust
-  --     fromJust (Just v) = v
-  --     res' = justs res
-  -- dispResults res'
-  -- return res'
 
 exhaustiveProducer :: (Csv.FromNamedRecord a, MonadResource m, MonadLogger m) => TBQueue a -> CsvPath -> m String
 exhaustiveProducer q = csvStreamByName >>> S.mapM_ (atomically . writeTBQueue q)
@@ -192,9 +194,6 @@ runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numReco
                              res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                              logResult res
                          ) $ S.fst' confs
-  -- res <- execTaskGroup nThreads (\a -> runAppianT logMode (f a) appianState env (getLogin a)) $ S.fst' confs
-  -- dispResults res
-  -- return res
 
 execTaskGroup :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO (t b)
 execTaskGroup (NThreads n) f args = Pool.withTaskGroup n $ \group -> Pool.mapConcurrently group f args
@@ -244,6 +243,7 @@ parseCommands = subparser
   <> command "pcAssign" reviewAssignInfo
   <> command "form471Review" form471ReviewInfo
   <> command "noise" noiseInfo
+  <> command "sortTest" sortTestInfo
   )
 
 urlParser :: Parser BaseUrl
@@ -382,6 +382,20 @@ reviewAssignParser = fmap void $ runReviewAssign
   (  long "numRecords"
   <> help "The total number of records to exhaust."
   )
+
+sortTestInfo :: ParserInfo (IO ())
+sortTestInfo = info (helper <*> sortTestParser)
+  (  fullDesc
+  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  )
+
+sortTestParser :: Parser (IO ())
+sortTestParser = fmap void $ runSortTest
+  <$> boundsParser
+  <*> hostUrlParser
+  <*> logModeParser
+  <*> loginParser
+  <*> maxSizeParser
 
 comadInitialInfo :: ParserInfo (IO ())
 comadInitialInfo = info (helper <*> comadInitialParser)
@@ -567,4 +581,22 @@ rampupParser = mkRampup
   <$> option auto
      (  long "rampup"
      <> help "The rampup period (in seconds) for the script"
+     )
+
+loginParser :: Parser Login
+loginParser = Login
+  <$> fmap pack (strOption
+     (  long "username"
+     <> short 'u'
+     ))
+  <*> fmap pack (strOption
+     (  long "password"
+     <> short 'p'
+     ))
+
+maxSizeParser :: Parser MaxSize
+maxSizeParser = MaxSize
+  <$> option auto
+     (  long "maxSize"
+     <> short 'm'
      )

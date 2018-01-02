@@ -1,6 +1,9 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+
+module Scripts.ExpressionTest where
 
 import ClassyPrelude hiding (assert)
 import Appian
@@ -69,17 +72,8 @@ prop_ruleTest expr txtGold logMode state env login = monadicIO $ do
 testReverseList :: RapidFire m => ExpressionList -> AppianT m Value
 testReverseList l = testRule $ Expression $ "fn!reverse(fn!reverse(" <> toAppianList l <> "))"
 
-prop_reverseList' :: LogMode -> AppianState -> ClientEnv -> Login -> ExpressionList -> Property
-prop_reverseList' logMode state env login l = prop_ruleTest (Expression $ "fn!reverse(fn!reverse(" <> toAppianList l <> "))") (dispList l) logMode state env login
-
 prop_reverseList :: LogMode -> AppianState -> ClientEnv -> Login -> ExpressionList -> Property
-prop_reverseList logMode state env login l = monadicIO $ do
-  v <- run $ runAppianT logMode (testReverseList l) state env login
-  txtList <- case v ^? _Right . _Right . getParagraphField "Value" . pgfValue of
-    Nothing -> fail "Could not get the expression from the response!"
-    Just txt -> return txt
-
-  assert (txtList == dispList l)
+prop_reverseList logMode state env login l = prop_ruleTest (Expression $ "fn!reverse(fn!reverse(" <> toAppianList l <> "))") (dispList l) logMode state env login
 
 testSortList :: RapidFire m => ExpressionList -> AppianT m Value
 testSortList l = testRule $ Expression $ "fn!sort(" <> toAppianList l <> ")"
@@ -88,10 +82,4 @@ sortExpressionList :: ExpressionList -> ExpressionList
 sortExpressionList (ExpressionList l) = ExpressionList (sort l)
 
 prop_sortList :: LogMode -> AppianState -> ClientEnv -> Login -> ExpressionList -> Property
-prop_sortList logMode state env login l = monadicIO $ do
-  v <- run $ runAppianT logMode (testSortList l) state env login
-  txtList <- case v ^? _Right . _Right . getParagraphField "Value" . pgfValue of
-    Nothing -> fail "Could not get the expression from the response!"
-    Just txt -> return txt
-
-  assert (txtList == (dispList $ sortExpressionList l))
+prop_sortList logMode state env login l = prop_ruleTest (Expression $ "fn!sort(" <> toAppianList l <> ")") (dispList $ sortExpressionList l) logMode state env login
