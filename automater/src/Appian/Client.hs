@@ -39,7 +39,7 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Time
 import Util.Parallel (runParallelFileLoggingT)
 import Data.Random
-import Control.Monad.Except
+import Control.Monad.Except (MonadError, throwError, catchError)
 import Network.HTTP.Types.Status (statusCode, statusMessage, Status, status200, status400)
 import qualified Data.Csv as Csv
 
@@ -459,9 +459,10 @@ sendUpdates_ updateFcn label f v = do
   updates <- lift $ v ^!! runMonadicFold f
   bounds <- use appianBounds
   let errors = lefts updates
+      update = mkUiUpdate (rights updates) v
 
   case errors of
-    [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn $ mkUiUpdate (rights updates) v
+    [] -> thinkTimer bounds $ recordTime label $ sendUpdate' updateFcn update
     l -> do
       tid <- threadId
       throwError $ MissingComponentError (tshow tid <> "\n" <> intercalate "\n" l, v)
@@ -641,7 +642,7 @@ logScriptError start label err@(BadUpdateError msg _) = do
 -- -- dispatchAppianError start label err@(ServerError servantError) = logServantError start label servantError >> throwError err
 -- -- dispatchAppianError start label err@(ScriptError scriptError) = logScriptError start label scriptError >> throwError err
 
-logServantError_ start label err = logServantError start label err >> throwError err
+logServantError_ start label _ err = logServantError start label err >> throwError err
 
 logScriptError_ start label err = trace "Caught Script Error!" $ logScriptError start label err >> throwError err
 

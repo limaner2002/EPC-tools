@@ -125,8 +125,10 @@ usesValue = uses appianValue
 newAppianState :: Bounds -> AppianState
 newAppianState = AppianState mempty Null
 
-catchServerError :: (MonadError ServantError m) => AppianET err m a -> (ServantError -> m (Either err a, AppianState)) -> AppianET err m a
-catchServerError f g = mkAppianT $ \n -> (execAppianT f n) `catchError` g
+catchServerError :: (MonadError ServantError m) => AppianET err m a -> (AppianState -> ServantError -> m (Either err a, AppianState)) -> AppianET err m a
+catchServerError f g = do
+  appianState <- get
+  mkAppianT $ \n -> (execAppianT f n) `catchError` (g appianState)
 
 class Monad m => MonadThreadId (m :: * -> *) where
   threadId :: m ThreadId

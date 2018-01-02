@@ -34,6 +34,7 @@ module Scripts.Test
   , radioArbitraryF
   , MonadGen (..)
   , dropdownCidArbitraryUpdateF
+  , expressionWidgetArbitrary
   ) where 
 
 import Test.QuickCheck hiding (generate)
@@ -199,6 +200,14 @@ radioArbitrary = radioArbitrary_ radioArbitrarySelect
 radioArbitraryF :: (MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> ReifiedMonadicFold m s (Either Text Update)
 radioArbitraryF label = MonadicFold (radioArbitrary label)
 
+expressionWidgetArbitrary :: (Applicative f, Effective m r f, MonadGen m) => Gen Value -> (Either Text Update -> f (Either Text Update)) -> Value -> f Value
+expressionWidgetArbitrary gen = failing (getExpressionInfoPanel . traverse . editor . to Right) (to $ const $ Left $ "Could not find Expression Editor Widget ") . act (mapM $ fillExpression gen) . to (fmap toUpdate)
+
+fillExpression :: MonadGen m => Gen Value -> ExpressionEditorWidget -> m ExpressionEditorWidget
+fillExpression gen widget = do
+  txt <- toStrict . decodeUtf8 . encode <$> genArbitrary gen
+  return $ expwValue .~ txt $ widget
+
 class Monad m => MonadGen m where
   genArbitrary :: Gen a -> m a
 
@@ -216,3 +225,24 @@ instance (MonadGen m, MonadTrans t, Monad (t m)) => MonadGen (t m) where
 
 instance MonadGen ClientM where
   genArbitrary = liftIO . genArbitrary
+
+instance Arbitrary Value where
+  arbitrary = sized sizedArbitraryValue
+
+sizedArbitraryValue :: Int -> Gen Value
+sizedArbitraryValue n
+  | n <= 0 = oneof [pure Null, bool, number, string]
+  | otherwise = resize n' $ oneof [pure Null, bool, number, string, array, object']
+  where
+    n' = n `div` 2
+    bool = Bool <$> arbitrary
+    number = Number . realToFrac <$> (arbitrary :: Gen Float)
+    string = String <$> arbitraryText
+    array = Array . fromList <$> arbitrary
+    object' = Object . mapFromList <$> arbitrary
+
+instance Arbitrary Text where
+  arbitrary = arbitraryText
+
+-- instance Arbitrary (HashMap Text Value) where
+--   arbitrary = mapFromList _

@@ -345,7 +345,7 @@ data GridField a = GridField
 data ExpressionEditorWidget = ExpressionEditorWidget
   { _expwVariableBindings :: Value -- AppianList Dictionary
   , _expwHeight :: Text
-  , _expwIndentOnTab :: Text
+  , _expwIndentOnTab :: Bool
   , _expwSaveInto :: [Text]
   , _expwSize :: Text
   , _expwEnableToolbar :: Bool
@@ -937,7 +937,7 @@ instance FromJSON ExpressionEditorWidget where
   parseJSON val@(Object o) = ExpressionEditorWidget
         <$> o .:? "variableBindings" .!= (fromMaybe $ decode "{\"ri\": {\"#v\": [], \"#t\": \"Dictionary?list\"}}")
         <*> o .:? "height" .!= "FIT"
-        <*> o .: "indentOnTab"
+        <*> (readIndent o <|> o .: "indentOnTab")
         <*> o .: "saveInto"
         <*> o .: "size"
         <*> o .:? "enableToolbar" .!= True
@@ -951,12 +951,20 @@ instance FromJSON ExpressionEditorWidget where
         <*> o .: "refreshAfter"
     where
       fromMaybe (Just v) = v
+      readIndent o = do
+        txt <- o .: "indentOnTab"
+        case (txt :: Text) of
+          "true" -> return True
+          "false" -> return False
+          _ -> fail $ "Could not read indentOnTab value: " <> show txt
 
 instance FromJSON ExpressionInfoPanel where
   parseJSON val@(Object o) = parseAppianTypeWith "ExpressionInfoPanel" (\typ -> isSuffixOf "ExpressionInfoPanel" typ) mkExprInfoPanel val
     where
       mkExprInfoPanel = ExpressionInfoPanel
-        <$> o .: "editor"
+        <$> (   o .: "editor"
+            <|> o .: "editorWidget"
+            )
 
 -- instance FromJSON Dictionary where
   
@@ -1129,7 +1137,7 @@ instance ToUpdate ExpressionEditorWidget where
     , "value" .= (expw ^. expwValue . to mkDict)
     , ("saveType", "PRIMARY")
     , "_cId" .= (expw ^. expwCid)
-    , "model" .= expw
+    , "model" .= (expwValue .~ "" $ expw)
     ]
     where
       mkDict txt = Dictionary (AppianText txt) (AppianList [])
