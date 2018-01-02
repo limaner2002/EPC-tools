@@ -106,25 +106,25 @@ instance Show ScriptException where
 
 instance Exception ScriptException
 
-run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+run471Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Form471Num))]
 run471Intake = runIt form471Intake
 
-run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+run471IntakeAndCertify :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Form471Num))]
 run471IntakeAndCertify = runIt form471IntakeAndCertify
 
-run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+run486Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError (Maybe Text)))]
 run486Intake = runIt form486Intake
 
-runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runInitialReview conf = runIt (initialReview conf)
 
 runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO ()
 runReviewAssign conf = runScriptExhaustive (assignment conf)
 
-runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError ()))]
 runNoise = runIt noise
 
-run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+run471Review :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 run471Review = runIt form471Review
 
 shouldRetry :: Monad m => RetryStatus -> Either ScriptError a -> m Bool
@@ -150,7 +150,7 @@ form471IntakeAndCertify conf = do
             -- unchanged.
     either throwError pure eRes
 
-runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
 newtype MaxSize = MaxSize Int
@@ -164,22 +164,22 @@ runSortTest bounds (HostUrl hostUrl) logMode login (MaxSize n) = do
   
   quickCheckWith (stdArgs { maxSize = n } ) (prop_sortList logMode appianState env login)
 
-runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runReview baseConf = runIt (finalReview baseConf)
 
-runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError b))]
 runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n) = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
 
-  _ <- runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
+  runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
                                                                                                                let d = (i * (delay `div` n))
                                                                                                                threadDelay $ trace (show d) d
                                                                                                                res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                logResult res
+                                                                                                               return res
                                                                                                            )
-  return ()
 
 exhaustiveProducer :: (Csv.FromNamedRecord a, MonadResource m, MonadLogger m) => TBQueue a -> CsvPath -> m String
 exhaustiveProducer q = csvStreamByName >>> S.mapM_ (atomically . writeTBQueue q)
@@ -201,7 +201,7 @@ execTaskGroup (NThreads n) f args = Pool.withTaskGroup n $ \group -> Pool.mapCon
 execTaskGroup_ :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO ()
 execTaskGroup_ n f args = execTaskGroup n f args >> return ()
 
-runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO ()
+runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError (Maybe Text)))]
 runSPINIntake = runIt spinChangeIntake
 
 setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
