@@ -22,7 +22,7 @@ import Servant.Client (ClientEnv)
 import Formatting
 
 newtype ExpressionList = ExpressionList [Integer]
-  deriving (Show, Monoid)
+  deriving (Show, Monoid, Read)
 
 newtype Expression = Expression Text
 
@@ -81,5 +81,8 @@ testSortList l = testRule $ Expression $ "fn!sort(" <> toAppianList l <> ")"
 sortExpressionList :: ExpressionList -> ExpressionList
 sortExpressionList (ExpressionList l) = ExpressionList (sort l)
 
+                                        -- fn!sort is not supported by
+                                        -- Appian. Probably because it
+                                        -- is slow.
 prop_sortList :: LogMode -> AppianState -> ClientEnv -> Login -> ExpressionList -> Property
 prop_sortList logMode state env login l = prop_ruleTest (Expression $ "fn!sort(" <> toAppianList l <> ")") (dispList $ sortExpressionList l) logMode state env login

@@ -156,13 +156,13 @@ runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 newtype MaxSize = MaxSize Int
   deriving (Num, Show, Eq, Ord)
 
-runSortTest :: Bounds -> HostUrl -> LogMode -> Login -> MaxSize -> IO ()
-runSortTest bounds (HostUrl hostUrl) logMode login (MaxSize n) = do
+runReverseTest :: Bounds -> HostUrl -> LogMode -> Login -> MaxSize -> IO ()
+runReverseTest bounds (HostUrl hostUrl) logMode login (MaxSize n) = do
   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
   
-  quickCheckWith (stdArgs { maxSize = n } ) (prop_sortList logMode appianState env login)
+  quickCheckWith (stdArgs { maxSize = n } ) (prop_reverseList logMode appianState env login)
 
 runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runReview baseConf = runIt (finalReview baseConf)
@@ -243,7 +243,7 @@ parseCommands = subparser
   <> command "pcAssign" reviewAssignInfo
   <> command "form471Review" form471ReviewInfo
   <> command "noise" noiseInfo
-  <> command "sortTest" sortTestInfo
+  <> command "reverseTest" reverseTestInfo
   )
 
 urlParser :: Parser BaseUrl
@@ -383,14 +383,14 @@ reviewAssignParser = fmap void $ runReviewAssign
   <> help "The total number of records to exhaust."
   )
 
-sortTestInfo :: ParserInfo (IO ())
-sortTestInfo = info (helper <*> sortTestParser)
+reverseTestInfo :: ParserInfo (IO ())
+reverseTestInfo = info (helper <*> reverseTestParser)
   (  fullDesc
   <> progDesc "Runs the 2017 SPIN Change Initial Review script"
   )
 
-sortTestParser :: Parser (IO ())
-sortTestParser = fmap void $ runSortTest
+reverseTestParser :: Parser (IO ())
+reverseTestParser = fmap void $ runReverseTest
   <$> boundsParser
   <*> hostUrlParser
   <*> logModeParser
