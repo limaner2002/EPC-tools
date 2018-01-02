@@ -87,8 +87,8 @@ executable EPC-tools
                      , lens
   default-language:    Haskell2010
 
-executable automator
-  hs-source-dirs:      automater/app
+executable USACScripts
+  hs-source-dirs:      USACScripts/app
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
