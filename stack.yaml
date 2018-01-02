@@ -50,7 +50,8 @@ packages:
   - servant-client
   - servant-client-core
   - servant
-- location: automater
+- location: RapidFire
+- location: USACScripts
 - location:
     git: https://github.com/jwiegley/async-pool.git
     commit: 96589a8baffc4aa697d906f51016cfecfd20d818
