@@ -366,46 +366,92 @@ runAppianT' runLogger f appianState env creds = bracket (runClientM' login') (ru
     execFun (Left err) = throwError . ConnectionError . tshow $  err
     runClientM' act = runClientM (runStdoutLoggingT act) env
 
-    -- Update Functions
+    -- == Update Functions
 
+    -- | Will find a button on the page with the given label and
+    -- generate an update. Can be used to simulate a user clicking on
+    -- a button with the given label.
 buttonUpdate :: Text -> Value -> Either Text Update
 buttonUpdate label v = toUpdate <$> btn
   where
     btn = maybeToEither ("Could not locate button " <> tshow label) $ v ^? getButton label
 
-buttonUpdateWith :: (Plated s, AsValue s, AsJSON s) => (Text -> Bool) -> t -> ReifiedMonadicFold m s (Either t Update)
-buttonUpdateWith f msg = MonadicFold (failing (getButtonWith f . to toUpdate . to Right) (to (const $ Left msg)))
+    -- | Reified version of 'buttonUpdate'
+buttonUpdateF :: Text -> ReifiedMonadicFold m Value (Either Text Update)
+buttonUpdateF label = MonadicFold (to $ buttonUpdate label)
 
+    -- | Reified version of 'buttonUpdateWith'
+buttonUpdateWithF :: (Plated s, AsValue s, AsJSON s) => (Text -> Bool) -> t -> ReifiedMonadicFold m s (Either t Update)
+buttonUpdateWithF f msg = MonadicFold (failing (getButtonWith f . to toUpdate . to Right) (to (const $ Left msg)))
+
+    -- | Will find a dropdown on the page with the given label and
+    -- create an update. Can be used to simulate a user selecting a
+    -- value from a dropdown with the given label
 dropdownUpdate :: Text -> Int -> Value -> Either Text Update
 dropdownUpdate label n v = toUpdate <$> (_Right . dfValue .~ n $ dropdown)
   where
     dropdown = maybeToEither ("Could not locate dropdown " <> tshow label) $ v ^? getDropdown label
 
+    -- | Reified version of 'dropdownUpdate'
+dropdownUpdateF :: Text -> Int -> ReifiedMonadicFold m Value (Either Text Update)
+dropdownUpdateF label n = MonadicFold (to $ dropdownUpdate label n)
+
+    -- | Will find a text field on the page with the given label and
+    -- set insert the given text into the text field
 textUpdate :: Text -> Text -> Value -> Either Text Update
 textUpdate label txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
   where
     tf = maybeToEither ("Could not find TextField " <> tshow label) $ v ^? getTextField label
 
+    -- | Reified version of 'textUpdate'
+textUpdateF :: Text -> Text -> ReifiedMonadicFold m Value (Either Text Update)
+textUpdateF label txt = MonadicFold (to $ textUpdate label txt)
+
+    -- | Will find a picker on the page with the given label and set
+    -- the value to the given 'AppianPickerData'
 pickerUpdate :: (FromJSON b, ToJSON b) => Text -> AppianPickerData b -> Value -> Either Text Update
 pickerUpdate label uname v = toUpdate <$> (_Right . pwValue .~ Just (toJSON uname) $ apd)
   where
     apd = maybeToEither ("Could not find PickerField " <> tshow label) $ v ^? getPickerWidget label
 
+    -- Reified version of 'pickerUpdate'
+pickerUpdateF :: (FromJSON b, ToJSON b) => Text -> AppianPickerData b -> ReifiedMonadicFold m Value (Either Text Update)
+pickerUpdateF label pickerData = MonadicFold (to $ pickerUpdate label pickerData)
+
+    -- | Will find a paragraph field with the given label and set the
+    -- contents to the given text
 paragraphUpdate :: Text -> Text -> Value -> Either Text Update
 paragraphUpdate label txt v = toUpdate <$> (_Right . pgfValue .~ txt $ pgf)
   where
     pgf = maybeToEither ("Could not locate ParagraphField " <> tshow label) $ v ^? getParagraphField label
 
+    -- | Reified version of 'paragraphUpdateF'
+paragraphUpdateF :: Text -> Text -> ReifiedMonadicFold m Value (Either Text Update)
+paragraphUpdateF label txt = MonadicFold (to $ paragraphUpdate label txt)
+
+    -- | Will find a date picker on the page with the given label and
+    -- set the date to the given date
 datePickerUpdate :: Text -> AppianDate -> Value -> Either Text Update
 datePickerUpdate label date v = toUpdate <$> (_Right . dpwValue .~ date $ dpw)
   where
     dpw = maybeToEither ("Could not locate DatePicker " <> tshow label) $ v ^? getDatePicker label
 
+    -- | Reified version of 'datePickerUpdate'
+datePickerUpdateF :: Text -> AppianDate -> ReifiedMonadicFold m Value (Either Text Update)
+datePickerUpdateF label date = MonadicFold (to $ datePickerUpdate label date)
+
+    -- | Will find a dynamic link on the page with the given label.
 dynamicLinkUpdate :: Text -> Value -> Either Text Update
 dynamicLinkUpdate label v = toUpdate <$> dyl
   where
     dyl = maybeToEither ("Could not locate DynamicLinc " <> tshow label) $ v ^? getDynamicLink label
 
+    -- | Reified version of 'dynamicLinkUpdate'
+dynamicLinkUpdateF :: Text -> ReifiedMonadicFold m Value (Either Text Update)
+dynamicLinkUpdateF label = MonadicFold (to $ dynamicLinkUpdate label)
+
+    -- | Will select the checkbox of a gridField on the paging using
+    -- the given index
 gridFieldUpdate :: Int -> Value -> Either Text Update
 gridFieldUpdate index v = update
   where
@@ -420,10 +466,19 @@ gridFieldUpdate index v = update
       Error msg -> Left $ "gridFieldUpdate: " <> pack msg
       Success upd -> Right upd
 
+    -- | Reified version of 'gridFieldUpdate'
+gridFieldUpdateF :: Int -> ReifiedMonadicFold m Value (Either Text Update)
+gridFieldUpdateF index = MonadicFold (to $ gridFieldUpdate index)
+
+    -- | Will find a text field with the given _cId and insert the given text
 textFieldCidUpdate :: Text -> Text -> Value -> Either Text Update
 textFieldCidUpdate cid txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
   where
     tf = maybeToEither ("Could not locate TextField with _cId " <> tshow cid) $ v ^? textFieldCid cid
+
+    -- | Reified version of 'textFieldCidUpdate'
+textFieldCidUpdateF :: Text -> Text -> ReifiedMonadicFold m Value (Either Text Update)
+textFieldCidUpdateF cid txt = MonadicFold (to $ textFieldCidUpdate cid txt)
 
 textFieldCid :: (Applicative f, Contravariant f) => Text -> (TextField -> f TextField) -> Value -> f Value
 textFieldCid cid = hasKeyValue "_cId" cid . _JSON
@@ -431,11 +486,25 @@ textFieldCid cid = hasKeyValue "_cId" cid . _JSON
 dropdownFieldCid :: (Applicative f, Contravariant f, Plated s, AsValue s, AsJSON s) => Text -> (DropdownField -> f DropdownField) -> s -> f s
 dropdownFieldCid cid = hasKeyValue "_cId" cid . _JSON
 
+    -- | Will find a checkbox group with the given label and will
+    -- select all boxes specified in the given list.
 checkboxGroupUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> [Int] -> Over (->) f s s (Either Text Update) (Either Text Update)
 checkboxGroupUpdate label selection = failing (getCheckboxGroup label . to (cbgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find CheckboxField " <> tshow label)
 
+    -- | Reified version of 'checkboxGroupUpdate'
+checkboxGroupUpdateF :: (AsJSON s, AsValue s, Plated s) => Text -> [Int] -> ReifiedMonadicFold m s (Either Text Update)
+checkboxGroupUpdateF label selection = MonadicFold $ checkboxGroupUpdate label selection
+
+    -- | Will find a radio button on the page with the given label and
+    -- select the button using the provided index
 radioButtonUpdate :: (Contravariant f, Plated s, AsValue s, AsJSON s, Applicative f) => Text -> AppianInteger -> Over (->) f s s (Either Text Update) (Either Text Update)
 radioButtonUpdate label selection = failing (getRadioButtonField label . to (rdgValue .~ Just selection) . to toUpdate . to Right) (to $ const $ Left $ "Could not find RadioButtonField " <> tshow label)
+
+    -- | Reified version of 'radioButtonUpdate'
+radioButtonUpdateF :: (AsJSON s, AsValue s, Plated s) => Text -> AppianInteger -> ReifiedMonadicFold m s (Either Text Update)
+radioButtonUpdateF label selection = MonadicFold $ radioButtonUpdate label selection
+
+                                     -- == Functions for sending updates to the Appian server
 
 sendUpdate :: (RunClient m, MonadError ServantError m, MonadThreadId m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m Value
 sendUpdate f update = do

@@ -185,7 +185,7 @@ selectEntitiesReceivingService v
     -- >>= sendUpdates "Select Consortium Member Entity Type" (MonadicFold (to (dropdownUpdate "Search for Consortium Member by Entity Type" 3)))
     -- >>= sendUpdates "Add All Dependent Schools and NIFs" (MonadicFold (to (buttonUpdate "Add All Dependent Schools And NIFs ")))
     -- >>= sendUpdates "Manage Recipients of Service" (MonadicFold (to (buttonUpdate "Save & Continue")))
-    >>= sendUpdates "Manage Recipients of Service" (buttonUpdateWith (\label -> label == "Save & Continue" || label == "Continue") "Could not locate 'Continue' button")
+    >>= sendUpdates "Manage Recipients of Service" (buttonUpdateWithF (\label -> label == "Save & Continue" || label == "Continue") "Could not locate 'Continue' button")
 
 isShared :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 isShared v = case has (getTextField "Are the costs shared equally among all of the entities?") v of
@@ -366,7 +366,7 @@ forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse
 addLineItem' :: (RapidFire m, MonadGen m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
 addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' (conf ^. nLineItems)
-  >>= sendUpdates "Review FRN Line Items" (buttonUpdateWith (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
+  >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
   where
     addLineItem'' 0 val = return val
     addLineItem'' n val = do

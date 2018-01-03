@@ -58,7 +58,7 @@ finalReview bConf conf = do
   viewRelatedActions v rref
     >>= executeRelatedAction "Add Review Notes" rref . snd
     >>= addNotes
-    >>= sendUpdates "Send to next reviewer" (buttonUpdateWith (\l -> l == "Send to Next Reviewer" || l == "Review Completed") "Could not find 'Send to Next Reviewer'/'Review Completed' button!")
+    >>= sendUpdates "Send to next reviewer" (buttonUpdateWithF (\l -> l == "Send to Next Reviewer" || l == "Review Completed") "Could not find 'Send to Next Reviewer'/'Review Completed' button!")
 
 addDecisions :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 addDecisions val = foldGridFieldPages (MonadicFold $ getGridFieldCell . traverse) makeDecisions val val
