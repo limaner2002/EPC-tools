@@ -67,6 +67,7 @@ library
                      , http-types
                      , mmorph
                      , formatting
+                     , RapidFire
   default-language:    Haskell2010
 
 -- test-suite automater-test

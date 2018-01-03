@@ -92,7 +92,6 @@ executable USACScripts
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
-                     , automater
                      , classy-prelude
                      , servant-server
                      , servant-client
@@ -103,7 +102,7 @@ executable USACScripts
                      , http-media
                      , aeson
                      , lens-aeson
-                     , automater
+                     , USACScripts
                      , time
                      , attoparsec
                      , optparse-applicative
