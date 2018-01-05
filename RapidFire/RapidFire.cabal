@@ -18,28 +18,7 @@ library
                      , Appian.Instances
                      , Appian.Lens
                      , Appian.Client
-                     -- , Scripts.FCCForm471
-                     -- , Scripts.FCCForm471Types
-                     -- , Scripts.FCCForm471ReviewAssignment
-                     -- , Scripts.FCCForm471Common
-                     -- , Scripts.FCCForm471Certification
-                     -- , Scripts.Opts
-                     -- , Scripts.CreateCSCase
-                     -- , Scripts.Test
-                     -- , Scripts.Common
-                     -- , Scripts.FCCForm486
-                     -- , Scripts.SPINChangeIntake
-                     -- , Scripts.InitialReview
-                     -- , Scripts.ReviewCommon
-                     -- , Scripts.AdminReview
-                     -- , Scripts.Assignment
-                     -- , Scripts.AdminIntake
-                     -- , Scripts.ComadReview
-                     -- , Scripts.ComadReviewTypes
-                     -- , Scripts.Noise
-                     -- , Scripts.ExpressionTest
                      , Util.Parallel
-                     -- , Scripts.ProducerConsumer
                      , Appian.Internal.Appian
   build-depends:       base
                      , lens
@@ -75,15 +54,6 @@ library
                      , mmorph
                      , formatting
   default-language:    Haskell2010
-
--- test-suite automater-test
---   type:                exitcode-stdio-1.0
---   hs-source-dirs:      test
---   main-is:             Spec.hs
---   build-depends:       base
---                      , automater
---   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
---   default-language:    Haskell2010
 
 source-repository head
   type:     git
