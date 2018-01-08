@@ -144,11 +144,11 @@ gfSelect gf = do
       ident <- genArbitrary $ QC.elements $ toList idents
       return $ gfSelection . _Just . _Selectable . gslSelected .~ singleton ident $ gf
 
-dropdownArbitraryUpdateF_ :: (MonadGen m, Plated s, AsValue s, AsJSON s) => (DropdownField -> m DropdownField) -> Text -> ReifiedMonadicFold m s (Either Text Update)
+dropdownArbitraryUpdateF_ :: MonadGen m => (DropdownField -> m DropdownField) -> Text -> ReifiedMonadicFold m Value (Either Text Update)
 dropdownArbitraryUpdateF_ selectFcn label = MonadicFold (dropdownArbitrary_ (getDropdown label) selectFcn)
 
-dropdownArbitraryUpdateF :: (MonadGen m, Plated s, AsValue s, AsJSON s) =>
-  Text -> ReifiedMonadicFold m s (Either Text Update)
+dropdownArbitraryUpdateF :: MonadGen m =>
+  Text -> ReifiedMonadicFold m Value (Either Text Update)
 dropdownArbitraryUpdateF label = MonadicFold (dropdownArbitrary_ (getDropdown label) dropdownArbitrarySelect)
 
 dropdownCidArbitraryUpdateF :: (MonadGen m, Plated s, AsValue s, AsJSON s) =>
@@ -162,8 +162,8 @@ dropdownArbitrary_ lens selectFn = getIt
     getIt = lens . act selectFn . to toUpdate . to Right
 --    err = Left ("Could not find dropdown " <> tshow label)
 
-dropdownArbitrary :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) =>
-                     Text -> (Either Text Update -> f (Either Text Update)) -> s -> f s
+dropdownArbitrary :: (Applicative f, Effective m r f, MonadGen m) =>
+                     Text -> (Either Text Update -> f (Either Text Update)) -> Value -> f Value
 dropdownArbitrary label = dropdownArbitrary_ (getDropdown label) dropdownArbitrarySelect
 
 dropdownArbitrarySelect_ :: MonadGen m => Gen Int -> DropdownField -> m DropdownField

@@ -316,13 +316,13 @@ class Parseable a where
 --     err = to $ const $ Left "Could not set dropdown!"
 
 dropdownUpdate' :: (Applicative f, Eq a, Parseable a,
-                    Contravariant f, Plated b, Data.Aeson.Lens.AsValue b, AsJSON b
-                   ) => Text -> a -> (Either Text Update -> f (Either Text Update)) -> b -> f b
+                    Contravariant f)
+                => Text -> a -> (Either Text Update -> f (Either Text Update)) -> Value -> f Value
 dropdownUpdate' label a = getDropdown label . to (dropdownSelect a) . to (bimap tshow toUpdate)
 
-dropdownUpdateF' :: (Eq a, Parseable a, Plated s, AsValue s, AsJSON s) =>
-                    Text -> a -> ReifiedMonadicFold m s (Either Text Update)
-dropdownUpdateF' label s = MonadicFold $ dropdownUpdate' label s
+dropdownUpdateF' :: (Eq a, Parseable a) =>
+                    Text -> a -> ReifiedMonadicFold m Value (Either Text Update)
+dropdownUpdateF' label v = MonadicFold $ dropdownUpdate' label v
 
 newtype ParseException = ParseException Text
   deriving Show

@@ -12,6 +12,8 @@ module Util.Parallel
   , runDistributeTasks
   , ParallelConf
   , runParallelFileLoggingT
+  , LogFilePath
+  , logFilePath
   ) where
 
 import ClassyPrelude
@@ -182,8 +184,13 @@ newtype DeadLoggerException = DeadLoggerException Text
 
 instance Exception DeadLoggerException
 
-runParallelFileLoggingT :: (MonadBaseControl IO m, MonadIO m, Forall (Pure m), MonadThrow m) => FilePath -> LoggingT m a -> m a
-runParallelFileLoggingT logFilePath logging = do
+newtype LogFilePath = LogFilePath FilePath
+  deriving (Show, IsString, Semigroup)
+
+logFilePath = LogFilePath
+
+runParallelFileLoggingT :: (MonadBaseControl IO m, MonadIO m, Forall (Pure m), MonadThrow m) => LogFilePath -> LoggingT m a -> m a
+runParallelFileLoggingT (LogFilePath logFilePath) logging = do
   chan <- newChan
   eRes <- race (runFileLoggingT logFilePath $ unChanLoggingT chan)
                (runChanLoggingT chan logging)

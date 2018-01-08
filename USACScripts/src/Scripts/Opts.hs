@@ -28,7 +28,7 @@ import Scripts.AdminReview
 import Scripts.AdminIntake
 import Scripts.ComadReview
 import Scripts.ComadReview
-import Appian.Client ( runAppianT, cookieModifier, LogFilePath, logFilePath, runAppianT'
+import Appian.Client ( runAppianT, cookieModifier, runAppianT'
                      , LogMode (..), HostUrl (..), ScriptError (..), Appian, _BadUpdateError
                      )
 import Appian.Instances
@@ -56,6 +56,7 @@ import Control.Monad.Except (catchError, throwError)
 import Scripts.Noise
 import Test.QuickCheck
 import Scripts.ExpressionTest
+import Util.Parallel (LogFilePath, logFilePath, runParallelFileLoggingT)
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -180,6 +181,10 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n
                                                                                                                logResult res
                                                                                                                return res
                                                                                                            )
+
+runLogger :: (MonadBaseControl IO m, MonadIO m, Forall (Pure m), MonadThrow m) => LogMode -> LoggingT m a -> m a
+runLogger LogStdout f = runStdoutLoggingT f
+runLogger (LogFile logFilePath) f = runParallelFileLoggingT logFilePath f
 
 exhaustiveProducer :: (Csv.FromNamedRecord a, MonadResource m, MonadLogger m) => TBQueue a -> CsvPath -> m String
 exhaustiveProducer q = csvStreamByName >>> S.mapM_ (atomically . writeTBQueue q)

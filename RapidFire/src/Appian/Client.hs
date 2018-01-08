@@ -37,7 +37,7 @@ import Data.Aeson.Lens
 import Data.Time (diffUTCTime, NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Time
-import Util.Parallel (runParallelFileLoggingT)
+import Util.Parallel (runParallelFileLoggingT, LogFilePath, logFilePath)
 import Data.Random
 import Control.Monad.Except (MonadError, throwError, catchError)
 import Network.HTTP.Types.Status (statusCode, statusMessage, Status, status200, status400)
@@ -338,11 +338,6 @@ clientEnv (HostUrl url) = do
     where
       settings = TLS.tlsManagerSettings { C.managerModifyResponse = cookieModifier }
 
-newtype LogFilePath = LogFilePath FilePath
-  deriving (Show, IsString, Semigroup)
-
-logFilePath = LogFilePath
-
 data LogMode
   = LogStdout
   | LogFile LogFilePath
@@ -351,6 +346,7 @@ data LogMode
 runAppianT :: LogMode -> AppianT (LoggingT ClientM) a -> AppianState -> ClientEnv -> Login -> IO (Either ServantError (Either ScriptError a))
 -- runAppianT (LogFile (LogFilePath pth)) = runAppianT' (runParallelFileLoggingT pth)
 runAppianT LogStdout = runAppianT' runStdoutLoggingT
+runAppianT (LogFile _) = fail "logging to a file using 'runAppianT' is not supported and will be removed in a future version."
 
 runAppianT' :: (LoggingT ClientM (Either ScriptError a, AppianState) -> ClientM (Either ScriptError a, AppianState)) -> AppianT (LoggingT ClientM) a -> AppianState -> ClientEnv -> Login -> IO (Either ServantError (Either ScriptError a))
 runAppianT' runLogger f appianState env creds = bracket (runClientM' login') (runClientM' . logout') (runClientM' . execFun)

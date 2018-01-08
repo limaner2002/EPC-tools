@@ -48,7 +48,7 @@ handleResult :: Monad m => Result a -> AppianT m a
 handleResult (Error err) = fail err
 handleResult (Success a) = pure a
 
-dropdownUpdateWith :: (ToUpdate a, Contravariant f, Applicative f, Plated s, AsValue s, AsJSON s) => (DropdownField -> a) -> Text -> (Update -> f Update) -> s -> f s
+dropdownUpdateWith :: (ToUpdate a, Contravariant f, Applicative f) => (DropdownField -> a) -> Text -> (Update -> f Update) -> Value -> f Value
 dropdownUpdateWith f label = getDropdown label . to f . to toUpdate
 
 dropdownRandom :: MonadRandom m => DropdownField -> m DropdownField

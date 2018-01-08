@@ -44,14 +44,20 @@ getButton label = deep (filtered (has $ runFold ((,) <$> Fold (key "confirmButto
 getButtonWith :: (AsJSON s, AsValue s, Plated s, Applicative f) => (Text -> Bool) -> (ButtonWidget -> f ButtonWidget) -> s -> f s
 getButtonWith f = deep (filtered (has $ runFold ((,) <$> Fold (key "confirmButtonStyle" . to (const ())) <*> Fold (filtered $ anyOf (key "label" . _String) f)))) . _JSON
 
-getDropdown :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (DropdownField -> f DropdownField) -> s -> f s
-getDropdown = hasTypeAndLabel "DropdownField"
+getDropdown :: (Applicative f, Contravariant f) => Text -> (DropdownField -> f DropdownField) -> Value -> f Value
+getDropdown label = getDropdownWith (checkDropdownLabels label) . traverse -- hasTypeAndLabel "DropdownField"
+
+checkDropdownLabels :: Text -> Value -> Bool
+checkDropdownLabels label v = (has (key "label" . _String . only label) v
+                           || has (key "inlineLabel" . _String . only label) v)
+                           && isDropdown v
 
 getDropdown' :: (Contravariant f, Applicative f) => Text -> (Result DropdownField -> f (Result DropdownField)) -> Value -> f Value
 getDropdown' label = deep (getComponentWith (\v -> isDropdown v && hasLabel' label v))
 
+-- Does not traverse down the JSON tree structure. Need to update this
 getDropdownWith :: (Contravariant f, Applicative f) => (Value -> Bool) -> (Result DropdownField -> f (Result DropdownField)) -> Value -> f Value
-getDropdownWith = getComponentWith
+getDropdownWith = deep . getComponentWith
 
 isDropdown :: Value -> Bool
 isDropdown = anyOf (key "#t" . _String) (\t -> t == "DropdownField" || t == "DropdownWidget")
@@ -106,7 +112,7 @@ getDynamicLink :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (Dyn
 getDynamicLink label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . only "DynamicLink") <*> Fold (key "label" . _String . only label))) . _JSON
 
 getGridField :: (FromJSON a, Contravariant f, Applicative f) => (Result (GridField a) -> f (Result (GridField a))) -> Value -> f Value
-getGridField = hasTypeWith (isSuffixOf "GridField")
+getGridField = hasTypeWith (\t -> isSuffixOf "GridField" t)
 
 getGridFieldCell :: (Contravariant f, Applicative f) => (Result (GridField GridFieldCell) -> f (Result (GridField GridFieldCell))) -> Value -> f Value
 getGridFieldCell = getGridField
@@ -154,7 +160,7 @@ gridWidgetRows :: (Contravariant f, Applicative f, AsValue t, FromJSON a) => ([a
 gridWidgetRows = key "contents" . plate . key "contents" . to fromJSON . traverse
 
 gridFieldColumns :: (FromJSON a, Contravariant f, Applicative f, AsValue t) => ((Text, Result a) -> f (Text, Result a)) -> t -> f t
-gridFieldColumns = key "columns" . plate . runFold ((,) <$> Fold (key "label" . _String) <*> Fold (to fromJSON))
+gridFieldColumns = key "column" . plate . runFold ((,) <$> Fold (key "label" . _String) <*> Fold (to fromJSON))
 
 toDict :: (Eq a, Hashable a) => [a] -> [b] -> HashMap a b
 toDict headers row = mapFromList $ zip headers row
@@ -195,7 +201,7 @@ instance FromJSON a => FromJSON (GridField a) where
                       <$> o .:? "identifiers"
                       <*> o .:? "value"
                       <*> pure val
-                      <*> o .: "saveInto"
+                      <*> o .:? "saveInto"
                       <*> o .: "_cId"
                       <*> o .: "totalCount"
                     l -> fail $ intercalate "\n" l

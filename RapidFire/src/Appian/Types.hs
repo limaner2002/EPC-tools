@@ -170,6 +170,7 @@ data DropdownField = DropdownField
   , _dfRequired :: Maybe Bool
   , _dfHasPlaceholderLabel :: Text
   , _dfChoices :: [Text]
+  , _dfInlineLabel :: Text
   } deriving Show
 
 data CheckboxGroup = CheckboxGroup
@@ -286,7 +287,7 @@ data DatePicker = DatePicker
   , _dpwSaveInto :: [Text]
   , _dpwValue :: AppianDate
   , _dpwCid :: Text
-  , _dpwRequired :: Bool
+  , _dpwRequired :: Maybe Bool
   , _dpwAlign :: Text
   , _dpwPlaceholder :: Text
   , _dpwTodayLabel :: Text
@@ -336,7 +337,7 @@ data GridField a = GridField
   , _gfIdentifiers :: Maybe (Vector GridFieldIdent)
   , _gfSelection :: Maybe GridValue
   , _gfModel :: Value
-  , _gfSaveInto :: [Text]
+  , _gfSaveInto :: Maybe [Text]
   , _gfCid :: Text
   , _gfTotalCount :: Int
   }
@@ -398,12 +399,6 @@ newtype GridFieldColumn a
     }
   deriving (Show, Eq, Functor, Monoid, Foldable)
 
--- mapGridFieldCell :: (a -> b) -> GridFieldCell
---   fmap f (TextCell v) = TextCell $ fmap f v
---   fmap f (TextCellLink (n, v)) = TextCellLink $ (n, fmap f v)
---   fmap f (TextCellDynLink (n, v)) = TextCellDynLink $ (n, fmap f v)
---   fmap _ EmptyColumn = EmptyColumn
-
 data ImageCell = ImageCell
   { _imgDocument :: CollaborationDocument
   , _imgOpaqueId :: Text
@@ -411,6 +406,30 @@ data ImageCell = ImageCell
   } deriving Show
 
 newtype CollaborationDocument = CollaborationDocument { _docId :: Int }
+  deriving Show
+
+data GridWidgetCell
+  = GWTextField TextField
+  | GWDecimal
+  | GWDate DatePicker
+  | GWDateTime
+  | GWImage
+    -- Can be a list of links
+  | GWLink [AppianLink]
+  | GWProgressBar
+  | GWRichText
+  deriving Show
+
+data AppianLink
+  = DocumentLink
+  | ProcessTaskLink
+  | RecordLink
+    { _recordLinkLabel :: Text
+    , _recordLinkRef :: RecordRef
+    }
+  | SafeLink
+  | UserRecordLink
+  | NewsEntryLink
   deriving Show
 
 newtype RecordRef = RecordRef Text
@@ -474,11 +493,14 @@ makeLenses ''Identifier
 makeLenses ''ExpressionEditorWidget
 makeLenses ''ExpressionInfoPanel
 makeLenses ''Dictionary
+makeLenses ''AppianLink
 
 makePrisms ''GridFieldCell
 makePrisms ''GridValue
 makePrisms ''GridField
 makePrisms ''Identifier
+makePrisms ''GridWidgetCell
+makePrisms ''AppianLink
 
 instance FromJSON DropdownField where
   parseJSON val@(Object o) = parseAppianTypeWith "DropdownField" (\typ -> isSuffixOf "DropdownField" typ || isSuffixOf "DropdownWidget" typ)  mkField val
@@ -492,6 +514,7 @@ instance FromJSON DropdownField where
         <*> o .:? "required"
         <*> o .: "hasPlaceholderLabel"
         <*> o .: "choices"
+        <*> o .: "inlineLabel"
   parseJSON _ = fail "Could not parse DropdownField"
 
 instance ToJSON DropdownField where
@@ -928,7 +951,7 @@ instance FromJSON DatePicker where
         <*> o .: "saveInto"
         <*> o .: "value"
         <*> o .: "_cId"
-        <*> o .: "required"
+        <*> o .:? "required"
         <*> o .: "align"
         <*> o .: "placeholder"
         <*> o .: "todayLabel"
@@ -1019,6 +1042,24 @@ instance FromJSON SortField where
     <$> o .: "field"
     <*> o .: "ascending"
 
+instance FromJSON AppianLink where
+  parseJSON val@(Object o) = parseRecordLink <|> pure DocumentLink
+    where
+      parseRecordLink = parseAppianType "RecordLink" mkRecordLink val
+      mkRecordLink = RecordLink
+        <$> o .: "label"
+        <*> (RecordRef <$> o .: "_recordRef")
+
+instance FromJSON GridWidgetCell where
+  parseJSON val@(Object o) = parseGWLink
+                     <|> parseGWTextField
+                     <|> parseGWDate
+    where
+      parseGWLink = GWLink
+        <$> o .: "links"
+      parseGWTextField = GWTextField <$> parseJSON val
+      parseGWDate = GWDate <$> parseJSON val
+
       -- Util Functions
 capitalize :: Textual a => a -> a
 capitalize = (toUpper . take 1 &&& drop 1 >>> arr (uncurry mappend))
@@ -1057,6 +1098,7 @@ instance ToUpdate DropdownField where
     , "value" .= (AppianInteger $ df ^. dfValue)
     , "saveInto" .= (df ^. dfSaveInto)
     , ("saveType", "PRIMARY")
+    , "inlineLabel" .= (df ^. dfInlineLabel)
     ]
 
 instance ToUpdate CheckboxGroup where
