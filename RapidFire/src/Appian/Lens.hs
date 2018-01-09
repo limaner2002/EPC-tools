@@ -175,7 +175,10 @@ getEmbedded :: (Applicative f, Plated s, AsValue s) => Text -> (Text -> f Text) 
 getEmbedded label = hasKeyValue "name" label . key "children" . plate . _String
 
 instance FromJSON a => FromJSON (GridWidget a) where
-  parseJSON val = GridWidget <$> vals
+  parseJSON val@(Object o) = GridWidget
+                             <$> vals
+                             <*> o .:? "actions"
+                             <*> o .: "totalCount"
     where
       vals = do
         res <- traverse checkColumns $ zip (repeat headers) rows

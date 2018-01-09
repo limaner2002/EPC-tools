@@ -328,8 +328,10 @@ data SortField = SortField
 newtype AppianDate = AppianDate { _appianDate :: Maybe Day }
   deriving Show
 
-newtype GridWidget a = GridWidget
+data GridWidget a = GridWidget
   { _gwVal :: [(Maybe CheckboxGroup, HashMap Text a)]
+  , _gwActions :: Maybe (Vector DynamicLink)
+  , _gwTotalCount :: Int
   } deriving Show
 
 data GridField a = GridField

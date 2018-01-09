@@ -44,6 +44,9 @@ myLandingPageAction actionName = do
   pid <- landingPageAction aid
   landingPageActionEx pid
 
+myLandingPageAction1 :: RapidFire m => Text -> AppianT m ()
+myLandingPageAction1 actionName = myLandingPageAction actionName >>= assign appianValue
+
 addAllFRNsButtonUpdate :: (Plated s, AsValue s, AsJSON s) => ReifiedMonadicFold m s (Either Text Update)
 addAllFRNsButtonUpdate = MonadicFold (failing (getButtonWith addAllFRNsButton . to toUpdate . to Right) (to (const $ Left "Could not find the Add All FRNs button!")))
 
