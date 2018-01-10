@@ -163,6 +163,7 @@ data ReviewType
   | RevAdminCorrection
   | RevSRCSpinChange
   | RevBulkSpinChange
+  | RevOther Text
   deriving (Show, Eq, Read)
 
 instance Parseable ReviewType where
@@ -176,7 +177,7 @@ instance Parseable ReviewType where
   parseElement "Administrative Correction" = pure RevAdminCorrection
   parseElement "Bulk SPIN" = pure RevBulkSpinChange
   parseElement "SRC SPIN" = pure RevSRCSpinChange
-  parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Review Type."
+  parseElement s = pure $ RevOther s -- throwM $ ParseException $ tshow s <> " is not a recognized Review Type."
 
 data ReviewerType
   = ReviewerSelect
@@ -196,7 +197,7 @@ instance Parseable ReviewerType where
   parseElement "USAC QA Review" = pure RevUsac
   parseElement "Heightened Scrutiny Initial Review" = pure RevHSInit
   parseElement "Heightened Scrutiny Final Review" = pure RevHSFinal
-  parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Reviewer Type."
+  parseElement s = Left $ tshow s <> " is not a recognized Reviewer Type." -- throwM $ ParseException $ tshow s <> " is not a recognized Reviewer Type."
 
 data ReviewConf = ReviewConf
   { revTaskVar :: TVar DistributeTask
@@ -293,13 +294,11 @@ myAssignedReport mCaseNum conf = do
   let filterCase v = case mCaseNum of
         Nothing -> return v
         Just caseNum -> sendReportUpdates rid "Application/Request Number" (MonadicFold $ to $ textUpdate "Application/Request Number" (caseNum ^. caseNumber . to tshow)) v
-  res <- editReport rid
-    >>= sendReportUpdates rid "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType conf))
+  res <- sendReportUpdates rid "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType conf)) v
     >>= sendReportUpdates rid "Select Reviewer Type" (dropdownUpdateF' "Reviewer Type" (reviewerType conf))
     >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Funding Year" (fundingYear conf))
     >>= filterCase
     >>= sendReportUpdates rid "Click Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
---    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
   return (rid, res)
 
 --     -- Needs to be replaced by myAssignedReportTemp above

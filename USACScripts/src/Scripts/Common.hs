@@ -308,7 +308,7 @@ selectCheckbox :: GridFieldIdent -> GridField a -> GridField a
 selectCheckbox ident = gfSelection . traverse . _Selectable . gslSelected .~ [ident]
 
 class Parseable a where
-  parseElement :: MonadThrow m => Text -> m a
+  parseElement :: Text -> Either Text a
 
 -- dropdownUpdate' :: (AsJSON t, AsValue t, Plated t, Parseable s, Eq s, Contravariant f, Applicative f)
 --                 => Text -> s -> Over (->) f t t (Either Text Update) (Either Text Update)
@@ -321,7 +321,7 @@ class Parseable a where
 dropdownUpdate' :: (Applicative f, Eq a, Parseable a,
                     Contravariant f)
                 => Text -> a -> (Either Text Update -> f (Either Text Update)) -> Value -> f Value
-dropdownUpdate' label a = getDropdown label . to (dropdownSelect a) . to (bimap tshow toUpdate)
+dropdownUpdate' label a = failing (getDropdown label . to Right) (to $ const $ Left $ "Could not find dropdown " <> tshow label) . to (>>= dropdownSelect a) . to (bimap id toUpdate)
 
 dropdownUpdateF' :: (Eq a, Parseable a) =>
                     Text -> a -> ReifiedMonadicFold m Value (Either Text Update)
@@ -332,16 +332,16 @@ newtype ParseException = ParseException Text
 
 instance Exception ParseException
 
-dropdownIndex :: (Parseable s, Eq s, MonadThrow m) => s -> DropdownField -> m Int
+dropdownIndex :: (Parseable s, Eq s) => s -> DropdownField -> Either Text Int
 dropdownIndex s df = do
   let filter _ v = v == s
 
   mRes <- df ^!? dfChoices . itraversed . act parseElement . ifiltered filter . withIndex . _1 . to (+1)
   case mRes of
-    Nothing -> throwM $ ParseException $ "Could not find the desired value in the list of choices!"
-    Just idx -> return idx
+    Nothing -> Left "Could not find the desired value in the list of choices!"
+    Just idx -> Right idx
 
-dropdownSelect :: (Parseable s, Eq s, MonadThrow m) => s -> DropdownField -> m DropdownField
+dropdownSelect :: (Parseable s, Eq s) => s -> DropdownField -> Either Text DropdownField
 dropdownSelect s df = do
   idx <- dropdownIndex s df
   return $ dfValue .~ idx $ df
@@ -353,6 +353,7 @@ data FundingYear
   | FY2018
   | FY2019
   | FY2020
+  | FYOther Text
   deriving (Show, Eq, Read)
 
 instance Parseable FundingYear where
@@ -363,7 +364,7 @@ instance Parseable FundingYear where
   parseElement "2018" = pure FY2018
   parseElement "2019" = pure FY2019
   parseElement "2020" = pure FY2020
-  parseElement s = throwM $ ParseException $ tshow s <> " is not a recognized Funding Year."
+  parseElement s = pure $ FYOther s -- throwM $ ParseException $ tshow s <> " is not a recognized Funding Year."
 
 -- sendUpdates1 :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
 -- sendUpdates1 msg fold = do

@@ -45,7 +45,7 @@ instance Parseable PIAReviewerType where
   parseElement "QA Heightened Scrutiny" = pure PIAQAHS
   parseElement "USAC QA Reviewer" = pure PIAUsacQA
   parseElement "USAC Heightened Scrutiny Reviewer" = pure PIAUsacHS
-  parseElement str = throwM $ ParseException $ tshow str <> " is not a recognized PIA Reviewer Type."
+  parseElement str = Left $ tshow str <> " is not a recognized PIA Reviewer Type." -- throwM $ ParseException $ tshow str <> " is not a recognized PIA Reviewer Type."
 
 instance Csv.FromField PIAReviewerType where
   parseField bs =

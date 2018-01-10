@@ -60,7 +60,7 @@ getDropdownWith :: (Contravariant f, Applicative f) => (Value -> Bool) -> (Resul
 getDropdownWith = deep . getComponentWith
 
 isDropdown :: Value -> Bool
-isDropdown = anyOf (key "#t" . _String) (\t -> t == "DropdownField" || t == "DropdownWidget")
+isDropdown = anyOf (key "#t" . _String) (\t -> isSuffixOf "DropdownField" t || isSuffixOf "DropdownWidget" t)
 
 hasLabel' :: Text -> Value -> Bool
 hasLabel' label v = has (key "label" . _String . only label) v || has (key "inlineLabel" . _String . only label) v

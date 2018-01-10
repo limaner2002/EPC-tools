@@ -36,7 +36,7 @@ instance Parseable SpinChangeType where
   parseElement "Global SPIN" = return SpinChangeGlobal
   parseElement "SRC SPIN" = return SpinChangeSRC
   parseElement "SPIN Change" = return SpinChange
-  parseElement txt = throwM $ ParseException $ tshow txt <> " is not a recognized SPIN Change Type."
+  parseElement txt = Left $ tshow txt <> " is not a recognized SPIN Change Type." -- throwM $ ParseException $ tshow txt <> " is not a recognized SPIN Change Type."
 
 data SpinChangeConfig = SpinChangeConfig
   { _spinChangeType :: SpinChangeType

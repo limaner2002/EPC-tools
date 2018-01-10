@@ -174,7 +174,7 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n
   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
       appianState = newAppianState bounds
 
-  runResourceT $ runStderrLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
+  runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
                                                                                                                let d = (i * (delay `div` n))
                                                                                                                threadDelay $ trace (show d) d
                                                                                                                res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
