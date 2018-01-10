@@ -170,7 +170,7 @@ data DropdownField = DropdownField
   , _dfRequired :: Maybe Bool
   , _dfHasPlaceholderLabel :: Text
   , _dfChoices :: [Text]
-  , _dfInlineLabel :: Text
+  , _dfInlineLabel :: Maybe Text
   } deriving Show
 
 data CheckboxGroup = CheckboxGroup
@@ -516,7 +516,7 @@ instance FromJSON DropdownField where
         <*> o .:? "required"
         <*> o .: "hasPlaceholderLabel"
         <*> o .: "choices"
-        <*> o .: "inlineLabel"
+        <*> o .:? "inlineLabel"
   parseJSON _ = fail "Could not parse DropdownField"
 
 instance ToJSON DropdownField where
