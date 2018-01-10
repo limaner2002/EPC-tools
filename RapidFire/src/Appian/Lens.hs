@@ -160,7 +160,7 @@ gridWidgetRows :: (Contravariant f, Applicative f, AsValue t, FromJSON a) => ([a
 gridWidgetRows = key "contents" . plate . key "contents" . to fromJSON . traverse
 
 gridFieldColumns :: (FromJSON a, Contravariant f, Applicative f, AsValue t) => ((Text, Result a) -> f (Text, Result a)) -> t -> f t
-gridFieldColumns = key "column" . plate . runFold ((,) <$> Fold (key "label" . _String) <*> Fold (to fromJSON))
+gridFieldColumns = key "columns" . plate . runFold ((,) <$> Fold (key "label" . _String) <*> Fold (to fromJSON))
 
 toDict :: (Eq a, Hashable a) => [a] -> [b] -> HashMap a b
 toDict headers row = mapFromList $ zip headers row

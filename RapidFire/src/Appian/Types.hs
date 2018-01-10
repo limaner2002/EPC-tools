@@ -919,7 +919,7 @@ instance FromJSON PickerWidget where
         <*> o .: "placeholder"
 
 instance FromJSON ParagraphField where
-  parseJSON val@(Object o) = parseAppianTypeWith "ParagraphField" (== "ParagraphField") mkWidget val
+  parseJSON val@(Object o) = parseAppianTypeWith "ParagraphField" (isSuffixOf "ParagraphField") mkWidget val
     where
       mkWidget = ParagraphField
         <$> o .: "height"
