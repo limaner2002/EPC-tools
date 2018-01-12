@@ -17,3 +17,4 @@ import Control.Lens.Action.Reified
 import Scripts.Common
 
 comadIntake :: AppianT m Value
+comadIntake = undefined
