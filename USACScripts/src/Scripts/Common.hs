@@ -28,9 +28,9 @@ import Control.Monad.Except
 import Control.Monad.Trans.Resource hiding (throwM)
 import Data.Random (MonadRandom)
 
-handleValidations :: MonadThrow m => Either ScriptError Value -> AppianT m Value
+handleValidations :: MonadThrow m => Either (ScriptError, Value) Value -> AppianT m Value
 handleValidations (Right v) = return v
-handleValidations (Left se) = case se ^? _ValidationsError . runFold ((,) <$> Fold _1 <*> Fold _2) of
+handleValidations (Left (se, _)) = case se ^? _ValidationsError . runFold ((,) <$> Fold _1 <*> Fold _2) of
   Just ((["You must associate at least one Funding Request"], v)) -> return v
   _ -> throwError se
 

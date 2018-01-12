@@ -420,6 +420,8 @@ data GridWidgetCell
   | GWLink [AppianLink]
   | GWProgressBar
   | GWRichText
+  | GWDropdown DropdownField
+  | GWCheckbox CheckboxField
   deriving Show
 
 data AppianLink
@@ -1056,6 +1058,8 @@ instance FromJSON GridWidgetCell where
   parseJSON val@(Object o) = parseGWLink
                      <|> parseGWTextField
                      <|> parseGWDate
+                     <|> (GWDropdown <$> parseJSON val)
+                     <|> (GWCheckbox <$> parseJSON val)
     where
       parseGWLink = GWLink
         <$> o .: "links"

@@ -183,7 +183,10 @@ sendRecordUpdates msg fold = do
   previousVal <- use appianValue
   eVal <- sendUpdates_ recordUpdate msg fold previousVal
   case eVal of
-    Left v -> throwError v
+    Left (err, newVal) -> do
+      res <- deltaUpdate previousVal newVal
+      assign appianValue res
+      throwError err
     Right newVal -> do
       res <- deltaUpdate previousVal newVal
       assign appianValue res
@@ -193,7 +196,10 @@ sendRuleUpdates msg fold = do
   previousVal <- use appianValue
   eVal <- sendUpdates_ ruleUpdate msg fold previousVal
   case eVal of
-    Left v -> throwError v
+    Left (err, newVal) -> do
+      res <- deltaUpdate previousVal newVal
+      assign appianValue res
+      throwError err
     Right newVal -> do
       res <- deltaUpdate previousVal newVal
       assign appianValue res
@@ -515,10 +521,10 @@ sendUpdate :: (RunClient m, MonadError ServantError m, MonadThreadId m) => (UiCo
 sendUpdate f update = do
   eRes <- sendUpdate' f update
   case eRes of
-    Left v -> throwError v
+    Left (err, _) -> throwError err
     Right res -> return res
 
-sendUpdate' :: (RunClient m, MonadError ServantError m, MonadThreadId m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either ScriptError Value)
+sendUpdate' :: (RunClient m, MonadError ServantError m, MonadThreadId m) => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Either Text (UiConfig (SaveRequestList Update)) -> AppianT m (Either (ScriptError, Value) Value)
 sendUpdate' _ (Left msg) = do
   tid <- threadId
   throwError $ BadUpdateError (tshow tid <> ": " <> msg) Nothing
@@ -526,9 +532,9 @@ sendUpdate' f (Right x) = do
   v <- f x
   case v ^.. cosmos . key "validations" . _Array . filtered (not . onull) . traverse . key "message" . _String of
     [] -> return $ Right v
-    l -> return $ Left $ ValidationsError (l, v, x)
+    l -> return $ Left (ValidationsError (l, v, x), v)
 
-sendUpdates_ :: RapidFire m => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendUpdates_ :: RapidFire m => (UiConfig (SaveRequestList Update) -> AppianT m Value) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either (ScriptError, Value) Value)
 sendUpdates_ updateFcn label f v = do
   updates <- lift $ v ^!! runMonadicFold f
   bounds <- use appianBounds
@@ -545,20 +551,20 @@ sendReportUpdates :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Val
 sendReportUpdates reportId label f v = do
   eRes <- sendReportUpdates' reportId label f v
   case eRes of
-    Left v -> throwError v
+    Left (err, _) -> throwError err
     Right res -> return res
 
-sendReportUpdates' :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendReportUpdates' :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either (ScriptError, Value) Value)
 sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
 
 sendUpdates :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendUpdates label f v = do
   eRes <- sendUpdates' label f v
   case eRes of
-    Left v -> throwError v
+    Left (err, _) -> throwError err
     Right res -> return res
 
-sendUpdates' :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either ScriptError Value)
+sendUpdates' :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either (ScriptError, Value) Value)
 sendUpdates' label f v = do
   taskId <- getTaskId v
   sendUpdates_ (taskUpdate taskId) label f v
@@ -854,7 +860,10 @@ sendUpdates1' msg fold = do
   previousVal <- use appianValue
   eNewVal <- sendUpdates' msg fold previousVal
   case eNewVal of
-    Left ve -> return $ Left ve
+    Left (err, newVal) -> do
+      res <- deltaUpdate previousVal newVal
+      assign appianValue res
+      return $ Left err
     Right newVal -> do
       res <- deltaUpdate previousVal newVal
       Right <$> assign appianValue res

@@ -27,7 +27,6 @@ import Scripts.ReviewCommon
 import Scripts.AdminReview
 import Scripts.AdminIntake
 import Scripts.ComadReview
-import Scripts.ComadReview
 import Appian.Client ( runAppianT, cookieModifier, runAppianT'
                      , LogMode (..), HostUrl (..), ScriptError (..), Appian, _BadUpdateError
                      )

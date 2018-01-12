@@ -103,8 +103,8 @@ addViolation val ident = do
                                                         ) val
     >>= handleNoViolation
     
-handleNoViolation :: (RapidFire m, MonadGen m) => Either ScriptError Value -> AppianT m Value
-handleNoViolation (Left se) = case se ^? _ValidationsError . runFold ((,) <$> Fold _1 <*> Fold _2) of
+handleNoViolation :: (RapidFire m, MonadGen m) => Either (ScriptError, Value) Value -> AppianT m Value
+handleNoViolation (Left (se, _)) = case se ^? _ValidationsError . runFold ((,) <$> Fold _1 <*> Fold _2) of
   Just (["You cannot add a Violation to an FRN that you have marked as \"No Violation\""], v) -> return v
   Just ([], _) -> error "Violations not implemented yet!"
   _ -> throwError se
@@ -121,8 +121,8 @@ handleNoViolation (Right v) =
     >>= sendUpdates "Back to Violations" (MonadicFold $ to $ buttonUpdate "Back")
     >>= sendUpdates "Back to Review COMAD Request" (MonadicFold $ to $ buttonUpdate "Back")
 
-handleDecisionValidation :: MonadThrow m => Either ScriptError Value -> AppianT m Value
-handleDecisionValidation (Left se) = case se ^? _ValidationsError . runFold ((,) <$> Fold (_1 . to (all $ isPrefixOf "You must select a Decision for FRN")) <*> Fold _2) of
+handleDecisionValidation :: MonadThrow m => Either (ScriptError, Value) Value -> AppianT m Value
+handleDecisionValidation (Left (se, _)) = case se ^? _ValidationsError . runFold ((,) <$> Fold (_1 . to (all $ isPrefixOf "You must select a Decision for FRN")) <*> Fold _2) of
   Just (True, v) -> return v
   _ -> throwError se
 handleDecisionValidation (Right v) = return v
@@ -144,7 +144,7 @@ addDecision val ident = do
   eRes <- sendUpdates' "Decisions: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
   val' <- case eRes of
     Right v -> return v
-    Left se -> case se ^? _ValidationsError . _2 of
+    Left (se, _) -> case se ^? _ValidationsError . _2 of
       Just v -> return v
       _ -> throwError se
   df <- handleMissing "FRN Decision Dropdown" val' $ val' ^? getDropdown "FRN Decision"
@@ -171,7 +171,7 @@ addDecision_ decState ident val l = do
       eRes <- sendUpdates' "Decisions: Select FRN Checkbox" (selectGridfieldUpdateF ident gf) val
       case eRes of
         Right v -> return v
-        Left se -> case se ^? _ValidationsError . _2 of
+        Left (se, _) -> case se ^? _ValidationsError . _2 of
           Just v -> return v
           _ -> throwError se
       
@@ -183,7 +183,7 @@ addDecision_ decState ident val l = do
   case eRes of
     Right val'' -> return val''
     -- Left ve -> addDecision_ Retry ident (ve ^. validationsExc . _2) (delete idx l)
-    Left se -> case se ^? _ValidationsError . runFold ((,) <$> Fold (_1 . to (all $ isPrefixOf "You must select a Decision for FRN")) <*> Fold _2) of
+    Left (se, _) -> case se ^? _ValidationsError . runFold ((,) <$> Fold (_1 . to (all $ isPrefixOf "You must select a Decision for FRN")) <*> Fold _2) of
                  Just (True, v) -> return v
                  Just (False, v) -> addDecision_ Retry ident v (delete idx l)
 
