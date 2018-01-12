@@ -7,6 +7,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Appian.Client
   ( module Appian.Client
@@ -390,7 +391,8 @@ dropdownUpdate label n v = toUpdate <$> (_Right . dfValue .~ n $ dropdown)
 
 -- | Reified version of 'dropdownUpdate'
 dropdownUpdateF :: Text -> Int -> ReifiedMonadicFold m Value (Either Text Update)
-dropdownUpdateF label n = MonadicFold (to $ dropdownUpdate label n)
+-- dropdownUpdateF label n = MonadicFold (to $ dropdownUpdate label n)
+dropdownUpdateF label n = componentUpdateWithF ("Could not find Dropdown " <> tshow label) (getDropdown label) dfValue n
 
 -- | Will find a text field on the page with the given label and
 -- set insert the given text into the text field
@@ -401,7 +403,8 @@ textUpdate label txt v = toUpdate <$> (_Right . tfValue .~ txt $ tf)
 
 -- | Reified version of 'textUpdate'
 textUpdateF :: Text -> Text -> ReifiedMonadicFold m Value (Either Text Update)
-textUpdateF label txt = MonadicFold (to $ textUpdate label txt)
+-- textUpdateF label txt = MonadicFold (to $ textUpdate label txt)
+textUpdateF label txt = componentUpdateWithF ("Could not find TextField " <> tshow label) (getTextField label) tfValue txt
 
 -- | Will find a picker on the page with the given label and set
 -- the value to the given 'AppianPickerData'
@@ -499,6 +502,12 @@ radioButtonUpdate label selection = failing (getRadioButtonField label . to (rdg
 -- | Reified version of 'radioButtonUpdate'
 radioButtonUpdateF :: (AsJSON s, AsValue s, Plated s) => Text -> AppianInteger -> ReifiedMonadicFold m s (Either Text Update)
 radioButtonUpdateF label selection = MonadicFold $ radioButtonUpdate label selection
+
+componentUpdateWith :: (FromJSON a, ToUpdate a) => Text -> Fold Value a -> ASetter' a b -> b -> Fold Value (Either Text Update)
+componentUpdateWith failureMessage fold setter b = failing (fold . to (setter .~ b) . to toUpdate . to Right) (to $ const $ Left failureMessage)
+
+componentUpdateWithF :: (FromJSON a, ToUpdate a) => Text -> Fold Value a -> ASetter' a b -> b -> ReifiedMonadicFold m Value (Either Text Update)
+componentUpdateWithF failureMessage fold setter b = MonadicFold $ componentUpdateWith failureMessage fold setter b
 
 -- * Functions for sending updates to the Appian server
 
