@@ -328,6 +328,7 @@ data SortField = SortField
 newtype AppianDate = AppianDate { _appianDate :: Maybe Day }
   deriving Show
 
+-- Representation of a!gridLayout SAIL component
 data GridWidget a = GridWidget
   { _gwVal :: [(Maybe CheckboxGroup, HashMap Text a)]
   , _gwActions :: Maybe (Vector DynamicLink)

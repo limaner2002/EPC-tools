@@ -457,10 +457,10 @@ dynamicLinkUpdateF label = MonadicFold (to $ dynamicLinkUpdate label)
 
 -- | Will select the checkbox of a gridField on the paging using
 -- the given index
-gridFieldUpdate :: Int -> Value -> Either Text Update
-gridFieldUpdate index v = update
+gridFieldUpdateWith :: Fold Value (Result (GridField GridFieldCell)) -> Int -> Value -> Either Text Update
+gridFieldUpdateWith fold index v = update
   where
-    gf = v ^. getGridFieldCell
+    gf = v ^. fold
     ident = bindGet gf $ gfIdentifiers . traverse . ifolded . ifiltered (\i _ -> i == index)
     bindGet mx g = mx >>= \x -> x ^. g . to return
     rUpdate = do
@@ -471,9 +471,12 @@ gridFieldUpdate index v = update
       Error msg -> Left $ "gridFieldUpdate: " <> pack msg
       Success upd -> Right upd
 
+gridFieldUpdate :: Int -> Value -> Either Text Update
+gridFieldUpdate = gridFieldUpdateWith getGridFieldCell
+
 -- | Reified version of 'gridFieldUpdate'
-gridFieldUpdateF :: Int -> ReifiedMonadicFold m Value (Either Text Update)
-gridFieldUpdateF index = MonadicFold (to $ gridFieldUpdate index)
+gridFieldUpdateWithF :: Fold Value (Result (GridField GridFieldCell)) -> Int -> ReifiedMonadicFold m Value (Either Text Update)
+gridFieldUpdateWithF fold index = MonadicFold (to $ gridFieldUpdateWith fold index)
 
 -- | Will find a text field with the given _cId and insert the given text
 textFieldCidUpdate :: Text -> Text -> Value -> Either Text Update
@@ -572,8 +575,8 @@ sendUpdates' label f v = do
 deltaUpdate :: (Monad m, MonadError ServantError m, MonadThreadId m) => Value -> Value -> AppianT m Value
 deltaUpdate full delta =
     case has (key "ui" . key "#t" . _String . only "UiComponentsDelta") delta of
-      False -> return $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack)  delta
-      True -> handleMissing "Bad update delta?" full $ handleDelta full $ trace ("type is " <> delta ^. key "ui" . key "#t" . _String . to unpack) delta
+      False -> return delta
+      True -> handleMissing "Bad update delta?" full $ handleDelta full delta
 
 handleDelta :: Value -> Value -> Maybe Value
 handleDelta fullResp delta = do
