@@ -951,3 +951,13 @@ checkPaging (StartIndex idx) gf = maybe False (== idx) si
   where
     si = gf ^? pagingInfo . pgIStartIndex
 
+-- * Convenience functions
+
+-- | Clicks on the actions tab, locates the given action and clicks on the link
+executeActionByName :: RapidFire m => Text -> AppianT m ()
+executeActionByName actionName = do
+    v <- actionsTab
+    pid <- handleMissing ("Could not find an action with the name " <> tshow actionName) v $ v ^? hasKeyValue "displayLabel" actionName . key "processModelId" . _JSON . to ProcessModelId
+    v' <- actionEx pid
+    assign appianValue v'
+

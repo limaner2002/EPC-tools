@@ -56,6 +56,11 @@ import Scripts.Noise
 import Test.QuickCheck
 import Scripts.ExpressionTest
 import Util.Parallel (LogFilePath, logFilePath, runParallelFileLoggingT)
+import Scripts.Execute
+import Scripts.Parseable
+import Scripts.ViewFCCForm470
+import Scripts.ViewFCCForm471
+import Scripts.ComadIntake
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -167,19 +172,19 @@ runReverseTest bounds (HostUrl hostUrl) logMode login (MaxSize n) = do
 runReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runReview baseConf = runIt (finalReview baseConf)
 
-runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError b))]
-runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n) = do
-  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
-  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
-      appianState = newAppianState bounds
+-- runIt :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError b))]
+-- runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n) = do
+--   mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
+--   let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
+--       appianState = newAppianState bounds
 
-  runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
-                                                                                                               let d = (i * (delay `div` n))
-                                                                                                               threadDelay $ trace (show d) d
-                                                                                                               res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
-                                                                                                               logResult res
-                                                                                                               return res
-                                                                                                           )
+--   runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
+--                                                                                                                let d = (i * (delay `div` n))
+--                                                                                                                threadDelay $ trace (show d) d
+--                                                                                                                res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
+--                                                                                                                logResult res
+--                                                                                                                return res
+--                                                                                                            )
 
 runLogger :: (MonadBaseControl IO m, MonadIO m, Forall (Pure m), MonadThrow m) => LogMode -> LoggingT m a -> m a
 runLogger LogStdout f = runStdoutLoggingT f
@@ -208,9 +213,6 @@ execTaskGroup_ n f args = execTaskGroup n f args >> return ()
 runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError (Maybe Text)))]
 runSPINIntake = runIt spinChangeIntake
 
-setTimeout :: ResponseTimeout -> ManagerSettings -> ManagerSettings
-setTimeout timeout settings = settings { managerResponseTimeout = timeout }
-
 dispResults :: [Either ServantError (Either ScriptError a)] -> IO ()
 dispResults results = do
   let appianErrors = results ^.. traverse . _Right . _Left
@@ -221,15 +223,6 @@ dispResults results = do
   putStrLn $ "Successfully executed: " <> tshow (length successes)
   putStrLn $ "Script Errors: " <> tshow (length appianErrors)
   putStrLn $ "Server Errors: " <> tshow (length serverErrors)
-
-logResult :: (MonadLogger m, MonadThreadId m) => Either ServantError (Either ScriptError a) -> m ()
-logResult (Left err) = do
-  tid <- threadId
-  logErrorN $ tshow tid <> ": " <> tshow err
-logResult (Right (Left err)) = do
-  tid <- threadId
-  logErrorN $ tshow tid <> ": " <> tshow err
-logResult (Right (Right _)) = return ()
 
 commandsInfo :: ParserInfo (IO ())
 commandsInfo = info (helper <*> parseCommands)
@@ -248,6 +241,10 @@ parseCommands = subparser
   <> command "form471Review" form471ReviewInfo
   <> command "noise" noiseInfo
   <> command "reverseTest" reverseTestInfo
+  <> command "createCSCase" createCSCaseInfo
+  <> command "viewFCCForm470" viewFCCForm470Info
+  <> command "viewFCCForm471" viewFCCForm471Info
+  <> command "COMADIntake" comadIntakeInfo
   )
 
 urlParser :: Parser BaseUrl
@@ -269,13 +266,13 @@ urlParser = BaseUrl
   )
   <*> pure ""
 
-hostUrlParser :: Parser HostUrl
-hostUrlParser = HostUrl
-  <$> strOption
-  (  long "host-name"
-  <> short 'n'
-  <> help "The hostname of the server to use."
-  )
+-- hostUrlParser :: Parser HostUrl
+-- hostUrlParser = HostUrl
+--   <$> strOption
+--   (  long "host-name"
+--   <> short 'n'
+--   <> help "The hostname of the server to use."
+--   )
 
 form471IntakeInfo :: ParserInfo (IO ())
 form471IntakeInfo = info (helper <*> form471Parser)
@@ -393,6 +390,38 @@ reverseTestInfo = info (helper <*> reverseTestParser)
   <> progDesc "Runs the 2017 SPIN Change Initial Review script"
   )
 
+createCSCaseInfo :: ParserInfo (IO ())
+createCSCaseInfo = info (helper <*> createCSCaseParser)
+  (  fullDesc
+  <> progDesc "Runs the 'Create a Customer Service Case' script"
+  )
+  where
+    createCSCaseParser = runItParser runCreateCsCase
+
+viewFCCForm470Info :: ParserInfo (IO ())
+viewFCCForm470Info = info (helper <*> viewForm470Parser)
+  (  fullDesc
+  <> progDesc "Runs the 'View FCC Form 470' script"
+  )
+  where
+    viewForm470Parser = runItParser runViewForm470
+
+viewFCCForm471Info :: ParserInfo (IO ())
+viewFCCForm471Info = info (helper <*> viewForm471Parser)
+  (  fullDesc
+  <> progDesc "Runs the 'View FCC Form 471' script"
+  )
+  where
+    viewForm471Parser = runItParser runViewForm471
+
+comadIntakeInfo :: ParserInfo (IO ())
+comadIntakeInfo = info (helper <*> comadIntakeParser)
+  (  fullDesc
+  <> progDesc "Runs the 'View FCC Form 471' script"
+  )
+  where
+    comadIntakeParser = runItParser runComadIntake
+
 reverseTestParser :: Parser (IO ())
 reverseTestParser = fmap void $ runReverseTest
   <$> boundsParser
@@ -417,13 +446,13 @@ comadInitialParser = fmap void $ runComadInitialReview
   <*> rampupParser
   <*> nthreadParser
 
-csvConfParser :: Parser CsvPath
-csvConfParser = fromString <$>
-  strOption
-  (  long "csv-conf"
-  <> short 'i'
-  <> help "The csv config file for 471 intake."
-  )
+-- csvConfParser :: Parser CsvPath
+-- csvConfParser = fromString <$>
+--   strOption
+--   (  long "csv-conf"
+--   <> short 'i'
+--   <> help "The csv config file for 471 intake."
+--   )
 
 spinChangeInfo :: ParserInfo (IO ())
 spinChangeInfo = info (helper <*> spinChangeParser)
@@ -444,12 +473,12 @@ spinChangeParser = void <$> (runSPINIntake
   <*> nthreadParser
                             )
 
-nthreadParser :: Parser NThreads
-nthreadParser = NThreads
-  <$> option auto
-  (  long "nThreads"
-  <> help "The number of concurrent threads to execute."
-  )
+-- nthreadParser :: Parser NThreads
+-- nthreadParser = NThreads
+--   <$> option auto
+--   (  long "nThreads"
+--   <> help "The number of concurrent threads to execute."
+--   )
 
 adminIntakeInfo :: ParserInfo (IO ())
 adminIntakeInfo = info (helper <*> adminIntakeParser)
@@ -478,21 +507,21 @@ parseManyR = parseMany >>= readMany
       Just y -> return y
       Nothing -> fail $ "Could not read " <> show x
 
-logModeParser :: Parser LogMode
-logModeParser = (
-  strOption
-  (  long "stdout"
-  <> help "Log messages to stdout."
-  )) *> pure LogStdout
-  <|>
-  LogFile <$> logFileParser
+-- logModeParser :: Parser LogMode
+-- logModeParser = (
+--   strOption
+--   (  long "stdout"
+--   <> help "Log messages to stdout."
+--   )) *> pure LogStdout
+--   <|>
+--   LogFile <$> logFileParser
 
-logFileParser :: Parser LogFilePath
-logFileParser = logFilePath <$> strOption
-  (  long "log-file-path"
-  <> short 'l'
-  <> help "The path of the file to write the logs to."
-  )
+-- logFileParser :: Parser LogFilePath
+-- logFileParser = logFilePath <$> strOption
+--   (  long "log-file-path"
+--   <> short 'l'
+--   <> help "The path of the file to write the logs to."
+--   )
 
 userParser :: Parser FilePath
 userParser = strOption
@@ -509,16 +538,16 @@ threadsParser = option parseManyR
 stderrLn :: MonadIO m => Text -> m ()
 stderrLn txt = hPut stderr $ encodeUtf8 txt <> "\n"
 
-boundsParser :: Parser Bounds
-boundsParser = Bounds
-  <$> option auto
-  (  long "lower"
-  <> help "The minimum for the think timer"
-  )
-  <*> option auto
-  (  long "upper"
-  <> help "The maximum for the think timer"
-  )
+-- boundsParser :: Parser Bounds
+-- boundsParser = Bounds
+--   <$> option auto
+--   (  long "lower"
+--   <> help "The minimum for the think timer"
+--   )
+--   <*> option auto
+--   (  long "upper"
+--   <> help "The maximum for the think timer"
+--   )
 
 fyParser :: Parser FundingYear
 fyParser = option readFy (long "fy")
@@ -574,18 +603,12 @@ reviewBaseConfParser = ReviewBaseConf
   <*> reviewerTypeParser
   <*> fyParser
 
-newtype RampupTime = RampupTime Int
-  deriving (Show, Eq, Num)
-
-mkRampup :: Int -> RampupTime
-mkRampup n = RampupTime $ n * 1000000
-
-rampupParser :: Parser RampupTime
-rampupParser = mkRampup
-  <$> option auto
-     (  long "rampup"
-     <> help "The rampup period (in seconds) for the script"
-     )
+-- rampupParser :: Parser RampupTime
+-- rampupParser = mkRampup
+--   <$> option auto
+--      (  long "rampup"
+--      <> help "The rampup period (in seconds) for the script"
+--      )
 
 loginParser :: Parser Login
 loginParser = Login

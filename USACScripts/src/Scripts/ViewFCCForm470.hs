@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Scripts.ViewFCCForm471 where
+module Scripts.ViewFCCForm470 where
 
 import ClassyPrelude
 import Appian.Client
@@ -19,22 +19,23 @@ import Control.Lens
 import Control.Lens.Action.Reified
 import Scripts.Common
 
-clickForm471Number :: RapidFire m => GridWidgetCell -> AppianT m Value
-clickForm471Number gridCell = do
+clickForm470Number :: RapidFire m => GridWidgetCell -> AppianT m Value
+clickForm470Number gridCell = do
     let mRref = gridCell ^? _GWLink . traverse . recordLinkRef
     case mRref of
         Nothing -> fail "Could not find the record link!"
         Just rref -> viewRecordDashboard rref (Dashboard "summary")
 
-viewForm471 :: Login -> Appian Value
-viewForm471 _ = do
-    viewRecordByName "FCC Forms 471"
+-- viewForm470 :: Login -> Appian Value
+viewForm470 :: Login -> Appian Value
+viewForm470 _ = do
+    viewRecordByName "FCC Forms 470"
     sendRecordUpdates "Select 'Certified Status'" (dropdownUpdateF1 "Status" "Certified")
-    sendRecordUpdates "Select 'Funding Year 2018'" (dropdownUpdateF1 "Funding Year" "2018")
     mGridWidget <- usesValue (^? getGridWidget) :: Appian (Maybe (GridWidget GridWidgetCell))
     case mGridWidget of
         Nothing -> fail "Could not find the record grid!"
-        Just gridWidget -> arbitraryGridRowByColName "FCC Form 471 Number" clickForm471Number gridWidget
+        Just gridWidget -> arbitraryGridRowByColName "FCC Form 470 Number" clickForm470Number gridWidget
+    --use appianValue
 
-runViewForm471 :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
-runViewForm471 = runIt viewForm471
+runViewForm470 :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
+runViewForm470 = runIt viewForm470

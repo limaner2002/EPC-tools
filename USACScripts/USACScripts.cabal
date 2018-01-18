@@ -34,10 +34,16 @@ library
                      , Scripts.Noise
                      , Scripts.ExpressionTest
                      , Scripts.ProducerConsumer
+                     , Scripts.ViewFCCForm470
+                     , Scripts.ViewFCCForm471
+                     , Scripts.Execute
+                     , Scripts.Parseable
+                     , Scripts.ComadIntake
   build-depends:       base
                      , lens
                      , aeson
                      , lens-aeson
+                     , aeson-pretty
                      , classy-prelude
                      , servant-client
                      , servant-client-core

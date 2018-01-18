@@ -11,7 +11,6 @@ import Appian.Client
 import Scripts.Common
 import Scripts.ReviewCommon
 import Scripts.ComadReview
-import NewFunctions hiding (componentUpdateWithF1)
 import Control.Monad.Logger
 import ClassyPrelude
 import Data.Aeson
@@ -21,7 +20,7 @@ import Appian
 import Appian.Instances
 import Appian.Types
 import Appian.Lens
-import Scripts.Opts
+import Scripts.Execute
 import Stats.CsvStream
 import Control.Monad.Except
 import Scripts.Test
@@ -70,8 +69,8 @@ rowUpdate (cbox, recoveryDf, adjustmentDf) = do
 
   recoveryDf' <- dropdownArbitrarySelect recoveryDf
   adjustmentDf' <- dropdownArbitrarySelect adjustmentDf
-  sendUpdates1 "Select 'Primary FRN' Checkbox" (componentUpdateWithF1 "Could not find primary FRN Checkbox" $ to $ const $ cbox')
-  sendUpdates1 "Select 'Recovery Type' Checkbox" (componentUpdateWithF1 "Could not find primary Recovery Type Checkbox" $ to $ const $ recoveryDf')
-  sendUpdates1 "Select 'Adjustment Type' Checkbox" (componentUpdateWithF1 "Could not find primary Adjustment Type Checkbox" $ to $ const $ adjustmentDf')
+  sendUpdates1 "Select 'Primary FRN' Checkbox" (componentUpdateWithF "Could not find primary FRN Checkbox" $ to $ const $ cbox')
+  sendUpdates1 "Select 'Recovery Type' Checkbox" (componentUpdateWithF "Could not find primary Recovery Type Checkbox" $ to $ const $ recoveryDf')
+  sendUpdates1 "Select 'Adjustment Type' Checkbox" (componentUpdateWithF "Could not find primary Adjustment Type Checkbox" $ to $ const $ adjustmentDf')
   
 asGWC = to (id :: GridWidget GridWidgetCell  -> GridWidget GridWidgetCell)

@@ -5,54 +5,34 @@
 module Scripts.CreateCSCase where
 
 import ClassyPrelude
-import Control.Lens
-import Control.Lens.Action.Reified
+import Appian.Client
+import Appian
+import Appian.Instances
+import Scripts.Execute
+import Appian.Types
+import Appian.Lens
 import Data.Aeson
 import Data.Aeson.Lens
-import Appian
-import Appian.Types
-import Appian.Instances
-import Appian.Lens
-import Appian.Client
--- import Control.Monad.Random
-import Data.Random
-import Control.Monad.Time
-import Control.Monad.Except
+import Data.Aeson.Encode.Pretty
+import Stats.CsvStream
+import Control.Lens
 
-createCSCase :: RapidFire m => AppianT m Text
-createCSCase = do
-  v <- actionsTab
-    >>= (\v -> handleResult $ v ^. getTaskProcId "Create a Customer Service Case")
-    >>= landingPageActionEx
-    >>= sendUpdates "Title, Description, and Topic" (MonadicFold (to (textUpdate "Title" "PerfTest2"))
-                    <|> MonadicFold (to (paragraphUpdate "Description" "A description goes in here."))
-                    <|> MonadicFold (to (dropdownUpdate "Topic" 11))
-                    )
-    >>= sendUpdates "Rest" (MonadicFold (to (dropdownUpdate "Subtopic" 2))
-                    <|> MonadicFold (to (dropdownUpdate "Priority" 3))
-                    <|> MonadicFold (to (dropdownUpdate "Inquiry Type" 2))
-                    <|> MonadicFold (to (textUpdate "First Name" "This is my first name!"))
-                    <|> MonadicFold (to (textUpdate "Last Name" "This is my last name!"))
-                    <|> MonadicFold (to (textUpdate "Email" "somename@someplace.com"))
-                    <|> MonadicFold (to (textUpdate "Phone" "0123456789"))
-                    <|> MonadicFold (to (buttonUpdate "Submit"))
-                    )
-  case v ^? deep (filtered $ has $ key "#v" . _String . suffixed "has been created") . key "#v" . _String of
-    Nothing -> fail "The case was not created!"
-    Just txt -> return txt
+createCsCase :: Login -> Appian Value
+createCsCase _ = do
+    executeActionByName "Create a Customer Service Case"
+    sendUpdates1 "Enter the Title" (textUpdateF "Title" "PerfTest11")
+    sendUpdates1 "Enter the Description" (paragraphUpdateF "Description" "This is my description!")
+    sendUpdates1 "Select Topic" (dropdownUpdateF "Topic" 5)
+    sendUpdates1 "Select Subtopic" (dropdownUpdateF "Subtopic" 2)
+    sendUpdates1 "Select Priority" (dropdownUpdateF "Priority" 3)
+    sendUpdates1 "Select Inquiry Type" (dropdownUpdateF "Inquiry Type" 3)
+    sendUpdates1 "Enter the Case Contact Information First Name" (textUpdateF "First Name" "Car121")
+    sendUpdates1 "Enter the Case Contact Information Last Name" (textUpdateF "Last Name" "SLC1")
+    sendUpdates1 "Enter the Case Contact Information Email" (textUpdateF "Email" "car12@mailinator.com")
+    sendUpdates1 "Enter the Case Contact Information Phone" (textUpdateF "Phone" "123-456-7890")
+    sendUpdates1 "Click on 'Submit' button" (buttonUpdateF "Submit")
+    use appianValue
 
-getTaskProcId :: (Contravariant f, Applicative f, Plated s, AsValue s) => Text -> (Result ProcessModelId -> f (Result ProcessModelId)) -> s -> f s
-getTaskProcId label = hasKeyValue "displayLabel" label . key "processModelId" . to fromJSON . to (fmap ProcessModelId)
-
-handleResult :: Monad m => Result a -> AppianT m a
-handleResult (Error err) = fail err
-handleResult (Success a) = pure a
-
-dropdownUpdateWith :: (ToUpdate a, Contravariant f, Applicative f) => (DropdownField -> a) -> Text -> (Update -> f Update) -> Value -> f Value
-dropdownUpdateWith f label = getDropdown label . to f . to toUpdate
-
-dropdownRandom :: MonadRandom m => DropdownField -> m DropdownField
-dropdownRandom df = do
-  let n = df ^. dfChoices . to length
-  idx <- sample $ uniform 1 (n+1)
-  return $ dfValue .~ idx $ df
+-- This is the function that I need so that I can include it in the test.
+runCreateCsCase :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
+runCreateCsCase = runIt createCsCase

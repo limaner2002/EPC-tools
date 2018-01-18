@@ -1,11 +1,14 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Scripts.Common where
 
 import ClassyPrelude
-import Control.Lens hiding (index)
+import Control.Lens hiding (index, Index)
 import Data.Aeson
 import Data.Aeson.Lens
 import Appian
@@ -388,3 +391,42 @@ class HasLogin a where
 
 instance HasLogin Login where
   getLogin = id
+
+-- | Does not page yet. Hard-coded to only work on the first 50 rows for now too.
+arbitraryGridRow :: (RapidFire m, MonadGen m) => (IsSequence row, Index row ~ Int, Element row ~ b) => (GridWidget a -> row) -> (b -> AppianT m c) -> GridWidget a -> AppianT m c
+arbitraryGridRow getColumn f gw = do
+  x <- genArbitrary $ choose (0, min 49 (gw ^. gwTotalCount - 1))
+  let column = getColumn gw
+      row = indexEx column x
+  f row
+
+newtype ColumnName = ColumnName Text
+  deriving (Show, Eq, IsString)
+
+-- | Takes a column name, picks a random row and applies the given function to the randomly selected row.
+arbitraryGridRowByColName :: (RapidFire m, MonadGen m) => ColumnName -> (a -> AppianT m b) -> GridWidget a -> AppianT m b
+arbitraryGridRowByColName (ColumnName colName) f = arbitraryGridRow (^.. gwVal . traverse . _2 . at colName . traverse) f
+
+arbitraryGridRowByColName1 :: (RapidFire m, MonadGen m) => ColumnName -> (a -> AppianT m b) -> Fold Value (GridWidget a) -> AppianT m b
+arbitraryGridRowByColName1 colName f fold = do
+    val <- use appianValue
+    gw <- handleMissing "Could not find GridWidget" val $ val ^? fold
+    arbitraryGridRowByColName colName f gw
+
+instance Parseable Text where
+  parseElement = pure
+
+newtype DropdownValue = DropdownValue Text
+  deriving (Show, Parseable, IsString, Eq)
+
+dropdownUpdateF1 :: Text -> DropdownValue -> ReifiedMonadicFold m Value (Either Text Update)
+dropdownUpdateF1 label dv = dropdownUpdateF' label dv
+
+sendUpdates1Handle :: RapidFire m => (ScriptError -> Bool) -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendUpdates1Handle handler label fold = do
+    eRes <- sendUpdates1' label fold
+    case eRes of
+        Right _ -> return ()
+        Left err -> case handler err of
+            False -> throwError err
+            True -> return ()
