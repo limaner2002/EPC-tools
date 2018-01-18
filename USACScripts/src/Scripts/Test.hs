@@ -16,6 +16,7 @@ module Scripts.Test
   , QC.oneof
   , QC.Gen
   , textFieldArbitrary
+  , textFieldArbitraryF
   , gridFieldArbitrarySelect
   , paragraphArbitrary
   , paragraphArbitraryUpdate
@@ -26,6 +27,7 @@ module Scripts.Test
   , intFieldArbitraryUpdateF_
   , fillIntField_
   , dropdownArbitrarySelect_
+  , dropdownArbitrarySelect
   , QC.getPositive
   , QC.Arbitrary (..)
   , QC.choose
@@ -107,6 +109,9 @@ gridFieldArbitrarySelect = MonadicFold ( getGridFieldCell
 
 textFieldArbitrary :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> (Either a Update -> f (Either a Update)) -> s -> f s
 textFieldArbitrary label size = getTextField label . act (fillTextField size) . to toUpdate . to Right
+
+textFieldArbitraryF :: MonadGen m => Text -> Int -> ReifiedMonadicFold m Value (Either Text Update)
+textFieldArbitraryF label size = MonadicFold (textFieldArbitrary label size)
 
 fillTextField :: MonadGen m => Int -> TextField -> m TextField
 fillTextField size tf = do
