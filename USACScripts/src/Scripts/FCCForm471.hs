@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Scripts.FCCForm471
   ( module Scripts.FCCForm471
@@ -382,9 +383,9 @@ addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const d
 selectFunction :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectFunction v =
   case has (getDropdown "Function") v of
-    True -> sendUpdates "Select Function" (MonadicFold (to (dropdownUpdate "Function" 2))) v
+    True -> sendUpdates "Select Function" (dropdownUpdateF1 "Function" "Fiber") v
             >>= sendUpdates "Select Type of Connection and Continue" (dropdownArbitraryUpdateF "Type of Connection" -- MonadicFold (to (dropdownUpdate "Type of Connection" 13))
-                                                                      -- <|> MonadicFold (radioButtonUpdate "Purpose" 1)
+                                                                      <|> MonadicFold (radioButtonUpdate "Purpose" 1)
                                                                       <|> MonadicFold (to (buttonUpdate "Continue"))
                                                                      )
     -- False -> sendUpdates "Select Type of Connection" (MonadicFold (to $ dropdownUpdate "Type of Internal Connection" 2)) v

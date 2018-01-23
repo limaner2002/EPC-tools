@@ -70,8 +70,8 @@ data Form471ReviewConf = Form471ReviewConf
   , _confBen :: BEN
   , _confFY :: FundingYear
   , _confReviewType :: PIAReviewerType
-  , _confReviewMgr :: Login
   , _confReviewer :: Login
+  -- , _confReviewer :: Login
   } deriving Show
 
 makeLenses ''Form471ReviewConf
@@ -82,12 +82,13 @@ instance Csv.FromNamedRecord Form471ReviewConf where
     <*> r Csv..: "ben"
     <*> r Csv..: "fy"
     <*> r Csv..: "revType"
-    <*> (Login <$> r Csv..: "mgrUsername"
-               <*> r Csv..: "mgrPassword"
-        )
-    <*> (Login <$> r Csv..: "revUsername"
-               <*> r Csv..: "revPassword"
-        )
+    <*> Csv.parseNamedRecord r
+    -- <*> (Login <$> r Csv..: "mgrUsername"
+    --            <*> r Csv..: "mgrPassword"
+    --     )
+    -- <*> (Login <$> r Csv..: "revUsername"
+    --            <*> r Csv..: "revPassword"
+    --     )
 
 instance HasLogin Form471ReviewConf where
   getLogin conf = conf ^. confReviewer
@@ -125,16 +126,40 @@ form471NumToText (Form471Num n) = tshow n
 
 form471Review :: (RapidFire m, MonadGen m) => Form471ReviewConf -> AppianT m Value
 form471Review conf = do
-  (rid, v) <- openReport "My Assigned 471 Applications"
-  editReport rid
-    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
-    >>= sendReportUpdates rid "Enter Application Number & Apply Filters" (MonadicFold (to $ textUpdate "Application Number" (form471NumToText $ conf ^. confFormNum))
-                                                                         <|> MonadicFold (to $ buttonUpdate "Apply Filters")
-                                                                         )
-    >>= clickApplication
-    >>= clearAllExceptions
+  -- (rid, v) <- openReport "My Assigned 471 Applications"
+  -- editReport rid
+  --   >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
+  --   >>= sendReportUpdates rid "Enter Application Number & Apply Filters" (MonadicFold (to $ textUpdate "Application Number" (form471NumToText $ conf ^. confFormNum))
+  --                                                                        <|> MonadicFold (to $ buttonUpdate "Apply Filters")
+  --                                                                        )
+  --   >>= clickApplication
+  myAssigned471AppReport conf
+  clickApplication "Manage Exceptions"
+  v <- use appianValue
+
+  clearAllExceptions v
     >>= addDecision (conf ^. confReviewType)
     >>= sendUpdates "Complete Review Step" (MonadicFold $ getButtonWith (\l -> l == "Complete PIA Review" || l == "Complete HS Review") . to toUpdate . to Right)
+
+myAssigned471AppReport :: RapidFire m => Form471ReviewConf -> AppianT m ()
+myAssigned471AppReport conf = do
+  (rid, v) <- openReport "My Assigned 471 Applications"
+  newVal <- editReport rid
+    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
+    >>= sendReportUpdates rid "Enter Application Number & Apply Filters" (MonadicFold (to $ textUpdate "Application Number" (form471NumToText $ conf ^. confFormNum))
+  
+                                                                         <|> MonadicFold (to $ buttonUpdate "Apply Filters")
+                                                                         )
+  --   >>= clickApplication
+  assign appianValue newVal
+
+clickApplication :: RapidFire m => Text -> AppianT m ()
+clickApplication actionName = do
+  val <- use appianValue
+  rref <- handleMissing "Record ref" val $ val ^? dropping 1 getGridFieldCell . traverse . gfColumns . at "Application Number" . traverse . _TextCellLink  . _2 . traverse
+  (_, v) <- viewRelatedActions val rref
+  newVal <- executeRelatedAction actionName rref v
+  assign appianValue newVal
 
 clearAllExceptions :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 clearAllExceptions v = forGridRows_ sendUpdates (^. gfColumns . at "Exception Name" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) clearExceptions v
@@ -157,11 +182,11 @@ clearExceptions dyl _ v = sendUpdates' "Click on Exceptions Link" (MonadicFold $
       _ -> throwError se
     handleValidations f (Right v) = f v
 
-clickApplication :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
-clickApplication val = do
-  rref <- handleMissing "Record ref" val $ val ^? dropping 1 getGridFieldCell . traverse . gfColumns . at "Application Number" . traverse . _TextCellLink  . _2 . traverse
-  (_, v) <- viewRelatedActions val rref
-  executeRelatedAction "Manage Exceptions" rref v
+-- clickApplication :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
+-- clickApplication val = do
+--   rref <- handleMissing "Record ref" val $ val ^? dropping 1 getGridFieldCell . traverse . gfColumns . at "Application Number" . traverse . _TextCellLink  . _2 . traverse
+--   (_, v) <- viewRelatedActions val rref
+--   executeRelatedAction "Manage Exceptions" rref v
 
 addDecision :: (RapidFire m, MonadGen m) => PIAReviewerType -> Value -> AppianT m Value
 addDecision PIAInitial v = sendUpdates "Click 'Add Decision'" (MonadicFold $ to $ buttonUpdate "Add Decision") v

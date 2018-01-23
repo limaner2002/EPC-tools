@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Appian.Lens where
 
@@ -65,11 +66,15 @@ isDropdown = anyOf (key "#t" . _String) (\t -> isSuffixOf "DropdownField" t || i
 hasLabel' :: Text -> Value -> Bool
 hasLabel' label v = has (key "label" . _String . only label) v || has (key "inlineLabel" . _String . only label) v
 
-getComponentWith :: (Contravariant f, Applicative f, FromJSON a) => (Value -> Bool) -> (Result a -> f (Result a)) -> Value -> f Value
+-- getComponentWith :: (Contravariant f, Applicative f, FromJSON a) => (Value -> Bool) -> (Result a -> f (Result a)) -> Value -> f Value
+getComponentWith :: FromJSON a => (Value -> Bool) -> Fold Value (Result a)
 getComponentWith pred = filtered pred . to fromJSON
 
 getTextField :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (TextField -> f TextField) -> s -> f s
 getTextField = hasLabel
+
+getTextFieldWith :: (Value -> Bool) -> Fold Value (Result TextField)
+getTextFieldWith f = getComponentWith f
 
 getPickerWidget :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (PickerWidget -> f PickerWidget) -> s -> f s
 getPickerWidget label = failing byLabel byTestLabel . _JSON
