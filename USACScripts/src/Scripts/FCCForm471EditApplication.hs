@@ -80,6 +80,51 @@ removeFRN = do
     sendUpdates1 "Click Remove FRN button" (buttonUpdateF "Remove FRN")
     sendUpdates1 "Click Finish button" (buttonUpdateF "Finish")
     
+editHolidayContact :: RapidFire m => AppianT m ()
+editHolidayContact = do
+    sendUpdates1 "APPLICATION" (MonadicFold $ to $ buttonUpdate "Application")
+    sendUpdates1 "Select the sub-category you want to modify" (dropdownUpdateF1 "Select the sub-category you want to modify" "Application Details")
+    sendUpdates1 "Click Continue button" (buttonUpdateF "Continue")
+    sendUpdates1 "Click Edit Application" (buttonUpdateF "Edit Application")
+    sendUpdates1 "Enter Holiday Contact Info" (paragraphUpdateF "Enter Holiday Contact Information" "Update to new Folds is working!")
+    sendUpdates1 "Click Continue button" (buttonUpdateF "Continue")
+    sendUpdates1 "Click Finish button" (buttonUpdateF "Finish")
+    
+editDisaster :: RapidFire m => AppianT m ()
+editDisaster = do
+    sendUpdates1 "Select Entity" (MonadicFold $ to $ buttonUpdate "Entity")
+    sendUpdates1 "Select BEN" (MonadicFold $ to $ buttonUpdate "BEN") 
+    sendUpdates1 "Select BEN name in grid" (gridFieldUpdateWithF getGridFieldCell 0)
+    sendUpdates1 "Select manage organization relationships" (buttonUpdateF "Manage Organization Relationships")
+    sendUpdates1 "Select Add a Child Entity" (buttonUpdateWithF isAddChildButton "Could not find button Add a Child Entity")
+    sendUpdates1 "Select an organization type" (dropdownUpdateF1 "Select an Organization Type" "School")
+    sendUpdates1 "Enter Name search" (textUpdateF "Name Search" "a")
+    sendUpdates1 "Select State Search" (dropdownUpdateF1 "State Search" "Please select a value")
+    sendUpdates1 "Click Search button" (buttonUpdateF "Search")
+    sendUpdates1 "Select School from grid" (gridFieldUpdateWithF (dropping 1 getGridFieldCell) 0)
+    sendUpdates1 "select First as YES" (componentUpdateWithF "Could not find YES/NO button" $ taking 1 $ getButton "Yes")
+    sendUpdates1 "Click Submit button" (buttonUpdateF "Submit")
+    sendUpdates1 "Click Finish button" (buttonUpdateF "Finish")
+    
+removeChildEntity :: RapidFire m => AppianT m ()
+removeChildEntity = do
+    sendUpdates1 "Select Entity" (MonadicFold $ to $ buttonUpdate "Entity")
+    sendUpdates1 "Select BEN" (MonadicFold $ to $ buttonUpdate "BEN") 
+    sendUpdates1 "Select BEN name in grid" (gridFieldUpdateWithF getGridFieldCell 0)
+    sendUpdates1 "Select manage organization relationships" (buttonUpdateF "Manage Organization Relationships")
+    sendUpdates1 "Click Remove a Relationship button" (buttonUpdateF "Remove a Relationship")
+    sendUpdates1 "Enter Name search" (textUpdateF "Name Search" "a")
+    sendUpdates1 "Select State Search" (dropdownUpdateF1 "State Search" "Please select a value")
+    sendUpdates1 "Click Search button" (buttonUpdateF "Search")
+    sendUpdates1 "Select BEN/CRN in grid" (gridFieldUpdateWithF getGridFieldCell 0)
+    sendUpdates1 "Click Submit button" (buttonUpdateF "Submit")
+    sendUpdates1 "Click Finish button" (buttonUpdateF "Finish")
+
+isAddChildButton :: Text -> Bool
+isAddChildButton "Add a Child Entity" = True
+isAddChildButton "Add Consortium Member" = True
+isAddChildButton _ = False
+
 addLineItem :: (RapidFire m, MonadGen m) => Form471Conf -> AppianT m ()
 addLineItem conf = do
     sendUpdates1 "APPLICATION" (buttonUpdateF "Application")
@@ -100,6 +145,9 @@ editAppSwitch :: (RapidFire m, MonadGen m) => Form471Conf -> EditApplicationMode
 editAppSwitch _ RemoveLineItem = removeLineItem
 editAppSwitch _ RemoveFRN = removeFRN
 editAppSwitch conf AddLineItem = addLineItem conf
+editAppSwitch _ WindowVersion = editHolidayContact
+editAppSwitch _ DisasterReliefVersion = editDisaster
+editAppSwitch _ RemoveChildEntityVersion = removeChildEntity
 
 -- | Utility function for selecting a specific row in a specific column.
 -- The cell must be a Text Cell with a Dynamic Link otherwise it will fail.

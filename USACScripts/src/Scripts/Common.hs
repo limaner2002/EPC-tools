@@ -37,6 +37,10 @@ handleValidations (Left (se, _)) = case se ^? _ValidationsError . runFold ((,) <
   Just ((["You must associate at least one Funding Request"], v)) -> return v
   _ -> throwError se
 
+ignoreAssociateValidation :: ScriptError -> Bool
+ignoreAssociateValidation (ValidationsError (["You must associate at least one Funding Request"], _, _)) = True
+ignoreAssociateValidation _ = False
+
 myLandingPageAction :: RapidFire m => Text -> AppianT m Value
 myLandingPageAction actionName = do
   v <- reportsTab
@@ -415,6 +419,11 @@ arbitraryGridRowByColName1 colName f fold = do
 
 instance Parseable Text where
   parseElement = pure
+
+instance Parseable Int where
+  parseElement txt = case readMay txt of
+    Just n -> Right n
+    Nothing -> Left $ "Expected a value of type Int but got " <> tshow txt
 
 newtype DropdownValue = DropdownValue Text
   deriving (Show, Parseable, IsString, Eq)

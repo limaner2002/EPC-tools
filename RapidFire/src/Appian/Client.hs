@@ -384,15 +384,26 @@ runAppianT' runLogger f appianState env creds = bracket (runClientM' login') (ru
     execFun (Left err) = throwError . ConnectionError . tshow $  err
     runClientM' act = runClientM (runStdoutLoggingT act) env
 
+data CheckButtonDisabled
+  = CheckButtonDisabled
+  | NoCheckButtonDisabled
+
 -- * Update Functions
 
 -- | Will find a button on the page with the given label and
 -- generate an update. Can be used to simulate a user clicking on
 -- a button with the given label.
 buttonUpdate :: Text -> Value -> Either Text Update
-buttonUpdate label v = toUpdate <$> btn
+buttonUpdate label v = buttonUpdate_ NoCheckButtonDisabled label v
+
+buttonUpdate_ :: CheckButtonDisabled -> Text -> Value -> Either Text Update
+buttonUpdate_ checkMode label v = toUpdate <$> (checkDisabled checkMode =<< btn)
   where
     btn = maybeToEither ("Could not locate button " <> tshow label) $ v ^? getButton label
+    checkDisabled NoCheckButtonDisabled btn = Right btn
+    checkDisabled CheckButtonDisabled button = case button ^. bwDisabled of
+      Just True -> Left $ tshow label <> " button is disabled."
+      _ -> Right button
 
 -- | Reified version of 'buttonUpdate'
 buttonUpdateF :: Text -> ReifiedMonadicFold m Value (Either Text Update)

@@ -42,10 +42,10 @@ serviceSubstitution conf = do
     --clickServiceSubstitution
     myLandingPageAction1 "Service Substitution"
     sendUpdates1 "Nickname" (textUpdateF "Nickname" "myNickname")
-    --2016 index is 2, 2017 index is 3
+
     sendUpdates1 "Select 'Funding Year'" (dropdownUpdateF1 "Funding Year" "2017")
     sendUpdates1 "Select 'Main Contact Person'" (pickerUpdateF "Main Contact Person" un)
-    sendUpdates1Handle notPrimaryOrgSelected "click Continue" (buttonUpdateF "Continue")
+    sendUpdates1Handle ignoreAssociateValidation "click Continue" (buttonUpdateF "Continue")
 
     sendUpdates1 "Select FRN in grid" (gridFieldUpdateWithF getGridFieldCell 0)
     sendUpdates1 "Click 'Add FRNs' button" (buttonUpdateWithF isAddButton "Could not find Add FRNs button")
@@ -56,10 +56,6 @@ serviceSubstitution conf = do
     sendUpdates1 "Click 'Continue' button" (buttonUpdateF "Continue")
     use appianValue
     
-notPrimaryOrgSelected :: ScriptError -> Bool
-notPrimaryOrgSelected (ValidationsError (["You must associate at least one Funding Request"], _, _)) = True
-notPrimaryOrgSelected _ = False
-
 isAddButton :: Text -> Bool
 isAddButton label = isPrefixOf "Add (" label && isSuffixOf ") FRNs" label
 
@@ -68,5 +64,3 @@ isAddLineItemButton label = isPrefixOf "Add (" label && isSuffixOf ") Line Items
 
 runServiceSubstitution :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runServiceSubstitution = runIt serviceSubstitution
-
--- selectGridFieldUpdateF1 :: Fold 
