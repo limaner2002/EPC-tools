@@ -15,11 +15,14 @@ module Scripts.Test
   , QC.resize
   , QC.oneof
   , QC.Gen
+  , fillTextField
   , textFieldArbitrary
   , textFieldArbitraryF
   , gridFieldArbitrarySelect
+  , fillParagraph
   , paragraphArbitrary
   , paragraphArbitraryUpdate
+  , paragraphArbitraryUpdateNoError
   , intFieldArbitrary
   , intFieldArbitraryUpdateF
   , dropdownArbitraryUpdateF
@@ -32,6 +35,7 @@ module Scripts.Test
   , QC.Arbitrary (..)
   , QC.choose
   , QC.shuffle
+  , radioArbitrarySelect
   , radioArbitrary
   , radioArbitraryF
   , MonadGen (..)
@@ -92,8 +96,16 @@ arbitraryPrintable = arbitrary `suchThat` isPrint
 paragraphArbitraryUpdate :: (MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> ReifiedMonadicFold m s (Either Text Update)
 paragraphArbitraryUpdate label size = MonadicFold (paragraphArbitrary label size)
 
+-- | Same as 'paragraphArbitraryUpdate' but will not throw an error if the paragraph is not found
+paragraphArbitraryUpdateNoError :: (MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> ReifiedMonadicFold m s (Either Text Update)
+paragraphArbitraryUpdateNoError label size = MonadicFold (paragraphArbitraryNoError label size . act (mapM $ fillParagraph size) . to (fmap toUpdate))
+
 paragraphArbitrary :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> (Either Text Update -> f (Either Text Update)) -> s -> f s
-paragraphArbitrary label size = failing (getParagraphField label . to Right) (to $ const $ Left $ "Could not find paragraph field " <> tshow label) . act (mapM $ fillParagraph size) . to (fmap toUpdate)
+paragraphArbitrary label size = failing (paragraphArbitraryNoError label size) (to $ const $ Left $ "Could not find paragraph field " <> tshow label) . act (mapM $ fillParagraph size) . to (fmap toUpdate)
+
+-- | Same as 'paragraphArbitrary' but will not throw an error if the paragraph is not found
+-- paragraphArbitraryNoError :: (Applicative f, Effective m r f, MonadGen m, Plated s, AsValue s, AsJSON s) => Text -> Int -> (Either Text ParagraphField -> f (Either Text ParagraphField)) -> s -> f s
+paragraphArbitraryNoError label size = getParagraphField label . to Right
 
 fillParagraph :: MonadGen m => Int -> ParagraphField -> m ParagraphField
 fillParagraph size pgf = do
