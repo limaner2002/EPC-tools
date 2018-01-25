@@ -63,7 +63,11 @@ type ViewRecord = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> "tem
 type RecordUpdate update = "suite" :> "rest" :> "a" :> "applications" :> "latest" :> TrailingSlash :> ReqBody '[AppianTV] (UiConfig update)
   :> Header "X-Appian-Features" Text :> Header "Accept-Language" Text :> Header "X-Appian-Ui-State" Text :> Header "X-Client-Mode" Text :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
 
-type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Get '[InlineSail] Value
+type ViewRecordDashboard = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "recordRef" RecordRef :> "dashboards" :> Capture "dashboard" Dashboard :> Header "X-Appian-Features" Text :> Get '[InlineSailWithHeader] Value
+type DashboardUpdate update = "suite" :> "rest" :> "a" :> "record" :> "latest" :> Capture "urlstub" UrlStub :> Capture "recordId" RecordId :> "dashboards" :> Capture "dashboard" Dashboard
+  :> ReqBody '[AppianTV] (UiConfig update) :> Header "X-APPIAN-CSRF-TOKEN" Text :> Post '[AppianTVUI] Value
+-- type DashboardUpdate = "suite" :> "rest" :> "a" :> "record" :> "latest" :> "3dHw2g" :> "iwBrAK8ofq9aq6FoV4LjSF7QNRaTQx2NqW3oj_0-ptu7mQuZHSbNbSDBLi9QQ" :> "dashboards" :> "_RaNDYw"
+--   :> Header "X-APPIAN-CSRF-TOKEN" :> Post '[AppianTVUI] Value
 
 type EditReport = "suite" :> "rest" :> "a" :> "uicontainer" :> "latest" :> Capture "repordId" ReportId :> "view" :> Header "X-APPIAN-CSRF-TOKEN" Text :> Get '[AppianTVUI] Value
 
@@ -266,9 +270,17 @@ landingPageActionEx pid = do
 viewRecordDashboard :: RapidFire m => RecordRef -> Dashboard -> AppianT m Value
 viewRecordDashboard rref dashboard = do
   bounds <- use appianBounds
-  thinkTimer bounds $ recordTime ("View Record Dashboard: " <> tshow dashboard) $ viewRecordDashboard_ rref dashboard
+  thinkTimer bounds $ recordTime ("View Record Dashboard: " <> tshow dashboard) $ viewRecordDashboard_ rref dashboard (Just "ceebc")
     where
       viewRecordDashboard_ = toClient Proxy (Proxy :: Proxy ViewRecordDashboard)
+
+dashboardUpdate :: (RapidFire m, ToJSON update) => UrlStub -> RecordId -> Dashboard -> UiConfig update -> AppianT m Value
+dashboardUpdate urlStub rid dashboard upd = do
+  cj <- use appianCookies
+  writeFile "/tmp/req.json" $ toStrict $ encode upd
+  dashboardUpdate_ urlStub rid dashboard upd (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  where
+    dashboardUpdate_ = toClient Proxy (Proxy :: Proxy (DashboardUpdate update))
 
 relatedActionEx :: RapidFire m => RecordRef -> ActionId -> AppianT m Value
 relatedActionEx ref aid = do
@@ -307,10 +319,13 @@ newRule = do
 newtype HostUrl = HostUrl String
   deriving (Show, Eq, IsString)
 
+newtype UrlStub = UrlStub Text
+  deriving (Show, Eq, IsString, ToHttpApiData)
+
 clientEnvDbgWith :: (C.Request -> IO C.Request) -> HostUrl -> IO ClientEnv
 clientEnvDbgWith f (HostUrl url) = do
   mgr <- C.newManager settings
-  return $ ClientEnv mgr (BaseUrl Https "portal-test3.appiancloud.com" 443 "")
+  return $ ClientEnv mgr (BaseUrl Https url 443 "")
     where
       reqLoggerFunc req = f req
       settings = TLS.tlsManagerSettings { C.managerModifyRequest = reqLoggerFunc

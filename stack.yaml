@@ -1,7 +1,7 @@
 # For more information, see: http://docs.haskellstack.org/en/stable/yaml_configuration.html
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
-resolver: lts-9.6
+resolver: lts-9.21
 
 # Local packages, usually specified by relative directory name
 packages:
@@ -14,10 +14,6 @@ packages:
 #   extra-dep: true
 # - location: ../machinecell
 #   extra-dep: true
-- location:
-    git: https://github.com/as-capabl/machinecell.git
-    commit: 650cb798b6387cdf0a6fd5a737136609b81db30f
-    extra-dep: true
 # - location: /Users/josh/workspace/hs-config
 #   extra-dep: true
 - location:
@@ -66,6 +62,10 @@ extra-deps:
 # - servant-client-0.10
 # - servant-server-0.10
 - tdigest-0.1
+# - location:
+- git: https://github.com/as-capabl/machinecell.git
+  commit: 650cb798b6387cdf0a6fd5a737136609b81db30f
+#    extra-dep: true
 
 # Override default flag values for local packages and extra-deps
 flags: {}

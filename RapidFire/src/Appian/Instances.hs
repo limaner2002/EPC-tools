@@ -187,6 +187,14 @@ instance FromJSON a => MimeUnrender InlineSail a where
 instance Accept InlineSail where
   contentType _ = contentType (Proxy :: Proxy AtomApplication) /: ("inlineSail", "true")
 
+data InlineSailWithHeader
+
+instance FromJSON a => MimeUnrender InlineSailWithHeader a where
+  mimeUnrender _ bs = eitherDecode bs
+
+instance Accept InlineSailWithHeader where
+  contentType _ = contentType (Proxy :: Proxy InlineSail) /: ("recordHeader", "true")
+
 instance ToHttpApiData RecordRef where
   toUrlPiece (RecordRef ref) = toUrlPiece ref
 

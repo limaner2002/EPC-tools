@@ -21,16 +21,6 @@ import qualified Data.Csv as Csv
 import NewFunctions
 import Control.Monad.Except (throwError)
 
-writeResponse :: MonadIO m => FilePath -> Value -> m ()
-writeResponse fp = writeFile fp . toStrict . encodePretty
-
-writeResponseWithErrors :: MonadIO m => FilePath -> [Maybe (Either ServantError (Either ScriptError Value))] -> m ()
-writeResponseWithErrors _ [] = putStrLn "No threads have any results? Why did that happen?"
-writeResponseWithErrors fp (x:_) = mapM_ (writeFile fp . toStrict . encode) $ x ^? _Just . _Right . _Right
-
--- myLandingPageAction1 :: RapidFire m => Text -> AppianT m ()
--- myLandingPageAction1 actionName = myLandingPageAction actionName >>= assign appianValue
-
 data ServiceSubConf = ServiceSubConf 
     { _appNumber :: Text
     , _applicant :: Login

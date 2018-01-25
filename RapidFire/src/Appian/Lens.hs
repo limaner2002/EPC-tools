@@ -114,7 +114,7 @@ getGridWidgetDynLink :: (Contravariant f, Applicative f) => Text -> (DynamicLink
 getGridWidgetDynLink column = getGridWidgetValue . gwVal . traverse . _2 . at column . traverse . key "links" . plate . _JSON
 
 getDynamicLink :: (AsJSON s, AsValue s, Plated s, Applicative f) => Text -> (DynamicLink -> f DynamicLink) -> s -> f s
-getDynamicLink label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . only "DynamicLink") <*> Fold (key "label" . _String . only label))) . _JSON
+getDynamicLink label = deep (filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . suffixed "DynamicLink") <*> Fold (key "label" . _String . only label))) . _JSON
 
 getGridField :: (FromJSON a, Contravariant f, Applicative f) => (Result (GridField a) -> f (Result (GridField a))) -> Value -> f Value
 getGridField = hasTypeWith (\t -> isSuffixOf "GridField" t)
