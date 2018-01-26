@@ -13,7 +13,7 @@ import Appian.Types
 import Appian.Instances
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import Control.Lens
 import Control.Lens.Action
 import Control.Lens.Action.Reified

@@ -179,6 +179,12 @@ nnvToNullable = nnv . nnfStr . to toNullable
 getEmbedded :: (Applicative f, Plated s, AsValue s) => Text -> (Text -> f Text) -> s -> f s
 getEmbedded label = hasKeyValue "name" label . key "children" . plate . _String
 
+getEmbeddedUi :: (AsValue s, Plated s) => Fold s Value
+getEmbeddedUi = hasKeyValue "name" "x-embedded-summary" . key "children" . plate . _String . _JSON . asValue
+
+getEmbeddedHeader :: (AsValue s, Plated s) => Fold s Value
+getEmbeddedHeader = hasKeyValue "name" "x-embedded-header" . key "children" . plate . _String . _JSON . asValue
+
 instance FromJSON a => FromJSON (GridWidget a) where
   parseJSON val@(Object o) = GridWidget
                              <$> vals

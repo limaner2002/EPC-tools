@@ -20,7 +20,6 @@ library
                      , Scripts.FCCForm471Certification
                      , Scripts.Opts
                      , Scripts.CreateCSCase
-                     , Scripts.Test
                      , Scripts.Common
                      , Scripts.FCCForm486
                      , Scripts.SPINChangeIntake
@@ -39,6 +38,8 @@ library
                      , Scripts.Execute
                      , Scripts.Parseable
                      , Scripts.ComadIntake
+                     , Scripts.Random
+                     , Scripts.DisplayInvoiceDetails
   build-depends:       base
                      , lens
                      , aeson

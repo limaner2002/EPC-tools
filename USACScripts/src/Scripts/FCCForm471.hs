@@ -19,7 +19,7 @@ import Appian.Lens
 import Appian.Client
 import Data.Attoparsec.Text hiding (Result)
 import Data.Time (addDays)
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import qualified Test.QuickCheck as QC
 import Control.Lens.Action
 import Control.Lens.Action.Reified

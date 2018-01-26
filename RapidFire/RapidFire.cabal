@@ -20,6 +20,8 @@ library
                      , Appian.Client
                      , Util.Parallel
                      , Appian.Internal.Appian
+                     , Appian.Internal.Updates
+                     , Appian.Internal.Arbitrary
   build-depends:       base
                      , lens
                      , aeson

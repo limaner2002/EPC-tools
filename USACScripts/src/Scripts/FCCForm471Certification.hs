@@ -14,7 +14,7 @@ import Appian.Types
 import Appian.Instances
 import Appian.Lens hiding (checkResult)
 import Appian.Client
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import qualified Test.QuickCheck as QC
 import Control.Lens.Action
 import Control.Lens.Action.Reified

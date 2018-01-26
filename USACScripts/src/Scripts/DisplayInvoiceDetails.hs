@@ -3,6 +3,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 
+module Scripts.DisplayInvoiceDetails where
+
 import ClassyPrelude
 import Appian
 import Appian.Client hiding (login)
@@ -14,12 +16,11 @@ import Appian.Lens
 import Scripts.Execute
 import Scripts.ReviewCommon
 import Scripts.Common
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import Stats.CsvStream
 import qualified Data.Csv as Csv
 import Data.Aeson
 import Data.Aeson.Lens
-import NewFunctions
 
 data InvoiceDetailsConf = InvoiceDetailsConf
     { _invoiceCaseNum :: CaseNumber

@@ -17,7 +17,7 @@ import Control.Lens.Action.Reified
 import qualified Data.Foldable as F
 import Scripts.Common
 import Scripts.ReviewCommon
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import Control.Monad.Time
 import Data.Random (MonadRandom)
 import Control.Monad.Except

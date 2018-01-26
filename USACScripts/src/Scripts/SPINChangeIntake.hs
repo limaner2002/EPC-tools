@@ -17,7 +17,7 @@ import Appian.Instances
 import Appian.Lens
 import Appian.Client
 import Control.Lens.Action.Reified
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import Scripts.Common
 import qualified Data.Foldable as F
 import Control.Monad.Time

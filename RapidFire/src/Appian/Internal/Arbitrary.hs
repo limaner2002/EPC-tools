@@ -6,7 +6,7 @@
 -- {-# LANGUAGE KindSignatures #-}
 -- {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Scripts.Test
+module Appian.Internal.Arbitrary
   ( arbitraryText
   , arbitraryTextFixed
 --   , generate

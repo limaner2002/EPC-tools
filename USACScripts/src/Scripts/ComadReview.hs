@@ -16,7 +16,7 @@ import Control.Lens
 import Control.Lens.Action.Reified
 import Scripts.Common
 import Scripts.ReviewCommon
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import qualified Test.QuickCheck as QC
 import Control.Monad.Time
 import Scripts.ComadReviewTypes

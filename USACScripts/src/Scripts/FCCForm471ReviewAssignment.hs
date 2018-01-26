@@ -17,7 +17,7 @@ import Data.Aeson.Lens
 import Control.Lens
 import Control.Lens.Action.Reified
 import Scripts.Common
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import Control.Monad.Time
 import Scripts.ReviewCommon
 import Scripts.FCCForm471Common

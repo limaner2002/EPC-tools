@@ -23,7 +23,7 @@ import Appian.Lens
 import Scripts.Execute
 import Stats.CsvStream
 import Control.Monad.Except
-import Scripts.Test
+import Appian.Internal.Arbitrary
 
 comadIntake :: Login -> Appian Value
 comadIntake _ = do

@@ -18,7 +18,7 @@ import Appian.Lens
 import Appian.Client
 import Control.Lens.Action
 import Control.Lens.Action.Reified
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import qualified Data.Foldable as F
 import Data.Attoparsec.Text hiding (take)
 import qualified Data.Attoparsec.Text as A

@@ -14,7 +14,7 @@ import Appian.Instances
 import Appian.Lens
 import Appian.Client
 import Control.Lens.Action.Reified
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import Scripts.Common
 import Control.Monad.Time
 import Data.Random (MonadRandom)

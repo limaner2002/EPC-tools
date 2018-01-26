@@ -12,7 +12,7 @@ import Data.Aeson
 import Appian.Lens
 import Appian
 import Appian.Client
-import Scripts.Test
+import Appian.Internal.Arbitrary
 import Appian.Types
 import Data.Proxy
 import qualified Test.QuickCheck as QC
