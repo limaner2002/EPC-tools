@@ -394,7 +394,7 @@ data CheckButtonDisabled
 -- generate an update. Can be used to simulate a user clicking on
 -- a button with the given label.
 buttonUpdate :: Text -> Value -> Either Text Update
-buttonUpdate label v = buttonUpdate_ NoCheckButtonDisabled label v
+buttonUpdate label v = buttonUpdate_ CheckButtonDisabled label v
 
 buttonUpdate_ :: CheckButtonDisabled -> Text -> Value -> Either Text Update
 buttonUpdate_ checkMode label v = toUpdate <$> (checkDisabled checkMode =<< btn)
@@ -866,7 +866,7 @@ viewRelatedActions' rref = do
 
 executeRelatedAction :: RapidFire m => Text -> RecordRef -> Value -> AppianT m Value
 executeRelatedAction action recordId val = do
-  aid <- handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getRelatedActionId action
+  aid <- handleMissing ("could not find actionId for " <> tshow action) val $ val ^? getEmbeddedUi . getRelatedActionId action
   relatedActionEx recordId aid
 
 viewRelatedActions :: RapidFire m => Value -> RecordRef -> AppianT m (RecordRef, Value)

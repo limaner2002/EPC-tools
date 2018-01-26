@@ -71,17 +71,36 @@ makeDecisions val gf = do
 makeDecision :: (RapidFire m, MonadGen m) => Value -> GridFieldIdent -> AppianT m Value
 makeDecision val ident = do
   gf <- handleMissing "FRN Decision Grid" val $ val ^? getGridFieldCell . traverse
-  _ <- sendUpdates "Decision: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
-                                                                 ) val
-  sendUpdates "Review FRN Decisions" (MonadicFold (to $ buttonUpdate "Review FRN Decision(s)")) val
-    >>= sendUpdates "Click Add Decision" (MonadicFold $ to $ buttonUpdate "Add Decision")
-    >>= sendUpdates "Select Decision" (MonadicFold $ to $ dropdownUpdate "Select Decision" 2)
-    >>= sendUpdates "Select Reason" (MonadicFold $ to $ dropdownUpdate "Select Reason" 2)
-    >>= sendUpdates "Add Rationale" (MonadicFold $ to $ dynamicLinkUpdate "Add Rationale")
-    >>= (\v -> do
-            v' <- sendUpdates "Select Rationale" (MonadicFold (to $ dropdownUpdate "Rationale_1_Dropdown" 2)) v
-            case v ^? getButton "No" of
-              Nothing -> return $ trace "No button doesn't exist." v'
-              Just _ -> sendUpdates "Click 'No' for 'does this change the original FRN decision?'" (MonadicFold (to $ buttonUpdate "No")) v
-        )
-    >>= sendUpdates "Save Decision" (MonadicFold $ to $ buttonUpdate "Save Decision")
+  assign appianValue val
+  sendUpdates1 "Decision: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update")))
+  sendUpdates1 "Review FRN Decisions" (buttonUpdateF "Review FRN Decision(s)")
+  sendUpdates1 "Click Add Decision" (buttonUpdateF "Add Decision")
+    -- The below is commented out to avoid an expression evaluation error regarding the decision template.
+  -- sendUpdates1 "Select Decision" (dropdownArbitraryUpdateF "Select Decision")
+  sendUpdates1 "Select Decision" (dropdownUpdateF1 "Select Decision" "Approved")
+  sendUpdates1 "Select Reason" (dropdownArbitraryUpdateF "Select Reason")
+  sendUpdates1 "Add Rationale" (dynamicLinkUpdateF "Add Rationale")
+  sendUpdates1 "Select Rationale" (dropdownArbitraryUpdateF "Rationale_1_Dropdown")
+
+  hasNoButton <- usesValue (has $ getButton "No")
+  case hasNoButton of
+    True -> sendUpdates1 "Click 'No' for 'does this change the original FRN decision?'" (buttonUpdateF "No")
+    False -> return ()
+
+  sendUpdates1 "Save Decision" (buttonUpdateF "Save Decision")
+  use appianValue
+
+  -- _ <- sendUpdates "Decision: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
+  --                                                                ) val
+  -- sendUpdates "Review FRN Decisions" (MonadicFold (to $ buttonUpdate "Review FRN Decision(s)")) val
+  --   >>= sendUpdates "Click Add Decision" (MonadicFold $ to $ buttonUpdate "Add Decision")
+  --   >>= sendUpdates "Select Decision" (MonadicFold $ to $ dropdownUpdate "Select Decision" 2)
+  --   >>= sendUpdates "Select Reason" (MonadicFold $ to $ dropdownUpdate "Select Reason" 2)
+  --   >>= sendUpdates "Add Rationale" (MonadicFold $ to $ dynamicLinkUpdate "Add Rationale")
+  --   >>= (\v -> do
+  --           v' <- sendUpdates "Select Rationale" (MonadicFold (to $ dropdownUpdate "Rationale_1_Dropdown" 2)) v
+  --           case v ^? getButton "No" of
+  --             Nothing -> return $ trace "No button doesn't exist." v'
+  --             Just _ -> sendUpdates "Click 'No' for 'does this change the original FRN decision?'" (MonadicFold (to $ buttonUpdate "No")) v
+  --       )
+  --   >>= sendUpdates "Save Decision" (MonadicFold $ to $ buttonUpdate "Save Decision")

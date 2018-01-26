@@ -3,13 +3,17 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+module Scripts.ServiceSubstitutionIntake
+  ( runServiceSubstitution
+  ) where
+
 import ClassyPrelude
 import Appian.Client
 import Appian
 import Appian.Instances
 import Appian.Types
 import Appian.Lens
-import Scripts.Opts
+import Scripts.Execute
 import Data.Aeson
 import Data.Aeson.Lens
 import Data.Aeson.Encode.Pretty
@@ -18,7 +22,6 @@ import Control.Lens
 import Control.Lens.Action.Reified
 import Scripts.Common
 import qualified Data.Csv as Csv
-import NewFunctions
 import Control.Monad.Except (throwError)
 
 data ServiceSubConf = ServiceSubConf 

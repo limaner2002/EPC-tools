@@ -40,6 +40,9 @@ library
                      , Scripts.ComadIntake
                      , Scripts.Random
                      , Scripts.DisplayInvoiceDetails
+                     , Scripts.FCCForm471EditApplication
+                     , Scripts.ServiceSubstitutionIntake
+                     , Scripts.FCCForm500Intake
   build-depends:       base
                      , lens
                      , aeson

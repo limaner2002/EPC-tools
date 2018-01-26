@@ -253,18 +253,35 @@ makeNotes val gf = do
 makeNote :: (RapidFire m, MonadGen m) => Value -> GridFieldIdent -> AppianT m Value
 makeNote val ident = do
   gf <- handleMissing "FRN Note Grid" val $ val ^? getGridFieldCell . traverse
-  val' <- sendUpdates "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
-                                           ) val
-  case val' ^? getButton "Edit Note" of
-    Nothing ->
-          sendUpdates "Click Add Note" (MonadicFold (to $ buttonUpdate "Add Note")) val'
-      >>= sendUpdates "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000
-                                      <|> MonadicFold (to $ buttonUpdate "Submit New Note")
-                                      )
-    Just _ -> sendUpdates "Edit Note" (MonadicFold (to $ buttonUpdate "Edit Note")) val'
-      >>= sendUpdates "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000
-                                         <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
-                                        )
+  
+  assign appianValue val
+  sendUpdates1 "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update")))
+  isEdit <- usesValue (has $ getButton "Edit Note")
+
+  case isEdit of
+    False -> do
+      sendUpdates1 "Click Add Note" (buttonUpdateF "Add Note")
+      sendUpdates1 "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000)
+      sendUpdates1 "Submit New Note" (buttonUpdateF "Submit New Note")
+    True -> do
+      sendUpdates1 "Edit Note" (buttonUpdateF "Edit Note")
+      sendUpdates1 "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000)
+      sendUpdates1 "Submit Note Change" (buttonUpdateF "Submit Note Change")
+
+  use appianValue
+
+  -- val' <- sendUpdates "Notes: Select FRN Checkbox" (MonadicFold (failing (to (const (selectCheckbox ident gf)) . to toUpdate . to Right) (to $ const $ Left "Unable to make the gridfield update"))
+  --                                          ) val
+  -- case val' ^? getButton "Edit Note" of
+  --   Nothing ->
+  --         sendUpdates "Click Add Note" (MonadicFold (to $ buttonUpdate "Add Note")) val'
+  --     >>= sendUpdates "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000
+  --                                     <|> MonadicFold (to $ buttonUpdate "Submit New Note")
+  --                                     )
+  --   Just _ -> sendUpdates "Edit Note" (MonadicFold (to $ buttonUpdate "Edit Note")) val'
+  --     >>= sendUpdates "Enter Note Text" (paragraphArbitraryUpdate "Note Text" 10000
+  --                                        <|> MonadicFold (to $ buttonUpdate "Submit Note Change")
+  --                                       )
 
 newtype CaseNumber = CaseNumber
   { _caseNumber :: Int

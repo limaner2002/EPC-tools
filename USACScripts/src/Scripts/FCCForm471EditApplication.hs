@@ -5,6 +5,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Rank2Types #-}
 
+module Scripts.FCCForm471EditApplication
+  ( runEdit471Application
+  ) where
+
 import ClassyPrelude
 import Appian.Client
 import Appian
@@ -23,7 +27,7 @@ import qualified Data.Csv as Csv
 import Scripts.FCCForm471ReviewAssignment
 import Scripts.FCCForm471Types
 import Scripts.FCCForm471 (forLineItems)
-import Scripts.Test
+import Appian.Internal.Arbitrary
 
 data EditApplicationMode
     = WindowVersion

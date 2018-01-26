@@ -5,8 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Scripts.Opts
-  ( commandsInfo
-  , setTimeout
+  ( setTimeout
   , module Scripts.Opts
   ) where
 
@@ -61,6 +60,10 @@ import Scripts.Parseable
 import Scripts.ViewFCCForm470
 import Scripts.ViewFCCForm471
 import Scripts.ComadIntake
+import Scripts.FCCForm500Intake
+import Scripts.DisplayInvoiceDetails
+import Scripts.ServiceSubstitutionIntake
+import Scripts.FCCForm471EditApplication
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -245,6 +248,9 @@ parseCommands = subparser
   <> command "viewFCCForm470" viewFCCForm470Info
   <> command "viewFCCForm471" viewFCCForm471Info
   <> command "COMADIntake" comadIntakeInfo
+  <> command "form500Intake" form500IntakeInfo
+  <> command "displayInvoiceDetailsIntake" displayInvoiceDetailsInfo
+  <> command "serviceSubstitutionIntake" serviceSubstitutionIntakeInfo
   )
 
 urlParser :: Parser BaseUrl
@@ -338,7 +344,7 @@ initialReviewParser = fmap void $ runInitialReview
 form471ReviewInfo :: ParserInfo (IO ())
 form471ReviewInfo = info (helper <*> form471ReviewParser)
   (  fullDesc
-  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  <> progDesc "Runs the Form 471 Review script"
   )
 
 form471ReviewParser :: Parser (IO ())
@@ -353,7 +359,7 @@ form471ReviewParser = fmap void $ run471Review
 noiseInfo :: ParserInfo (IO ())
 noiseInfo = info (helper <*> noiseParser)
   (  fullDesc
-  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  <> progDesc "Runs the noise script"
   )
 
 noiseParser :: Parser (IO ())
@@ -387,7 +393,7 @@ reviewAssignParser = fmap void $ runReviewAssign
 reverseTestInfo :: ParserInfo (IO ())
 reverseTestInfo = info (helper <*> reverseTestParser)
   (  fullDesc
-  <> progDesc "Runs the 2017 SPIN Change Initial Review script"
+  <> progDesc "Runs the list reversing test script"
   )
 
 createCSCaseInfo :: ParserInfo (IO ())
@@ -417,10 +423,34 @@ viewFCCForm471Info = info (helper <*> viewForm471Parser)
 comadIntakeInfo :: ParserInfo (IO ())
 comadIntakeInfo = info (helper <*> comadIntakeParser)
   (  fullDesc
-  <> progDesc "Runs the 'View FCC Form 471' script"
+  <> progDesc "Runs the 'Comad Intake' script"
   )
   where
     comadIntakeParser = runItParser runComadIntake
+
+form500IntakeInfo :: ParserInfo (IO ())
+form500IntakeInfo = info (helper <*> form500IntakeParser)
+  (  fullDesc
+  <> progDesc "Runs the 'Form 500 Intake' script"
+  )
+  where
+    form500IntakeParser = runItParser runForm500Intake
+
+displayInvoiceDetailsInfo :: ParserInfo (IO ())
+displayInvoiceDetailsInfo = info (helper <*> displayInvoiceDetailsParser)
+  (  fullDesc
+  <> progDesc "Runs the 'Display Invoice Details' script"
+  )
+  where
+    displayInvoiceDetailsParser = runItParser runViewInvoiceDetails
+
+serviceSubstitutionIntakeInfo :: ParserInfo (IO ())
+serviceSubstitutionIntakeInfo = info (helper <*> serviceSubstitutionIntakeParser)
+  (  fullDesc
+  <> progDesc "Runs the 'Service Substitution Intake' script"
+  )
+  where
+    serviceSubstitutionIntakeParser = runItParser runServiceSubstitution
 
 reverseTestParser :: Parser (IO ())
 reverseTestParser = fmap void $ runReverseTest

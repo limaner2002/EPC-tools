@@ -296,4 +296,9 @@ testF :: (Applicative f, Choice p) => t -> (t -> t -> Bool) -> p () (f ()) -> p 
 testF a f = prism' (\() -> a) $ guard . (f a)
 
 getRelatedActionId :: (Contravariant f, Applicative f, Plated s, AsValue s) => Text -> (ActionId -> f ActionId) -> s -> f s
-getRelatedActionId action = hasKeyValue "title" action . deep (hasKeyValue "title" "Execute related action") . key "href" . _String . to (lastMay . splitElem '/') . traverse . to ActionId
+-- getRelatedActionId action = hasKeyValue "title" action . deep (hasKeyValue "title" "Execute related action") . key "href" . _String . to (lastMay . splitElem '/') . traverse . to ActionId
+-- getRelatedActionId action = deep $ filtered $ has $ runFold ((,) <$> Fold (key "#t" . _String . only "RelatedActionLink") <*> Fold (key "label" . _String . only "action"))
+getRelatedActionId action = deep (filtered $ \v -> isRelatedActionLink v && hasRelatedActionName v) . key "source" . key "opaqueRelatedActionId" . _String . to ActionId
+  where
+    isRelatedActionLink v = has (key "#t" . _String . only "RelatedActionLink") v
+    hasRelatedActionName v = has (key "label" . _String . only action) v
