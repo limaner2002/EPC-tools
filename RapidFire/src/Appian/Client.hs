@@ -277,7 +277,6 @@ viewRecordDashboard rref dashboard = do
 dashboardUpdate :: (RapidFire m, ToJSON update) => UrlStub -> RecordId -> Dashboard -> UiConfig update -> AppianT m Value
 dashboardUpdate urlStub rid dashboard upd = do
   cj <- use appianCookies
-  writeFile "/tmp/req.json" $ toStrict $ encode upd
   dashboardUpdate_ urlStub rid dashboard upd (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
   where
     dashboardUpdate_ = toClient Proxy (Proxy :: Proxy (DashboardUpdate update))
@@ -800,16 +799,21 @@ data ScriptError
     , _badUpdateErrorVal :: Maybe Value
     }
   | BadPagingError ThreadId
+  | ScriptError Text
 
 instance Show ScriptError where
   show (ValidationsError (msgs, _, _)) = "ValidationsError: " <> (intercalate "\n" $ fmap unpack msgs)
   show (MissingComponentError (msg, _)) = "MissingComponentError: " <> unpack msg
   show (BadUpdateError msg _) = "BadUpdateError: " <> unpack msg
   show (BadPagingError tid) = show tid <> ": It looks like paging is not working correctly!"
+  show (ScriptError msg) = "ScriptError: " <> unpack msg
 
 type AppianT = AppianET ScriptError
 
 type Appian = AppianT (LoggingT ClientM)
+
+scriptError :: MonadError ScriptError m => Text -> m ()
+scriptError = throwError . ScriptError
 
 -- data AppianError
 --   = ScriptError ScriptError
@@ -921,14 +925,14 @@ forGridRowsWith1_ continueFcn updateFcn colFcn fold f = do
 
 getPagedItem :: RapidFire m => Updater m -> (GridField a -> Vector b) -> Int -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m (b, GridField a, Value)
 getPagedItem updateFcn colFcn idx fold val = do
-  gf <- handleMissing "GridField" val =<< (val ^!? runMonadicFold fold)
+  gf <- handleMissing "Could not find GridField" val =<< (val ^!? runMonadicFold fold)
   pi <- handleMissing "GridField is not pageable" val $ gf ^? pagingInfo
 
   let (startIdx, (RowIndex rowIdx)) = getRowIdx idx pi
 
   val' <- getPage updateFcn fold startIdx val
   gf <- handleMissing "GridField" val' =<< (val' ^!? runMonadicFold fold)
-  res <- handleMissing ("Row idx: " <> tshow rowIdx) val' $ flip index rowIdx $ colFcn gf
+  res <- handleMissing ("Could not index into row idx: " <> tshow rowIdx) val' $ flip index rowIdx $ colFcn gf
   return $ (res, gf, val')
 
 newtype RowIndex = RowIndex Int

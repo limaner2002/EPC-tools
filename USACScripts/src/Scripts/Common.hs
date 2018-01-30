@@ -27,6 +27,8 @@ import Control.Monad.Logger
 import Control.Arrow
 import Control.Monad.Time
 import Control.Monad.Except
+import qualified Data.Csv as Csv
+import qualified Data.Attoparsec.Text as T
 
 import Control.Monad.Trans.Resource hiding (throwM)
 import Data.Random (MonadRandom)
@@ -439,3 +441,66 @@ sendUpdates1Handle handler label fold = do
         Left err -> case handler err of
             False -> throwError err
             True -> return ()
+
+data SelectOrgMethod
+  = ByOrgName Text
+  | ByArbitrary
+  deriving (Show, Ord, Eq)
+
+instance Csv.FromField SelectOrgMethod where
+  parseField bs = either failure pure $ parseResult
+    where
+      parseResult = T.parseOnly parseSearchMethod $ decodeUtf8 bs
+      parseSearchMethod = T.string "arbitrary" *> pure ByArbitrary
+        <|> T.string "by name: " *> (ByOrgName <$> T.takeText)
+      failure = const $ fail $ show bs <> " does not appear to be a valid SelectOrgMethod. Please use only 'arbitrary' or 'by name: <orgName>'"
+
+selectOrganizationOld :: (RapidFire m, MonadGen m) => Text -> ColumnName -> SelectOrgMethod -> Value -> AppianT m Value
+selectOrganizationOld buttonName columnName method v = do
+  assign appianValue v
+  selectOrganization buttonName columnName method
+  use appianValue
+
+selectOrganization :: (RapidFire m, MonadGen m) => Text -> ColumnName -> SelectOrgMethod -> AppianT m ()
+selectOrganization buttonName _ ByArbitrary = do
+  sendUpdates1 "Selecting arbitrary organization" gridFieldArbitrarySelect
+  sendUpdates1 ("Click " <> buttonName) (buttonUpdateF "Apply For Funding Now")
+selectOrganization buttonName columnName (ByOrgName targetName) = searchEntities buttonName columnName targetName
+
+searchEntities :: (RapidFire m, MonadGen m) => Text -> ColumnName -> Text -> AppianT m ()
+searchEntities buttonName (ColumnName columnName) entityName = do
+  let orgIdents = (^. runFold ((,) <$> Fold (gfColumns . at columnName . traverse . _TextCellLink . _1) <*> Fold (gfIdentifiers . traverse)) . to (uncurry zip))
+  -- assign appianValue v
+  forGridRows1_ sendUpdates orgIdents (MonadicFold $ getGridFieldCell . traverse) (selectEntity entityName)
+  sendUpdates1 ("Click " <> buttonName) (MonadicFold $ to $ buttonUpdate buttonName)
+  -- use appianValue
+
+selectEntity :: (RapidFire m, MonadGen m) => Text -> (Text, GridFieldIdent) -> GridField GridFieldCell -> AppianT m ()
+selectEntity targetName (name, ident) gf
+  | targetName == name = sendUpdates1 ("Select Entity " <> tshow targetName) (MonadicFold $ to (const $ selectCheckbox ident gf) . to toUpdate . to Right)
+  | otherwise = return ()
+
+data MultiOrgStatus
+  = IsMultiple
+  | IsSingle
+  | Failure Text
+
+handleMultipleEntities :: (RapidFire m, MonadGen m) => (Value -> MultiOrgStatus) -> Text -> ColumnName -> SelectOrgMethod -> AppianT m Value
+handleMultipleEntities isMultiple buttonName columnName selectMethod = do
+  multiple <- usesValue isMultiple
+  _ <- case multiple of
+         IsSingle -> return ()
+         IsMultiple -> selectOrganization buttonName columnName selectMethod
+         Failure msg -> scriptError msg
+
+  use appianValue
+
+handleMultipleEntitiesOld :: (RapidFire m, MonadGen m) => (Value -> MultiOrgStatus) -> Text -> ColumnName -> SelectOrgMethod -> Value -> AppianT m Value
+handleMultipleEntitiesOld isMultiple buttonName columnName selectMethod v = do
+  assign appianValue v
+  handleMultipleEntities isMultiple buttonName columnName selectMethod
+  use appianValue
+  -- case v ^? isMultipleEntities "Apply For Funding Now" of
+  --   Nothing -> return v
+  --   Just "FormLayout" -> selectOrganizationOld "Apply For Funding Now" selectMethod v
+  --   Just _ -> fail "There seems to be some change in the 'Select Organization' page or perhaps it is different for this operation?"

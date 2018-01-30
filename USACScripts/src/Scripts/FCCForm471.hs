@@ -44,15 +44,7 @@ form471Intake conf = do
   pid <- landingPageAction aid
   v'' <- ( do
              v <- landingPageActionEx pid
-             v' <- case v ^? isMultipleEntities of
-               Nothing -> return v
-               Just "FormLayout" -> case conf ^. selectOrgMethod of
-                 ByArbitrary -> sendUpdates "Apply for Funding Now" (gridFieldArbitrarySelect -- MonadicFold (to (gridFieldUpdate 0))
-                                                                      <|> MonadicFold (to (buttonUpdate "Apply For Funding Now"))
-                                                                    ) v
-                 ByOrgName targetName -> searchEntities targetName v
-
-               Just _ -> fail "There seems to be some change in the 'Apply for Funding Now' page?"
+             v' <- handleMultipleEntitiesOld checkMultipleOrgs "Apply for Funding Now" "Organization ID" (conf ^. selectOrgMethod) v
              case v' ^? isWindowClose of
                Nothing -> return v'
                Just False -> return v'
@@ -84,19 +76,29 @@ form471Intake conf = do
     
   ifContinueToCertification val
 
-    -- Common!
-searchEntities :: (RapidFire m, MonadGen m) => Text -> Value -> AppianT m Value
-searchEntities entityName v = do
-  let orgIdents = (^. runFold ((,) <$> Fold (gfColumns . at "Organization ID" . traverse . _TextCellLink . _1) <*> Fold (gfIdentifiers . traverse)) . to (uncurry zip))
-  assign appianValue v
-  forGridRows1_ sendUpdates orgIdents (MonadicFold $ getGridFieldCell . traverse) (selectEntity entityName)
-  sendUpdates1 "Click Apply for Funding Now" (MonadicFold $ to $ buttonUpdate "Apply For Funding Now")
-  use appianValue
+isMultipleEntities :: (Plated s, AsValue s) => Text -> Fold s Text
+isMultipleEntities buttonLabel = hasKeyValue "label" buttonLabel . key "#t" . _String
 
-selectEntity :: (RapidFire m, MonadGen m) => Text -> (Text, GridFieldIdent) -> GridField GridFieldCell -> AppianT m ()
-selectEntity targetName (name, ident) gf
-  | targetName == name = sendUpdates1 ("Select Entity " <> tshow targetName) (MonadicFold $ to (const $ selectCheckbox ident gf) . to toUpdate . to Right)
-  | otherwise = return ()
+checkMultipleOrgs :: Value -> MultiOrgStatus
+checkMultipleOrgs v = case v ^? isMultipleEntities "Apply For Funding Now" of
+    Nothing -> IsSingle
+    Just "FormLayout" -> IsMultiple
+    Just _ -> Failure "There seems to be some change in the 'Select Organization' page or perhaps it is different for this operation?"
+
+
+--     -- Common!
+-- searchEntities :: (RapidFire m, MonadGen m) => Text -> Value -> AppianT m Value
+-- searchEntities entityName v = do
+--   let orgIdents = (^. runFold ((,) <$> Fold (gfColumns . at "Organization ID" . traverse . _TextCellLink . _1) <*> Fold (gfIdentifiers . traverse)) . to (uncurry zip))
+--   assign appianValue v
+--   forGridRows1_ sendUpdates orgIdents (MonadicFold $ getGridFieldCell . traverse) (selectEntity entityName)
+--   sendUpdates1 "Click Apply for Funding Now" (MonadicFold $ to $ buttonUpdate "Apply For Funding Now")
+--   use appianValue
+
+-- selectEntity :: (RapidFire m, MonadGen m) => Text -> (Text, GridFieldIdent) -> GridField GridFieldCell -> AppianT m ()
+-- selectEntity targetName (name, ident) gf
+--   | targetName == name = sendUpdates1 ("Select Entity " <> tshow targetName) (MonadicFold $ to (const $ selectCheckbox ident gf) . to toUpdate . to Right)
+--   | otherwise = return ()
 
 selectMembers :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectMembers v = do
@@ -142,9 +144,6 @@ insufficientDiscountRate v = any (checkResult . parseResult) msgs
     parseResult = parseOnly (manyTill anyChar (string "not sufficient") *> manyTill anyChar (string "Discount Rate") *> pure True)
     checkResult (Left _) = False
     checkResult (Right b) = b
-
-isMultipleEntities :: (Applicative f, Plated s, AsValue s) => (Text -> f Text) -> s -> f s
-isMultipleEntities = hasKeyValue "label" "Apply For Funding Now" . key "#t" . _String
 
 isWindowClose :: (Contravariant f, Applicative f, AsValue t) => (Bool -> f Bool) -> t -> f t
 isWindowClose = key "title" . _String . to (=="FCC Form 471 Funding Year Window is Closed")

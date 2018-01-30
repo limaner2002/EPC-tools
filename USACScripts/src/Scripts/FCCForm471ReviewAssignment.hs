@@ -71,7 +71,6 @@ data Form471ReviewConf = Form471ReviewConf
   , _confFY :: FundingYear
   , _confReviewType :: PIAReviewerType
   , _confReviewer :: Login
-  -- , _confReviewer :: Login
   } deriving Show
 
 makeLenses ''Form471ReviewConf
@@ -83,12 +82,6 @@ instance Csv.FromNamedRecord Form471ReviewConf where
     <*> r Csv..: "fy"
     <*> r Csv..: "revType"
     <*> Csv.parseNamedRecord r
-    -- <*> (Login <$> r Csv..: "mgrUsername"
-    --            <*> r Csv..: "mgrPassword"
-    --     )
-    -- <*> (Login <$> r Csv..: "revUsername"
-    --            <*> r Csv..: "revPassword"
-    --     )
 
 instance HasLogin Form471ReviewConf where
   getLogin conf = conf ^. confReviewer

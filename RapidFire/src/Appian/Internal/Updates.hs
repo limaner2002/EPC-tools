@@ -102,7 +102,6 @@ execDashboardFormT = evalStateT . getComposeT . runDashboardFormT
 runDashboardByName :: RapidFire m => RecordRef -> Text -> AppianT m DashboardState
 runDashboardByName rref dashboardName = do
   val <- viewRecordDashboard rref (Dashboard "summary")
-  writeFile "/tmp/summary.json" $ toStrict $ encode val
   dashboard <- handleMissing ("Could not find dashboard " <> tshow dashboardName) val
   	       $ val ^? getEmbeddedHeader . hasKeyValue "label" dashboardName . key "link" . key "dashboard" . _String . to Dashboard
   dashFeed <- viewRecordDashboard rref dashboard

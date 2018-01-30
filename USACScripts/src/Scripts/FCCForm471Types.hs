@@ -8,7 +8,7 @@ import Control.Lens
 import ClassyPrelude
 import qualified Data.Csv as Csv
 import Appian.Instances
-import Scripts.Common (HasLogin (..))
+import Scripts.Common (HasLogin (..), SelectOrgMethod (..))
 import qualified Data.Attoparsec.Text as T
 
 data Form471Conf = Form471Conf
@@ -111,19 +111,6 @@ parseFRNMethod
   = T.string "471 " *> (ByFCCForm471 <$> T.decimal)
   <|> T.string "FRN " *> (ByFRNNumber <$> T.decimal)
   <|> fail "Could not decode SearchFRNMethod"
-
-data SelectOrgMethod
-  = ByOrgName Text
-  | ByArbitrary
-  deriving (Show, Ord, Eq)
-
-instance Csv.FromField SelectOrgMethod where
-  parseField bs = either failure pure $ parseResult
-    where
-      parseResult = T.parseOnly parseSearchMethod $ decodeUtf8 bs
-      parseSearchMethod = T.string "arbitrary" *> pure ByArbitrary
-        <|> T.string "by name: " *> (ByOrgName <$> T.takeText)
-      failure = const $ fail $ show bs <> " does not appear to be a valid SelectOrgMethod. Please use only 'arbitrary' or 'by name: <orgName>'"
 
 makeLenses ''Form471Conf
 makePrisms ''Form470SearchType
