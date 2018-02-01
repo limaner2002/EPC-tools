@@ -82,7 +82,7 @@ runServiceSubstitution :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime 
 runServiceSubstitution = runIt serviceSubstitution
 
 clickEachLineItemLink :: RapidFire m => AppianT m ()
-clickEachLineItemLink = forGridRows1_ sendUpdates (^. gfColumns . at "FRN Line Item Number" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridField . traverse) clickLineItemLink
+clickEachLineItemLink = void $ forGridRows1_ sendUpdates (^. gfColumns . at "FRN Line Item Number" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridField . traverse) clickLineItemLink
 
 clickLineItemLink :: RapidFire m => DynamicLink -> GridField GridFieldCell -> AppianT m ()
 clickLineItemLink dyl _ = do

@@ -19,7 +19,7 @@ module Appian.Client
 import Servant.API
 import Servant.Client hiding (responseStatus, HasClient, Client)
 import Servant.Client.Core hiding (ServantError, BaseUrl, Https)
-import Control.Lens hiding (cons, index)
+import Control.Lens hiding (cons, index, snoc)
 import Control.Lens.Action.Reified
 import Control.Lens.Action
 import ClassyPrelude
@@ -395,6 +395,9 @@ data CheckButtonDisabled
 buttonUpdate :: Text -> Value -> Either Text Update
 buttonUpdate label v = buttonUpdate_ CheckButtonDisabled label v
 
+buttonUpdateNoCheck :: Text -> Value -> Either Text Update
+buttonUpdateNoCheck label v = buttonUpdate_ NoCheckButtonDisabled label v
+
 buttonUpdate_ :: CheckButtonDisabled -> Text -> Value -> Either Text Update
 buttonUpdate_ checkMode label v = toUpdate <$> (checkDisabled checkMode =<< btn)
   where
@@ -407,6 +410,9 @@ buttonUpdate_ checkMode label v = toUpdate <$> (checkDisabled checkMode =<< btn)
 -- | Reified version of 'buttonUpdate'
 buttonUpdateF :: Text -> ReifiedMonadicFold m Value (Either Text Update)
 buttonUpdateF label = MonadicFold (to $ buttonUpdate label)
+
+buttonUpdateNoCheckF :: Text -> ReifiedMonadicFold m Value (Either Text Update)
+buttonUpdateNoCheckF label = MonadicFold (to $ buttonUpdateNoCheck label)
 
 -- | Reified version of 'buttonUpdateWith'
 buttonUpdateWithF :: (Plated s, AsValue s, AsJSON s) => (Text -> Bool) -> t -> ReifiedMonadicFold m s (Either t Update)
@@ -903,25 +909,27 @@ sendUpdates1' msg fold = do
 
 type Updater m = (Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value)
 
-forGridRows1_ :: RapidFire m => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRows1_ :: RapidFire m => Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m c) -> AppianT m [c]
 forGridRows1_ = forGridRowsWith1_ (const True)
 
-forGridRowsWith1_ :: RapidFire m => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m ()) -> AppianT m ()
+forGridRowsWith1_ :: RapidFire m => (Int -> Bool) -> Updater m -> (GridField a -> Vector b) -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> (b -> GridField a -> AppianT m c) -> AppianT m [c]
 forGridRowsWith1_ continueFcn updateFcn colFcn fold f = do
   v <- use appianValue
   gf <- handleMissing "GridField" v =<< (v ^!? runMonadicFold fold)
-  loop (gf ^. gfTotalCount) 0
+  loop (gf ^. gfTotalCount) 0 []
     where
-      loop total idx = do
+      loop total idx items = do
         val <- use appianValue
         case (idx < total && continueFcn idx) of
-          False -> assign appianValue val
+          False -> do
+            assign appianValue val
+            return items
           True -> do
             (b, gf, val') <- getPagedItem updateFcn colFcn idx fold val
             res <- deltaUpdate val val'
             assign appianValue res
-            f b gf
-            loop total (idx + 1)
+            item <- f b gf
+            loop total (idx + 1) (items `snoc` item)
 
 getPagedItem :: RapidFire m => Updater m -> (GridField a -> Vector b) -> Int -> ReifiedMonadicFold (AppianT m) Value (GridField a) -> Value -> AppianT m (b, GridField a, Value)
 getPagedItem updateFcn colFcn idx fold val = do

@@ -102,13 +102,18 @@ execDashboardFormT = evalStateT . getComposeT . runDashboardFormT
 runDashboardByName :: RapidFire m => RecordRef -> Text -> AppianT m DashboardState
 runDashboardByName rref dashboardName = do
   val <- viewRecordDashboard rref (Dashboard "summary")
+
+  summaryHeader <- handleMissing "Could not find embedded header for the summary dashboard" val $ val ^? getEmbeddedHeader
+
   dashboard <- handleMissing ("Could not find dashboard " <> tshow dashboardName) val
-  	       $ val ^? getEmbeddedHeader . hasKeyValue "label" dashboardName . key "link" . key "dashboard" . _String . to Dashboard
+  	       $ summaryHeader ^? hasKeyValue "label" dashboardName . key "link" . key "dashboard" . _String . to Dashboard
+
   dashFeed <- viewRecordDashboard rref dashboard
+
   uiPart <- handleMissing "Could not find embedded ui for the dashboard" dashFeed $ dashFeed ^? getEmbeddedUi
-  headerPart <- handleMissing "Could not find embedded header for the dashboard" dashFeed $ dashFeed ^? getEmbeddedHeader
-  urlStub <- handleMissing "Could not find the urlstub for the dashboard" headerPart $ headerPart ^? hasType "RecordListLink" . key "urlstub" . _String . to UrlStub
-  rrid <- handleMissing "Could not find the Opaque Record ID" headerPart $ headerPart ^? deep (key "opaqueRecordId" . _String . to RecordId)
+  -- headerPart <- handleMissing "Could not find embedded header for the dashboard" dashFeed $ dashFeed ^? getEmbeddedHeader
+  urlStub <- handleMissing "Could not find the urlstub for the dashboard" summaryHeader $ summaryHeader ^? hasType "RecordListLink" . key "urlstub" . _String . to UrlStub
+  rrid <- handleMissing "Could not find the Opaque Record ID" summaryHeader $ summaryHeader ^? deep (key "opaqueRecordId" . _String . to RecordId)
 
   assign appianValue uiPart
   return $ DashboardState urlStub rrid dashboard
