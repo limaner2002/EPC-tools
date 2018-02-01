@@ -10,6 +10,10 @@ import qualified Data.Csv as Csv
 import Appian.Instances
 import Scripts.Common (HasLogin (..), SelectOrgMethod (..))
 import qualified Data.Attoparsec.Text as T
+import Appian.Types
+import Appian.Lens
+import Data.Aeson
+import Data.Aeson.Lens
 
 data Form471Conf = Form471Conf
   { _nFRNs :: Int
@@ -112,7 +116,33 @@ parseFRNMethod
   <|> T.string "FRN " *> (ByFRNNumber <$> T.decimal)
   <|> fail "Could not decode SearchFRNMethod"
 
+data DiscountRates = DiscountRates
+  { _discCat1 :: DiscountRate
+  , _discCat2 :: DiscountRate
+  , _discVoice :: DiscountRate
+  } deriving Show
+
+getDiscountRate :: Fold Value DiscountRates
+getDiscountRate = getGridFieldCell . traverse . gfColumns
+  . runFold (DiscountRates
+             <$> Fold (at "Category One Discount Rate" . traverse . _TextCell . traverse . traverse . to parseDiscountRate . traverse)
+             <*> Fold (at "Category Two Discount Rate" . traverse . _TextCell . traverse . traverse . to parseDiscountRate . traverse)
+             <*> Fold (at "Voice Discount Rate" . traverse . _TextCell . traverse . traverse . to parseDiscountRate . traverse)
+            )
+
+newtype DiscountRate = DiscountRate Int
+  deriving Show
+
+parseDiscountRate :: Text -> Either String DiscountRate
+parseDiscountRate = T.parseOnly discountRateParser
+
+discountRateParser :: T.Parser DiscountRate
+discountRateParser = DiscountRate <$> T.decimal <* T.char '%'
+  T.<?> "Failed to parse the discount rate"
+
 makeLenses ''Form471Conf
+makeLenses ''DiscountRate
+
 makePrisms ''Form470SearchType
 makePrisms ''Category
 makePrisms ''LineItemSize

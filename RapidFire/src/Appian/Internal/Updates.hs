@@ -96,24 +96,25 @@ actionByName label action = runActionT $ do
 execDashboardFormT :: (RapidFire m, MonadGen m) => DashboardFormT m a -> DashboardState -> AppianT m a
 execDashboardFormT = evalStateT . getComposeT . runDashboardFormT
 
--- dashboardForm :: (RapidFire m, MonadGen m) => Dashboard a -> DashboardState -> AppianT m a
--- dashboardForm action dashState = execDashboardFormT 
-
 runDashboardByName :: RapidFire m => RecordRef -> Text -> AppianT m DashboardState
-runDashboardByName rref dashboardName = do
+runDashboardByName rref dashboardName = runDashboardByName' rref dashboardName >>= either throwError pure
+
+runDashboardByName' :: RapidFire m => RecordRef -> Text -> AppianT m (Either ScriptError DashboardState)
+runDashboardByName' rref dashboardName = do
   val <- viewRecordDashboard rref (Dashboard "summary")
 
   summaryHeader <- handleMissing "Could not find embedded header for the summary dashboard" val $ val ^? getEmbeddedHeader
 
-  dashboard <- handleMissing ("Could not find dashboard " <> tshow dashboardName) val
-  	       $ summaryHeader ^? hasKeyValue "label" dashboardName . key "link" . key "dashboard" . _String . to Dashboard
+  case summaryHeader ^? hasKeyValue "label" dashboardName . key "link" . key "dashboard" . _String . to Dashboard of
+    Nothing -> return $ Left $ MissingComponentError ("Could not find dashboard " <> tshow dashboardName, val)
+    Just dashboard -> do
 
-  dashFeed <- viewRecordDashboard rref dashboard
+      dashFeed <- viewRecordDashboard rref dashboard
 
-  uiPart <- handleMissing "Could not find embedded ui for the dashboard" dashFeed $ dashFeed ^? getEmbeddedUi
-  -- headerPart <- handleMissing "Could not find embedded header for the dashboard" dashFeed $ dashFeed ^? getEmbeddedHeader
-  urlStub <- handleMissing "Could not find the urlstub for the dashboard" summaryHeader $ summaryHeader ^? hasType "RecordListLink" . key "urlstub" . _String . to UrlStub
-  rrid <- handleMissing "Could not find the Opaque Record ID" summaryHeader $ summaryHeader ^? deep (key "opaqueRecordId" . _String . to RecordId)
+      uiPart <- handleMissing "Could not find embedded ui for the dashboard" dashFeed $ dashFeed ^? getEmbeddedUi
+      -- headerPart <- handleMissing "Could not find embedded header for the dashboard" dashFeed $ dashFeed ^? getEmbeddedHeader
+      urlStub <- handleMissing "Could not find the urlstub for the dashboard" summaryHeader $ summaryHeader ^? hasType "RecordListLink" . key "urlstub" . _String . to UrlStub
+      rrid <- handleMissing "Could not find the Opaque Record ID" summaryHeader $ summaryHeader ^? deep (key "opaqueRecordId" . _String . to RecordId)
 
-  assign appianValue uiPart
-  return $ DashboardState urlStub rrid dashboard
+      assign appianValue uiPart
+      return $ Right $ DashboardState urlStub rrid dashboard

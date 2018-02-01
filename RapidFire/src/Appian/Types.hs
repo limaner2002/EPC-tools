@@ -322,7 +322,7 @@ data PagingInfo = PagingInfo
 
 data SortField = SortField
   { _sfdField :: Text
-  , _sfdAscending :: Bool
+  , _sfdAscending :: Maybe Bool
   } deriving Show
 
 newtype AppianDate = AppianDate { _appianDate :: Maybe Day }
@@ -1045,7 +1045,7 @@ instance FromJSON PagingInfo where
 instance FromJSON SortField where
   parseJSON (Object o) = SortField
     <$> o .: "field"
-    <*> o .: "ascending"
+    <*> o .:? "ascending"
 
 instance FromJSON AppianLink where
   parseJSON val@(Object o) = parseRecordLink <|> pure DocumentLink

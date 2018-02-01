@@ -33,7 +33,7 @@ import Scripts.FCCForm471Types
 import Scripts.FCCForm471Common (Form471Num(..))
 import Data.Random (MonadRandom)
 import Control.Retry
-import Control.Monad.Except hiding (foldM)
+import Control.Monad.Except hiding (foldM, mapM_)
 
 form471Intake :: (RapidFire m, MonadGen m, MonadIO m) => Form471Conf -> AppianT m Form471Num
 form471Intake conf = do
@@ -151,20 +151,25 @@ viewDiscountRates rref = do
 viewDiscountRates' :: (RapidFire m, MonadGen m) => (GridFieldIdent, RecordRef) -> GridField GridFieldCell -> AppianT m ()
 viewDiscountRates' (identifier, rref) gf = do
   v <- use appianValue
-  dashState <- runDashboardByName rref "Discount Rate"
+  eDashState <- runDashboardByName' rref "Discount Rate"
+  case eDashState of
+    Left _ -> return ()
+    Right dashState -> do
+      discountRates <- execDashboardFormT (usesValue' (^.. getDiscountRate)) dashState
+      assign appianValue v
 
-  insufficient <- execDashboardFormT (usesValue' insufficientDiscountRate) dashState
-  assign appianValue v
-
-  case insufficient of
-    True -> return ()
-    False -> sendUpdates1 "Selecting Member Entity"
-      (componentUpdateWithF "The impossible happened! Check the viewDiscountRates function in 471 intake."
-        (to (const $ gridFieldSelect identifier gf))
-      )        
+      case discountRates of
+        [] -> return ()
+        discounts -> do
+          mapM_ (logDebugN . tshow) $ discounts
+          sendUpdates1 "Selecting Member Entity"
+            (componentUpdateWithF "The impossible happened! Check the viewDiscountRates function in 471 intake."
+             (to (const $ gridFieldSelect identifier gf))
+            )
+        
 
 gridFieldSelect :: GridFieldIdent -> GridField GridFieldCell -> GridField GridFieldCell
-gridFieldSelect ident = getGridFieldIdfs %~ (cons ident)
+gridFieldSelect ident = gfSelection . traverse . _Selectable . gslSelected %~ (cons ident)
 
 usesValue' :: Monad m => (Value -> a) -> DashboardFormT m a
 usesValue' f = mkDashboardFormT $ \dashState -> do
@@ -176,6 +181,9 @@ usesValue' f = mkDashboardFormT $ \dashState -> do
 --   v <- viewRecordDashboard rref (Dashboard "summary")
 --   dashboard <- handleMissing "Discount Rate" v $ v ^? getRecordDashboard "Discount Rate"
 --   viewRecordDashboard rref dashboard
+
+hasDiscountRate :: Value -> Bool
+hasDiscountRate = has getDiscountRate
 
 insufficientDiscountRate :: Value -> Bool
 insufficientDiscountRate v = any (checkResult . parseResult) msgs

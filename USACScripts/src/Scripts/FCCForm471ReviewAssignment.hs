@@ -106,7 +106,7 @@ form471Assign conf = do
                                                 )
 
 setAppNumSort :: GridField a -> GridField a
-setAppNumSort = gfSelection . traverse . failing _NonSelectable (_Selectable . gslPagingInfo) . pgISort .~ Just [SortField "applicationNumber" True]
+setAppNumSort = gfSelection . traverse . failing _NonSelectable (_Selectable . gslPagingInfo) . pgISort .~ Just [SortField "applicationNumber" (Just True)]
 
 gridSelection :: [Int] -> GridField a -> GridField a
 gridSelection idxs gf = gfSelection . traverse . _Selectable . gslSelected .~ idents $ gf

@@ -1,11 +1,8 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Scripts.ComadIntake where
-
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 import Appian.Client
 import Scripts.Common
@@ -29,6 +26,7 @@ comadIntake :: Login -> Appian Value
 comadIntake _ = do
     executeActionByName "Initiate COMAD"
     sendUpdates1 "Select Funding Year" (dropdownUpdateF1 "Funding Year" "2017")
+    sendUpdates1 "Click 'No' Button" (buttonUpdateF "No")
     mGF <- usesValue (^? getGridFieldCell . traverse)
     case mGF of
         Nothing -> fail "Could not find grid field!"
