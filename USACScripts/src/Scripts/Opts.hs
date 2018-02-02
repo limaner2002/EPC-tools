@@ -158,6 +158,14 @@ form471IntakeAndCertify conf = do
             -- unchanged.
     either throwError pure eRes
 
+certify471Retrying :: CertConf -> Appian Form471Num
+certify471Retrying certConf = retrying findTaskRetryPolicy shouldRetry (const $ certify `catchError` certifyCatch) >>= either throwError pure
+  where
+    certify = do
+      res <- form471Certification certConf
+      return $ Right res
+    certifyCatch = pure . Left
+
 runComadInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runComadInitialReview baseConf = runIt $ comadInitialReview baseConf
 
@@ -468,7 +476,7 @@ form471CertifyInfo = info (helper <*> form471CertifyParser)
   <> progDesc "Runs the 'Service Substitution Intake' script"
   )
   where
-    form471CertifyParser = runItParser $ retrying findTaskRetryPolicy shouldRetry (const $ (runForm471Certification `catchError` certifyCatch))
+    form471CertifyParser = runItParser $ runIt certify471Retrying
 
 reverseTestParser :: Parser (IO ())
 reverseTestParser = fmap void $ runReverseTest
