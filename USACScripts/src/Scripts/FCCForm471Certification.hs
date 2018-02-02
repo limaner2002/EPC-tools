@@ -26,6 +26,8 @@ import Control.Monad.Time
 import qualified Data.Csv as Csv
 import Data.Random (MonadRandom)
 import Control.Monad.Except
+import Scripts.Execute
+import Stats.CsvStream
 
 data CertConf = CertConf
   { _certFormNum :: Form471Num
@@ -77,3 +79,5 @@ checkResult v = do
   sendUpdates "Click Close" (MonadicFold $ to $ buttonUpdate "Close") v
   return num
 
+runForm471Certification :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Form471Num))]
+runForm471Certification = runIt form471Certification

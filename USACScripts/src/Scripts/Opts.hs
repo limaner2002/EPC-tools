@@ -252,6 +252,7 @@ parseCommands = subparser
   <> command "displayInvoiceDetails" displayInvoiceDetailsInfo
   <> command "serviceSubstitutionIntake" serviceSubstitutionIntakeInfo
   <> command "edit471App" edit471ApplicationInfo
+  <> command "form471Certification" form471CertifyInfo
   )
 
 urlParser :: Parser BaseUrl
@@ -460,6 +461,14 @@ edit471ApplicationInfo = info (helper <*> edit471ApplicationParser)
   )
   where
     edit471ApplicationParser = runItParser runEdit471Application
+
+form471CertifyInfo :: ParserInfo (IO ())
+form471CertifyInfo = info (helper <*> form471CertifyParser)
+  (  fullDesc
+  <> progDesc "Runs the 'Service Substitution Intake' script"
+  )
+  where
+    form471CertifyParser = runItParser runForm471Certification
 
 reverseTestParser :: Parser (IO ())
 reverseTestParser = fmap void $ runReverseTest

@@ -71,10 +71,11 @@ form471Intake conf = do
   frnList <- sendUpdates "View Entity Types" (buttonUpdateNoCheckF "Save & Continue") entityInformation
     >>= sendUpdates "View Discount Rates" (buttonUpdateNoCheckF "Save & Continue")
     >>= createFRN conf (conf ^. nFRNs) (conf ^. spin)
+--     >>= sendUpdates "Click new link thingy" (dynamicLinkUpdateF ">> View Category Two Budget Information and fail here!")
   val <- case conf ^. createFRNType of
     NewFRN -> forLineItems conf frnList
     CopyFRN _ -> clickThroughAllFRNLineItems frnList
-    
+
   ifContinueToCertification val
 
 isMultipleEntities :: (Plated s, AsValue s) => Text -> Fold s Text
