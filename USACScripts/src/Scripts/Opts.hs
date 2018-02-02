@@ -468,7 +468,7 @@ form471CertifyInfo = info (helper <*> form471CertifyParser)
   <> progDesc "Runs the 'Service Substitution Intake' script"
   )
   where
-    form471CertifyParser = runItParser runForm471Certification
+    form471CertifyParser = runItParser $ retrying findTaskRetryPolicy shouldRetry (const $ (runForm471Certification `catchError` certifyCatch))
 
 reverseTestParser :: Parser (IO ())
 reverseTestParser = fmap void $ runReverseTest

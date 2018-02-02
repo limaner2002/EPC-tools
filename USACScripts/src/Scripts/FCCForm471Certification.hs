@@ -51,11 +51,11 @@ form471Certification conf = do
   taskAccept taskId
   taskStatus taskId
     >>= sendUpdates "Check box and Continue to Certification" (selectAllCheckboxesUpdateF
-                                                              <|> MonadicFold (to $ buttonUpdate "Continue to Certification")
+                                                              <|> buttonUpdateNoCheckF "Continue to Certification"
                                                               )
     >>= sendUpdates "Check all boxes, Select dropdowns, and Click Certify" (selectAllCheckboxesUpdateF
                                                                            <|> selectAllDropdownsUpdateF
-                                                                           <|> MonadicFold (to $ buttonUpdate "Certify")
+                                                                           <|> buttonUpdateNoCheckF "Certify"
                                                                            )
     >>= checkResult
   
@@ -76,7 +76,7 @@ selectAllDropdownsUpdateF = MonadicFold (failing (hasType "DropdownField" . _JSO
 checkResult :: RapidFire m => Value -> AppianT m Form471Num
 checkResult v = do
   num <- handleMissing "It appears the 471 was not created successfully?" v $ v ^? hasKeyValueWith (isPrefixOf "You have successfully filed FCC Form 471") "label" . key "label" . _String . to (parseOnly parse471Number) . traverse
-  sendUpdates "Click Close" (MonadicFold $ to $ buttonUpdate "Close") v
+  sendUpdates "Click Close" (buttonUpdateF "Close") v
   return num
 
 runForm471Certification :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Form471Num))]
