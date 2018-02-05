@@ -19,6 +19,7 @@ import Scripts.ReviewCommon
 import Control.Monad.Time
 import Data.Random (MonadRandom)
 import Control.Monad.Except
+import Appian.Internal.Updates
 
 assignment :: RapidFire m => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 assignment baseConf conf = do

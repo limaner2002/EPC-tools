@@ -287,13 +287,6 @@ notFinished _ = True
 tcItem (Item a) = a
 tcItem _ = error "This should have already terminated!"
 
-openReport :: RapidFire m => Text -> AppianT m (ReportId, Value)
-openReport reportName = do
-  v <- reportsTab
-  rid <- getReportId reportName v
-  v' <- editReport rid
-  return (rid, v')
-
 -- viewRelatedActions :: RapidFire m => Value -> RecordRef -> AppianT m (RecordRef, Value)
 -- viewRelatedActions v recordRef = do
 --   let ref = recordRef

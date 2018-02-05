@@ -67,6 +67,8 @@ data Form470FunctionType
 data LineItemSize
   = Small
   | Regular
+  | Large
+  | Range Int Int
   deriving (Show, Read)
 
 data Category

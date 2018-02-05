@@ -25,6 +25,7 @@ import Control.Monad.Time
 import qualified Data.Csv as Csv
 import Data.Random (MonadRandom)
 import Control.Monad.Except
+import Appian.Internal.Updates
 
 data ReviewBaseConf = ReviewBaseConf
   { reviewType :: ReviewType

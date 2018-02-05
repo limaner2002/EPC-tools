@@ -24,6 +24,7 @@ import Scripts.FCCForm471Common
 import qualified Data.Csv as Csv
 import Data.Random (MonadRandom)
 import Control.Monad.Except
+import Appian.Internal.Updates
 
 data PIAReviewerType
   = PIAInitial

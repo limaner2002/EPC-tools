@@ -118,3 +118,19 @@ runDashboardByName' rref dashboardName = do
 
       assign appianValue uiPart
       return $ Right $ DashboardState urlStub rrid dashboard
+
+execReportT :: RapidFire m => ReportT m a -> ReportId -> AppianT m a
+execReportT = evalStateT . getComposeT . runReportT
+
+runReportByName :: RapidFire m => Text -> ReportT m a -> AppianT m a
+runReportByName reportName reportFcn = do
+  (rid, val) <- openReport reportName
+  assign appianValue val
+  execReportT reportFcn rid
+
+openReport :: RapidFire m => Text -> AppianT m (ReportId, Value)
+openReport reportName = do
+  v <- reportsTab
+  rid <- getReportId reportName v
+  v' <- editReport rid
+  return (rid, v')

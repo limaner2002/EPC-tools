@@ -71,12 +71,16 @@ form471Intake conf = do
   frnList <- sendUpdates "View Entity Types" (buttonUpdateNoCheckF "Save & Continue") entityInformation
     >>= sendUpdates "View Discount Rates" (buttonUpdateNoCheckF "Save & Continue")
     >>= createFRN conf (conf ^. nFRNs) (conf ^. spin)
---     >>= sendUpdates "Click new link thingy" (dynamicLinkUpdateF ">> View Category Two Budget Information and fail here!")
   val <- case conf ^. createFRNType of
     NewFRN -> forLineItems conf frnList
     CopyFRN _ -> clickThroughAllFRNLineItems frnList
 
-  ifContinueToCertification val
+  -- sendUpdates "Click new link thingy" (dynamicLinkUpdateF ">> View Category Two Budget Information and fail here!") val
+  val' <- case val ^? getButton "Continue" of
+    Just _ -> sendUpdates "Click 'Continue'" (buttonUpdateF "Continue") val
+    Nothing -> return val
+
+  ifContinueToCertification val'
 
 isMultipleEntities :: (Plated s, AsValue s) => Text -> Fold s Text
 isMultipleEntities buttonLabel = hasKeyValue "label" buttonLabel . key "#t" . _String
@@ -204,6 +208,8 @@ selectFirst = gfIdentifiers . traverse . taking 1 traverse
 arbTextInt :: MonadGen m => LineItemSize -> m Text
 arbTextInt Small = genArbitrary (resize 1 $ QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
 arbTextInt Regular = genArbitrary (QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
+arbTextInt Large = genArbitrary (resize 1000000 $ QC.arbitrarySizedNatural :: Gen Int) >>= pure . tshow . (+1)
+arbTextInt (Range low high) = genArbitrary (QC.choose (low, high) :: Gen Int) >>= pure . tshow
 
 membersCompleted :: Value -> Bool
 membersCompleted v = case v ^? deep (filtered $ has $ key "value" . _String . prefixed "We've completed this section of the form based on information from your applicant entity's profile.") of
@@ -415,7 +421,7 @@ forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse
 addLineItem' :: (RapidFire m, MonadGen m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
 addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' (conf ^. nLineItems)
-  >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
+  -- >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
   where
     addLineItem'' 0 val = return val
     addLineItem'' n val = do
