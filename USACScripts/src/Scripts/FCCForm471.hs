@@ -419,9 +419,10 @@ forLineItems :: (RapidFire m, MonadGen m) => Form471Conf -> Value -> AppianT m V
 forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' conf dyl v)
 
 addLineItem' :: (RapidFire m, MonadGen m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
-addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
+addLineItem' conf dyl v = sendUpdates ("Click FRN Link: " <> tshow dyl) (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' (conf ^. nLineItems)
   -- >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
+  >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue") "Could not locate 'Continue' or 'Review 471 Button'")
   where
     addLineItem'' 0 val = return val
     addLineItem'' n val = do

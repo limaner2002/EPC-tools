@@ -450,7 +450,7 @@ pickerUpdate label uname v = toUpdate <$> (_Right . pwValue .~ Just (toJSON unam
   where
     apd = maybeToEither ("Could not find PickerField " <> tshow label) $ v ^? getPickerWidget label
 
--- Reified version of 'pickerUpdate'
+-- | Reified version of 'pickerUpdate'
 pickerUpdateF :: (FromJSON b, ToJSON b) => Text -> AppianPickerData b -> ReifiedMonadicFold m Value (Either Text Update)
 pickerUpdateF label pickerData = MonadicFold (to $ pickerUpdate label pickerData)
 
