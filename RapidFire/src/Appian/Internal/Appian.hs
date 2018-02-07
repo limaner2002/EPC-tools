@@ -155,3 +155,6 @@ instance (MonadDelay m, MonadTrans t, Monad (t m)) => MonadDelay (t m) where
   delay = lift . delay
 
 type RapidFire m = (RunClient m, MonadError ServantError m, MonadTime m, MonadLogger m, MonadCatch m, MonadDelay m, MonadRandom m, MonadError ServantError m, MonadThreadId m)
+
+newtype NumRecords = NumRecords Int
+  deriving (Show, Eq, Ord, Num)

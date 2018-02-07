@@ -49,7 +49,6 @@ import Control.Arrow ((>>>))
 import qualified Data.Csv as Csv
 import Scripts.ProducerConsumer
 import Control.Retry
-import qualified Control.Concurrent.Async.Pool as Pool
 import Control.Monad.Except (catchError, throwError)
 import Scripts.Noise
 import Test.QuickCheck
@@ -126,7 +125,7 @@ run486Intake = runIt form486Intake
 runInitialReview :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runInitialReview conf = runIt (initialReview conf)
 
-runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO ()
+runReviewAssign :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> NumRecords -> IO ()
 runReviewAssign conf = runScriptExhaustive (assignment conf)
 
 runNoise :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError ()))]
@@ -201,28 +200,8 @@ runLogger :: (MonadBaseControl IO m, MonadIO m, Forall (Pure m), MonadThrow m) =
 runLogger LogStdout f = runStdoutLoggingT f
 runLogger (LogFile logFilePath) f = runParallelFileLoggingT logFilePath f
 
-exhaustiveProducer :: (Csv.FromNamedRecord a, MonadResource m, MonadLogger m) => TBQueue a -> CsvPath -> m String
-exhaustiveProducer q = csvStreamByName >>> S.mapM_ (atomically . writeTBQueue q)
-
-runScriptExhaustive :: (Csv.FromNamedRecord a, Show a, HasLogin a) => (a -> Appian b) -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> Int -> IO ()
-runScriptExhaustive f bounds (HostUrl hostUrl) logMode csvInput nThreads numRecords = do
-  mgr <- newManager $ setTimeout (responseTimeoutMicro 90000000000) $ tlsManagerSettings { managerModifyResponse = cookieModifier }
-  let env = ClientEnv mgr (BaseUrl Https hostUrl 443 mempty)
-      appianState = newAppianState bounds
-  confs <- csvStreamByName >>> S.take numRecords >>> S.toList >>> runResourceT >>> runStdoutLoggingT $ csvInput
-  execTaskGroup_ nThreads (\a -> runStdoutLoggingT $ do
-                             res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
-                             logResult res
-                         ) $ S.fst' confs
-
-execTaskGroup :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO (t b)
-execTaskGroup (NThreads n) f args = Pool.withTaskGroup n $ \group -> Pool.mapConcurrently group f args
-
-execTaskGroup_ :: Traversable t => NThreads -> (a -> IO b) -> t a -> IO ()
-execTaskGroup_ n f args = execTaskGroup n f args >> return ()
-
-runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError (Maybe Text)))]
-runSPINIntake = runIt spinChangeIntake
+-- runSPINIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError (Maybe Text)))]
+-- runSPINIntake = runIt spinChangeIntake
 
 dispResults :: [Either ServantError (Either ScriptError a)] -> IO ()
 dispResults results = do
@@ -261,6 +240,7 @@ parseCommands = subparser
   <> command "serviceSubstitutionIntake" serviceSubstitutionIntakeInfo
   <> command "edit471App" edit471ApplicationInfo
   <> command "form471Certification" form471CertifyInfo
+  <> command "spinChangeIntake" spinChangeIntakeInfo
   )
 
 urlParser :: Parser BaseUrl
@@ -395,10 +375,7 @@ reviewAssignParser = fmap void $ runReviewAssign
   <*> logModeParser
   <*> csvConfParser
   <*> nthreadParser
-  <*> option auto
-  (  long "numRecords"
-  <> help "The total number of records to exhaust."
-  )
+  <*> parseOption
 
 reverseTestInfo :: ParserInfo (IO ())
 reverseTestInfo = info (helper <*> reverseTestParser)
@@ -510,24 +487,32 @@ comadInitialParser = fmap void $ runComadInitialReview
 --   <> help "The csv config file for 471 intake."
 --   )
 
-spinChangeInfo :: ParserInfo (IO ())
-spinChangeInfo = info (helper <*> spinChangeParser)
-  (  fullDesc
-  <> progDesc "Runs the SPIN Change intake script."
-  )
+-- spinChangeInfo :: ParserInfo (IO ())
+-- spinChangeInfo = info (helper <*> spinChangeParser)
+--   (  fullDesc
+--   <> progDesc "Runs the SPIN Change intake script."
+--   )
 
-spinChangeParser :: Parser (IO ())
-spinChangeParser = void <$> (runSPINIntake
-  <$> boundsParser
-  <*> (HostUrl <$> strOption
-  (  long "host-url"
-  <> help "The url of the host to use."
-  ))
-  <*> logModeParser
-  <*> csvConfParser
-  <*> rampupParser
-  <*> nthreadParser
-                            )
+-- spinChangeParser :: Parser (IO ())
+-- spinChangeParser = void <$> (runSPINIntake
+--   <$> boundsParser
+--   <*> (HostUrl <$> strOption
+--   (  long "host-url"
+--   <> help "The url of the host to use."
+--   ))
+--   <*> logModeParser
+--   <*> csvConfParser
+--   <*> rampupParser
+--   <*> nthreadParser
+--                             )
+
+spinChangeIntakeInfo :: ParserInfo (IO ())
+spinChangeIntakeInfo = info (helper <*> spinChangeIntakeParser)
+  (  fullDesc
+  <> progDesc "Runs the 'SPIN Change Intake' script"
+  )
+  where
+    spinChangeIntakeParser = runScriptExhaustiveParser runSpinChangeIntake
 
 -- nthreadParser :: Parser NThreads
 -- nthreadParser = NThreads

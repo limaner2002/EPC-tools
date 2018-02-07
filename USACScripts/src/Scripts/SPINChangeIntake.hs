@@ -24,23 +24,11 @@ import Control.Monad.Time
 import qualified Data.Csv as Csv
 import Data.Random (MonadRandom)
 import Control.Monad.Except
+import Scripts.Execute
+import Stats.CsvStream
 
 newtype SpinChangeType = SpinChangeType Text
   deriving (Show, Eq, Parseable)
-
--- data SpinChangeType
---   = SpinChangeBulk
---   | SpinChangeGlobal
---   | SpinChange
---   | SpinChangeSRC
---   deriving (Show, Read, Eq)
-
--- instance Parseable SpinChangeType where
---   parseElement "Bulk SPIN" = return SpinChangeBulk
---   parseElement "Global SPIN" = return SpinChangeGlobal
---   parseElement "SRC SPIN" = return SpinChangeSRC
---   parseElement "SPIN Change" = return SpinChange
---   parseElement txt = Left $ tshow txt <> " is not a recognized SPIN Change Type." -- throwM $ ParseException $ tshow txt <> " is not a recognized SPIN Change Type."
 
 newtype FY = FY { _unFY :: Int }
   deriving (Show, Eq, Parseable, Csv.FromField)
@@ -82,8 +70,6 @@ spinChangeIntake' :: (RapidFire m, MonadGen m) => SpinChangeConfig -> Value -> A
 spinChangeIntake' conf v = do
   let un = Identifiers [AppianUsername "kyle.davie@fwisd.org"]
 
-  -- v' <- myLandingPageAction "Create SPIN Change"
-
   v' <- case v ^? hasKeyValue "label" "Existing Organizations" of
     Nothing -> return v
     Just _ -> sendUpdates "Select Organization" ( gridFieldArbitrarySelect
@@ -121,38 +107,11 @@ spinChangeIntake' conf v = do
 
   use appianValue
     >>= \res -> return (res ^? deep (filtered $ has $ key "#v" . _String . suffixed "has been successfully created") . key "#v" . _String . to parseNumber . traverse)
-  -- sendUpdates "Nickname & SPIN Change Type" (MonadicFold (textFieldArbitrary "Nickname" 255)
-  --                                            <|> dropdownUpdateF' "SPIN Change Type" (conf ^. spinChangeType)
-  --                                           ) v'
-  --   >>= sendUpdates' "Funding Year & Main Contact & Continue" (MonadicFold (to (dropdownUpdate "Funding Year" 2))
-  --                                                              <|> MonadicFold (to (pickerUpdate "Main Contact Person" un))
-  --                                                              <|> MonadicFold (to (buttonUpdate "Continue"))
-  --                                                             )
-  --   >>= handleValidations
-  --   >>= selectOldSPIN
-  --   >>= sendUpdates "Add All FRNs Button & Continue" (addAllFRNsButtonUpdate
-  --                                                     <|> MonadicFold (to (buttonUpdate "Continue"))
-  --                                                    )
-  --   >>= \v -> foldGridFieldPages (MonadicFold (getGridFieldCell . traverse)) printFRNs v v
-  --   >>= selectNewSPIN (conf ^. spinNewSPIN)
-  --   >>= sendUpdates "Click Preview" (MonadicFold (to (dropdownUpdate "Please select the reason why you would like to change the service provider on the FRN(s)" 2))
-  --                                     <|> MonadicFold (to (buttonUpdate "Preview"))
-  --                                   )
-  --   >>= sendUpdates "Click Submit" (MonadicFold (to (buttonUpdate "Submit")))
-  --   >>= \res -> return (res ^? deep (filtered $ has $ key "#v" . _String . suffixed "has been successfully created") . key "#v" . _String . to parseNumber . traverse)
 
 printFRNs :: (RapidFire m, MonadGen m) => Value -> GridField GridFieldCell -> AppianT m (Value, Value)
 printFRNs val gf = do
   v <- foldGridField (printFRN val) "FRN" val gf
   return (v, v)
-
--- printFRN :: (RapidFire m, MonadGen m) => Value -> Value -> GridFieldCell -> AppianT m Value
--- printFRN val _ gf = (F.foldlM . F.foldlM) f val $ gf ^.. _TextCellDynLink . _2
---   where
---     f _ dyl =   sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) val
---             >>= sendUpdates "No & Continue" ( MonadicFold (to $ buttonUpdate "No")
---                                               <|> MonadicFold (to $ buttonUpdate "Continue")
---                                             )
 
 printFRN :: (RapidFire m, MonadGen m) => Value -> Value -> GridFieldCell -> AppianT m Value
 printFRN val _ gf = (F.foldlM . F.foldlM) f val $ gf ^.. _TextCellDynLink . _2
@@ -160,8 +119,9 @@ printFRN val _ gf = (F.foldlM . F.foldlM) f val $ gf ^.. _TextCellDynLink . _2
     f _ dyl = do
       assign appianValue val
       sendUpdates1 "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right))
-      sendUpdates1 "Select 'No'" ( MonadicFold (to $ buttonUpdate "No"))
-      sendUpdates1 "Click 'Continue'" (MonadicFold (to $ buttonUpdate "Continue"))
+      sendUpdates1 "Click all 'No'" (componentUpdateWithF "Could not find 'No' buttons" $ getButton "No")
+      sendUpdates1 "Click 'Continue'" (buttonUpdateF "Continue")
+      
       use appianValue
 
 selectNewSPIN :: (RapidFire m, MonadGen m) => NewSPIN -> Value -> AppianT m Value
@@ -170,21 +130,15 @@ selectNewSPIN (NewSPIN spin) val = do
   (ident :: AppianInt) <- handleMissing "Could not find SPIN Picker" v $ v ^? getPickerWidget "New Service Provider Information Number (SPIN)" . pwSuggestions . traverse . plate . key "identifier" . _JSON
   sendUpdates "Select SPIN" (MonadicFold (to (pickerUpdate "New Service Provider Information Number (SPIN)" (Identifiers [ident])))) v
 
--- selectOldSPIN :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
--- selectOldSPIN v = do
---   spin <- handleMissing "SPIN Column" v $ v ^? getGridFieldCell . traverse . gfColumns . at "SPIN" . traverse . _TextCell . traverse . _Just
---   sendUpdates "Search for FRNs with SPIN" (MonadicFold (to (textUpdate "SPIN" spin))
---                                    <|> MonadicFold (to (buttonUpdate "Search"))
---                                    ) v
---   return v
-
 selectOldSPIN :: (RapidFire m, MonadGen m) => AppianT m ()
 selectOldSPIN = do
-  -- sendUpdates1 (componentUpdateWithF "Cannot find 'SPIN Column'" $ getGridFieldCell . traverse . gfColumns . at "SPIN" . traverse . _TextCell . traverse . _Just)
   v <- use appianValue
   spin <- handleMissing "SPIN Column" v $ v ^? getGridFieldCell . traverse . gfColumns . at "SPIN" . traverse . _TextCell . traverse . _Just
   sendUpdates1 "Search for FRNs with SPIN" (textUpdateF "SPIN" spin)
   sendUpdates1 "Click 'Search'" (buttonUpdateF "Search")
+  
+runSpinChangeIntake :: Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> NumRecords -> IO ()
+runSpinChangeIntake = runScriptExhaustive spinChangeIntake
 
 -- | This function is needed because the button label changes depending on the number of FRNs available. This is equivalent to the regex 'Add all (.*) FRNs'
 isAddAllButton :: Text -> Bool

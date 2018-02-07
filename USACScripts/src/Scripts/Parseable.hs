@@ -113,6 +113,13 @@ nthreadParser = NThreads
   <> help "The number of concurrent threads to execute."
   )
 
+instance HasOption NumRecords where
+  parseOption = NumRecords
+    <$> option auto
+    (  long "numRecords"
+    <> help "The total number of records to exhaust."
+    )
+
 class Parseable a where
   type family (Parse a)
   buildParser :: Parser a -> Parse a
@@ -130,3 +137,6 @@ instance Parseable (IO a) where
 
 runItParser :: (Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO a) -> Parser (IO ())
 runItParser f = buildParser $ pure $ \b h l c r n -> void $ f b h l c r n
+
+runScriptExhaustiveParser :: (Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> NumRecords -> IO a) -> Parser (IO ())
+runScriptExhaustiveParser f = buildParser $ pure $ \b h l c n nr -> void $ f b h l c n nr
