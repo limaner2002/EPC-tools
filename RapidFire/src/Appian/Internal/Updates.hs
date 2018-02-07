@@ -60,9 +60,7 @@ instance HasUpdate ActionT m where
     
 instance HasUpdate ReportT m where
     update msg fold = mkReportT $ \rid -> do
-      val <- use appianValue
-      sendReportUpdates rid msg fold val
-      assign appianValue val
+      sendReportUpdates1 rid msg fold
       pure ((), rid)
 
 instance HasUpdate DashboardFormT m where

@@ -591,6 +591,13 @@ sendReportUpdates reportId label f v = do
 sendReportUpdates' :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m (Either (ScriptError, Value) Value)
 sendReportUpdates' reportId label f v = sendUpdates_ (reportUpdate reportId) label f v
 
+sendReportUpdates1 :: RapidFire m => ReportId -> Text -> ReifiedMonadicFold m Value (Either Text Update) -> AppianT m ()
+sendReportUpdates1 reportId label f = do
+  previousVal <- use appianValue
+  newVal <- sendReportUpdates reportId label f previousVal
+  res <- deltaUpdate previousVal newVal
+  assign appianValue res
+
 sendUpdates :: RapidFire m => Text -> ReifiedMonadicFold m Value (Either Text Update) -> Value -> AppianT m Value
 sendUpdates label f v = do
   eRes <- sendUpdates' label f v
