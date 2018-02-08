@@ -75,7 +75,7 @@ form471Intake conf = do
     NewFRN -> forLineItems conf frnList
     CopyFRN _ -> clickThroughAllFRNLineItems frnList
 
-  -- sendUpdates "Click new link thingy" (dynamicLinkUpdateF ">> View Category Two Budget Information and fail here!") val
+  sendUpdates "Click new link thingy" (dynamicLinkUpdateF ">> View Category Two Budget Information and fail here!") val
   val' <- case val ^? getButton "Continue" of
     Just _ -> sendUpdates "Click 'Continue'" (buttonUpdateF "Continue") val
     Nothing -> return val

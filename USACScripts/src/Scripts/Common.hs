@@ -457,7 +457,7 @@ selectOrganizationOld buttonName columnName method v = do
 selectOrganization :: (RapidFire m, MonadGen m) => Text -> ColumnName -> SelectOrgMethod -> AppianT m ()
 selectOrganization buttonName _ ByArbitrary = do
   sendUpdates1 "Selecting arbitrary organization" gridFieldArbitrarySelect
-  sendUpdates1 ("Click " <> buttonName) (buttonUpdateF "Apply For Funding Now")
+  sendUpdates1 ("Click " <> buttonName) (buttonUpdateF buttonName)
 selectOrganization buttonName columnName (ByOrgName targetName) = searchEntities buttonName columnName targetName
 
 searchEntities :: (RapidFire m, MonadGen m) => Text -> ColumnName -> Text -> AppianT m ()

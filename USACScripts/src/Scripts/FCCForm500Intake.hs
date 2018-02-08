@@ -1,13 +1,17 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module Scripts.FCCForm500Intake where
+module Scripts.FCCForm500Intake
+  ( runForm500Intake
+  ) where
 
 import ClassyPrelude
 import Appian.Client
 import Appian.Types
 import Appian.Instances
 import Appian.Lens
+import Appian.Internal.Arbitrary
 import Appian
 import Data.Aeson
 import Stats.CsvStream
@@ -16,16 +20,35 @@ import Control.Lens
 import Scripts.Common
 import Control.Monad.Time
 import Data.Time
+import Control.Lens
+import qualified Data.Csv as Csv
 
-form500Intake :: Login -> Appian Value
-form500Intake login = do
-    let un = Identifiers $ login ^.. username . to AppianUsername
+data Form500Conf = Form500Conf
+  { _applicant :: Login
+  , _appMultiOrgMethod :: SelectOrgMethod
+  } deriving Show
+
+makeLenses ''Form500Conf
+
+instance Csv.FromNamedRecord Form500Conf where
+  parseNamedRecord bs = Form500Conf
+    <$> Csv.parseNamedRecord bs
+    <*> bs Csv..: "Select Org Method"
+
+instance HasLogin Form500Conf where
+  getLogin conf = conf ^. applicant
+
+form500Intake :: Form500Conf -> Appian Value
+form500Intake conf = do
+    let un = Identifiers $ conf ^.. applicant . username . to AppianUsername
     --executeActionByName "FCC Form 500"
     myLandingPageAction1 "FCC Form 500"
+
+    handleMultipleEntities checkMultiOrgs "Create FCC Form 500" "Billed Entity Name" (conf ^. appMultiOrgMethod)
     --isButton
     sendUpdates1 "select First as NO" (componentUpdateWithF "Could not find first YES/NO button" $ taking 1 $ getButton "No")
     sendUpdates1 "Select Funding Year" (dropdownUpdateF1 "Funding Year" "2017")
-    sendUpdates1 "Type Nickname" (textUpdateF "Nickname" "Abhi Test")
+    sendUpdates1 "Type Nickname" (textFieldArbitraryF "Nickname" 255)
     sendUpdates1 "Type Main Contact Person" (pickerUpdateF "Main Contact Person" un)
     -- sendUpdates1 "Select Main Contact Person" (dropdownUpdateF1 "Funding Year" "2016")
     
@@ -63,4 +86,7 @@ isAddButton label = isPrefixOf "Add (" label && isSuffixOf ") FRNs" label
 runForm500Intake :: Bounds -> HostUrl -> LogMode -> CsvPath -> RampupTime -> NThreads -> IO [Maybe (Either ServantError (Either ScriptError Value))]
 runForm500Intake = runIt form500Intake
     
-
+checkMultiOrgs :: Value -> MultiOrgStatus
+checkMultiOrgs v = case has (hasLabel "Existing Organizations" . asValue) v of
+  True -> trace "Single organization" IsMultiple
+  False -> trace "Multiple organizations" IsSingle
