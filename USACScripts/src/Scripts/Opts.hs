@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Scripts.Opts
   ( setTimeout
@@ -63,6 +64,7 @@ import Scripts.FCCForm500Intake
 import Scripts.DisplayInvoiceDetails
 import Scripts.ServiceSubstitutionIntake
 import Scripts.FCCForm471EditApplication
+import Development.GitRev
 
 getPassword :: IO String
 getPassword = pure "EPCPassword123!"
@@ -217,8 +219,12 @@ dispResults results = do
 commandsInfo :: ParserInfo (IO ())
 commandsInfo = info (helper <*> parseCommands)
   (  fullDesc
-  <> progDesc "Various scripts written for the EPC system."
+  <> progDesc progInfo
   )
+
+progInfo = "Various scripts written for the EPC system.\n"
+  <> $(gitHash) <> "\n("
+  <> $(gitCommitDate) <> ")\n"
 
 parseCommands :: Parser (IO ())
 parseCommands = subparser
