@@ -75,7 +75,10 @@ form471Intake conf = do
     NewFRN -> forLineItems conf frnList
     CopyFRN _ -> clickThroughAllFRNLineItems frnList
 
-  sendUpdates "Click new link thingy" (dynamicLinkUpdateF ">> View Category Two Budget Information and fail here!") val
+  -- let asDynamicLink = id :: DynamicLink -> DynamicLink
+
+  -- val' <- sendUpdates "Click Cat2 Budget Link" (componentUpdateWithF "Could not find 'Cat2 Budget Link'" $ hasKeyValue "testLabel" ">> Click to View" . _JSON . to asDynamicLink) val
+
   val' <- case val ^? getButton "Continue" of
     Just _ -> sendUpdates "Click 'Continue'" (buttonUpdateF "Continue") val
     Nothing -> return val
