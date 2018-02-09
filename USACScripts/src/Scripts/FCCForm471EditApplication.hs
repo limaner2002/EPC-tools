@@ -28,6 +28,7 @@ import Scripts.FCCForm471ReviewAssignment
 import Scripts.FCCForm471Types
 import Scripts.FCCForm471 (forLineItems)
 import Appian.Internal.Arbitrary
+import Control.Monad.Time
 
 data EditApplicationMode
     = WindowVersion
@@ -90,7 +91,8 @@ editHolidayContact = do
     sendUpdates1 "Select the sub-category you want to modify" (dropdownUpdateF1 "Select the sub-category you want to modify" "Application Details")
     sendUpdates1 "Click Continue button" (buttonUpdateF "Continue")
     sendUpdates1 "Click Edit Application" (buttonUpdateF "Edit Application")
-    sendUpdates1 "Enter Holiday Contact Info" (paragraphUpdateF "Enter Holiday Contact Information" "Update to new Folds is working!")
+    currentTime <- currentTime
+    sendUpdates1 "Enter Holiday Contact Info" (paragraphUpdateF "Enter Holiday Contact Information" ("Last updated: " <> tshow currentTime))
     sendUpdates1 "Click Continue button" (buttonUpdateF "Continue")
     sendUpdates1 "Click Finish button" (buttonUpdateF "Finish")
     
