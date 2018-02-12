@@ -211,8 +211,7 @@ sendRuleUpdates msg fold = do
 editReport :: RapidFire m => ReportId -> AppianT m Value
 editReport rid = do
   cj <- use appianCookies
-  bounds <- use appianBounds
-  thinkTimer bounds $ recordTime ("Edit Report " <> tshow rid) $ toClient Proxy (Proxy :: Proxy EditReport) rid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
+  toClient Proxy (Proxy :: Proxy EditReport) rid (cj ^? unCookies . traverse . getCSRF . _2 . to decodeUtf8)
 
 reportUpdate :: (RunClient m, ToJSON update) => ReportId -> UiConfig update -> AppianT m Value
 reportUpdate rid upd = do
