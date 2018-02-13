@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Scripts.FCCForm471ReviewAssignment where
 
@@ -25,6 +26,7 @@ import qualified Data.Csv as Csv
 import Data.Random (MonadRandom)
 import Control.Monad.Except
 import Appian.Internal.Updates
+import Scripts.Execute
 
 data PIAReviewerType
   = PIAInitial
@@ -92,19 +94,37 @@ benToText (BEN n) = tshow n
 
 form471Assign :: (RapidFire m, MonadGen m) => Form471ReviewConf -> AppianT m Value
 form471Assign conf = do
+  runReportByName "471 Reviews Assignment " $ assignmentReport conf
+  use appianValue
+  
+assignmentReport :: Form471ReviewConf -> Report ()
+assignmentReport conf = do
   let un = Identifiers [conf ^. confReviewer . username]
-  (rid, v) <- openReport "471 Reviews Assignment "
-  editReport rid
-    >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
-    >>= sendReportUpdates rid "Enter BEN && Apply Filters" (dropdownUpdateF' "Reviewer Type" (conf ^. confReviewType)
-                                                             <|> MonadicFold (to $ textUpdate "BEN" $ benToText $ conf ^. confBen)
-                                                             <|> MonadicFold (to $ buttonUpdate "Apply Filters")
-                                                           )
-    >>= sendReportUpdates rid "Sort by Application Number" (MonadicFold $ getGridFieldCell . traverse . to setAppNumSort . to toUpdate . to Right)
-    >>= sendReportUpdates rid "Select Application" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [1]) . to toUpdate . to Right)
-    >>= sendReportUpdates rid "Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un)
-                                                 <|> MonadicFold (to (buttonUpdate "Assign Application(s) to Reviewer"))
-                                                )
+  
+  update "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
+  update "Select 'Reviewer Type'" (dropdownUpdateF' "Reviewer Type" (conf ^. confReviewType))
+  update "Select 'BEN'" (textUpdateF "BEN" $ benToText $ conf ^. confBen)
+  update "Select Application" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [1]) . to toUpdate . to Right)
+  update "Select Reviewer" (pickerUpdateF "Select a Reviewer" un)
+  update "click 'Assign BEN(s) to Reviewer' button" (buttonUpdateF "Assign BEN(s) to Reviewer")
+                                                           
+runForm471Assign = runScriptExhaustive form471Assign
+
+-- form471Assign :: (RapidFire m, MonadGen m) => Form471ReviewConf -> AppianT m Value
+-- form471Assign conf = do
+--   let un = Identifiers [conf ^. confReviewer . username]
+--   (rid, v) <- openReport "471 Reviews Assignment "
+--   editReport rid
+--     >>= sendReportUpdates rid "Select Funding Year" (dropdownUpdateF' "Fund Year" (conf ^. confFY))
+--     >>= sendReportUpdates rid "Enter BEN && Apply Filters" (dropdownUpdateF' "Reviewer Type" (conf ^. confReviewType)
+--                                                              <|> MonadicFold (to $ textUpdate "BEN" $ benToText $ conf ^. confBen)
+--                                                              <|> MonadicFold (to $ buttonUpdate "Apply Filters")
+--                                                            )
+--     >>= sendReportUpdates rid "Sort by Application Number" (MonadicFold $ getGridFieldCell . traverse . to setAppNumSort . to toUpdate . to Right)
+--     >>= sendReportUpdates rid "Select Application" (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [1]) . to toUpdate . to Right)
+--     >>= sendReportUpdates rid "Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un)
+--                                                  <|> MonadicFold (to (buttonUpdate "Assign Application(s) to Reviewer"))
+--                                                 )
 
 setAppNumSort :: GridField a -> GridField a
 setAppNumSort = gfSelection . traverse . failing _NonSelectable (_Selectable . gslPagingInfo) . pgISort .~ Just [SortField "applicationNumber" (Just True)]
