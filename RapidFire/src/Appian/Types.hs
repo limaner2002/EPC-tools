@@ -251,6 +251,7 @@ data TextField = TextField
   , _tfAlign :: Text
   , _tfPlaceholder :: Text
   , _tfRefreshAfter :: Text
+  , _tfReadOnly :: Maybe Bool
   } deriving Show
 
 data PickerWidget = PickerWidget
@@ -900,6 +901,7 @@ instance FromJSON TextField where
         <*> o .: "align"
         <*> o .: "placeholder"
         <*> o .: "refreshAfter"
+        <*> o .:? "readOnly"
 
 instance FromJSON PickerWidget where
   parseJSON val@(Object o) = parseAppianTypeWith "PickerWidget" (\t -> isSuffixOf "PickerWidget" t || isSuffixOf "PickerField" t) mkWidget val

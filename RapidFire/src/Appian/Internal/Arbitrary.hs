@@ -41,6 +41,7 @@ module Appian.Internal.Arbitrary
   , MonadGen (..)
   , dropdownCidArbitraryUpdateF
   , expressionWidgetArbitrary
+  , arbitraryNonZeroNatural
   ) where 
 
 import Test.QuickCheck hiding (generate)
@@ -263,3 +264,6 @@ instance Arbitrary Text where
 
 -- instance Arbitrary (HashMap Text Value) where
 --   arbitrary = mapFromList _
+
+arbitraryNonZeroNatural :: Integral a => Gen a
+arbitraryNonZeroNatural = QC.sized $ \n -> fromInteger <$> QC.choose (1, toInteger n)

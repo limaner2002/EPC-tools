@@ -1005,3 +1005,9 @@ executeActionByName actionName = do
     v' <- actionEx pid
     assign appianValue v'
 
+class IsInput a where
+  enterInput :: RapidFire m => a -> AppianT m ()
+
+instance IsInput a => IsInput (Maybe a) where
+  enterInput Nothing = return ()
+  enterInput (Just input) = enterInput input

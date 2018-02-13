@@ -422,7 +422,7 @@ forLineItems :: (RapidFire m, MonadGen m) => Form471Conf -> Value -> AppianT m V
 forLineItems conf = forGridRows_ sendUpdates (^. gfColumns . at "FRN" . traverse . _TextCellDynLink . _2) (MonadicFold $ getGridFieldCell . traverse) (\dyl _ v -> addLineItem' conf dyl v)
 
 addLineItem' :: (RapidFire m, MonadGen m) => Form471Conf -> DynamicLink -> Value -> AppianT m Value
-addLineItem' conf dyl v = sendUpdates ("Click FRN Link: " <> tshow dyl) (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
+addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' (conf ^. nLineItems)
   -- >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
   >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue") "Could not locate 'Continue' or 'Review 471 Button'")
@@ -460,13 +460,33 @@ selectFunction v =
 
 handleDataQuestions :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 handleDataQuestions v = do
-  logDebugN "Handling Data Questions"
   case v ^? hasKeyValue "value" "Please enter Bandwidth Speed Information for this Data Transmission and/or Internet Access Line Item" of
     Nothing -> return $ trace "No bandwidth questions" v
-    Just _ -> sendUpdates "Not Burstable & Continue" (buttonUpdateNoCheckF "No"
-                                                     <|> buttonUpdateNoCheckF "Continue"
-                                                     ) v
-                >>= handleConnections
+    Just _ -> do
+      assign appianValue v
+
+      bdw <- genArbitrary arbitrary
+      enterBandwidthSpeeds bdw
+
+      -- burstable <- genArbitrary arbitrary
+      -- enterInput (burstable :: Burstable)
+
+      sendUpdates1 "Click 'Continue'" (buttonUpdateF "Continue")
+
+      use appianValue
+        >>= handleConnections
+
+-- handleDataQuestions v = do
+--   logDebugN "Handling Data Questions"
+--   case v ^? hasKeyValue "value" "Please enter Bandwidth Speed Information for this Data Transmission and/or Internet Access Line Item" of
+--     Nothing -> return $ trace "No bandwidth questions" v
+--     Just _ -> sendUpdates "Not Burstable & Continue" (buttonUpdateNoCheckF "No"
+--                                                      <|> buttonUpdateNoCheckF "Continue"
+--                                                      ) v
+--                 >>= handleConnections
+
+enterBandwidthSpeeds :: RapidFire m => BandwidthSpeeds -> AppianT m ()
+enterBandwidthSpeeds bdw = enterInput bdw
 
 handleConnections :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 handleConnections v = do
@@ -479,33 +499,51 @@ handleConnections v = do
                                                      <|> buttonUpdateNoCheckF "Continue"
                                                    ) v
 
+arbLineItemCost :: LineItemSize -> QC.Gen LineItemCost
+arbLineItemCost Small = resize 1 QC.arbitrary
+arbLineItemCost Regular = QC.arbitrary
+arbLineItemCost Large = resize 1000000 QC.arbitrary
+arbLineItemCost (Range low high) = QC.scale (const high) QC.arbitrary
+
 enterCosts :: (RapidFire m, MonadGen m) => Form471Conf -> Value -> AppianT m Value
-enterCosts conf v =
-  case conf ^. category of
-    Cat1 -> case has (hasKeyValue "_cId" "d2d5fc7028c296c76a2a9698ed79bd69") v of
-              False -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                            <|> buttonUpdateNoCheckF "Save & Continue"
-                                                                          ) v
-              True -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                                                                           <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                                           <|> dropdownCidArbitraryUpdateF "d2d5fc7028c296c76a2a9698ed79bd69"
-                                                                           <|> buttonUpdateNoCheckF "Save & Continue"
-                                                                         ) v
-    Cat2 -> sendUpdates "Enter Costs Calutations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                               <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
-                                                               <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
-                                                               <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
-                                                               <|> buttonUpdateNoCheckF "Save & Continue"
-                                                               ) v
+enterCosts conf v = do
+  assign appianValue v
+
+  lineItemCost <- genArbitrary $ arbLineItemCost $ conf ^. lineItemSize
+  enterLineItemCost lineItemCost
+
+  sendUpdates1 "Click 'Save & Continue'" (buttonUpdateF "Save & Continue")
+
+  use appianValue
+-- enterCosts conf v =
+--   case conf ^. category of
+--     Cat1 -> case has (hasKeyValue "_cId" "d2d5fc7028c296c76a2a9698ed79bd69") v of
+--               False -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+--                                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+--                                                                             <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                             <|> buttonUpdateNoCheckF "Save & Continue"
+--                                                                           ) v
+--               True -> sendUpdates "Enter Cost Calculations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+--                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "962c6b0f58a1bddff3b0d629742c983c" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+--                                                                            <|> MonadicFold (act (\v -> textFieldCidUpdate "b7c76bf218e1350b13fb987094288670" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                            <|> dropdownCidArbitraryUpdateF "d2d5fc7028c296c76a2a9698ed79bd69"
+--                                                                            <|> buttonUpdateNoCheckF "Save & Continue"
+--                                                                          ) v
+--     Cat2 -> sendUpdates "Enter Costs Calutations and Continue" (MonadicFold (act (\v -> textFieldCidUpdate "ee957a1e3a2ca52198084739fbb47ba3" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "caeb5787e0d7c381e182e53631fb57ab" <$> pure "0" <*> pure v))
+--                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "a20962004cc39b76be3d841b402ed5cc" <$> arbTextInt (conf ^. lineItemSize) <*> pure v))
+--                                                                <|> MonadicFold (act (\v -> textFieldCidUpdate "3664d88f53b3b462acdfebcb53c93b1e" <$> pure "0" <*> pure v))
+--                                                                <|> buttonUpdateNoCheckF "Save & Continue"
+--                                                                ) v
+
+enterLineItemCost :: RapidFire m => LineItemCost -> AppianT m ()
+enterLineItemCost = enterInput
 
 parse471Number :: Parser Form471Num
 parse471Number = string "Create FCC Form 471 - " *> (Form471Num <$> decimal)
