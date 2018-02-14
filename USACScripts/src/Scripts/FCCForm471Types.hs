@@ -2,10 +2,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Scripts.FCCForm471Types where
 
 import Control.Lens
+import Control.Lens.Action.Reified
 import ClassyPrelude
 import qualified Data.Csv as Csv
 import Appian.Instances
@@ -317,15 +319,33 @@ instance Csv.ToNamedRecord Form471Conf where
 instance IsInput LineItemCost where
   enterInput line = do
     let dispDollarAmt = unDollar . to (format $ fixed 2) . to toStrict
-    sendUpdates1 "Enter 'Monthly Recurring Cost'" (textFieldCidUpdateF "ee957a1e3a2ca52198084739fbb47ba3"
+    sendUpdates1 "Enter 'Monthly Recurring Cost'" (lineItemFieldUpdateF (\cid -> cid == "ee957a1e3a2ca52198084739fbb47ba3" || cid == "3881d6b48c75f220d0f6fa372b5c1f7b") "Could not find 'Monthly Recurring Cost' field"
                                                    (line ^. lineMonthly . mthCost . dispDollarAmt)
                                                   )
-    sendUpdates1 "Enter 'Monthly Recurring Ineligible Costs'" (textFieldCidUpdateF "caeb5787e0d7c381e182e53631fb57ab"
+    sendUpdates1 "Enter 'Monthly Recurring Ineligible Costs'" (lineItemFieldUpdateF (\cid -> cid == "caeb5787e0d7c381e182e53631fb57ab" || cid == "80b3311b8ae5d7df48dfdc98844676da") "Could not find 'Monthly Recurring Ineligible Costs' field"
                                                                (line ^. lineMonthly . mthIneligible . dispDollarAmt)
                                                               )
-    sendUpdates1 "Enter 'One-Time Cost'" (textFieldCidUpdateF "a20962004cc39b76be3d841b402ed5cc"
+      -- If unit cost
+    isUnitCost <- usesValue (has $ hasKeyValue "_cId" "cd8b0ba945b6fd223e8b27a28c249f0d")
+    case isUnitCost of
+      True -> do
+        sendUpdates1 "Enter 'Monthly Quantity'" (lineItemFieldUpdateF (\cid -> cid == "972a225f416e9fd116a9fe7b0bb9cc05") "Could not find 'Monthly Quantity' field"
+                                                              (line ^. lineMonthly . mthQuantity . to tshow)
+                                                             )
+        sendUpdates1 "Enter 'One-time Quantity'" (lineItemFieldUpdateF (\cid -> cid == "e4eae166587fadc2f4bebebf4c7990a3") "Could not find 'One-time Quantity' field"
+                                                         (line ^. lineOneTime . otQuantity . to tshow)
+                                                        )
+      False -> return ()
+
+    sendUpdates1 "Enter 'One-Time Cost'" (lineItemFieldUpdateF (\cid -> cid == "a20962004cc39b76be3d841b402ed5cc" || cid == "3669900b32c7f01989fa909b57ea710e") "Could not find 'One-Time Cost' field"
                                           (line ^. lineOneTime . otCost . dispDollarAmt)
                                          )
-    sendUpdates1 "Enter 'One-Time Ineligible Cost'" (textFieldCidUpdateF "3664d88f53b3b462acdfebcb53c93b1e"
+    sendUpdates1 "Enter 'One-Time Ineligible Cost'" (lineItemFieldUpdateF (\cid -> cid == "3664d88f53b3b462acdfebcb53c93b1e" || cid == "ae10a88ec7862aea8222ac8d6fbbe203") "Could not find 'One-Time Ineligible Cost' field"
                                                      (line ^. lineOneTime . otIneligible . dispDollarAmt)
                                                     )
+
+lineItemFieldUpdateF :: (Text -> Bool) -> Text -> Text -> ReifiedMonadicFold m Value (Either Text Update)
+lineItemFieldUpdateF f errMsg newVal = componentUpdateWithF errMsg (getLineItemField f . to (tfValue .~ newVal))
+
+getLineItemField :: (Text -> Bool) -> Fold Value TextField
+getLineItemField f = deep (getTextFieldWith (anyOf (key "_cId" . _String) f)) . traverse
