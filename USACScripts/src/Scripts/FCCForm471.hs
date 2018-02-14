@@ -75,15 +75,15 @@ form471Intake conf = do
     NewFRN -> forLineItems conf frnList
     CopyFRN _ -> clickThroughAllFRNLineItems frnList
 
-  -- let asDynamicLink = id :: DynamicLink -> DynamicLink
+  let asDynamicLink = id :: DynamicLink -> DynamicLink
 
-  -- val' <- sendUpdates "Click Cat2 Budget Link" (componentUpdateWithF "Could not find 'Cat2 Budget Link'" $ hasKeyValue "testLabel" ">> Click to View" . _JSON . to asDynamicLink) val
+  val' <- sendUpdates "Click Cat2 Budget Link" (componentUpdateWithF "Could not find 'Cat2 Budget Link'" $ hasKeyValue "testLabel" ">> Click to View" . _JSON . to asDynamicLink) val
 
-  val' <- case val ^? getButton "Continue" of
+  val'' <- case val ^? getButton "Continue" of
     Just _ -> sendUpdates "Click 'Continue'" (buttonUpdateF "Continue") val
-    Nothing -> return val
+    Nothing -> return val'
 
-  ifContinueToCertification val'
+  ifContinueToCertification val''
 
 isMultipleEntities :: (Plated s, AsValue s) => Text -> Fold s Text
 isMultipleEntities buttonLabel = hasKeyValue "label" buttonLabel . key "#t" . _String

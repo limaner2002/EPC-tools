@@ -116,7 +116,12 @@ runDashboardByName' rref dashboardName = do
       uiPart <- handleMissing "Could not find embedded ui for the dashboard" dashFeed $ dashFeed ^? getEmbeddedUi
       -- headerPart <- handleMissing "Could not find embedded header for the dashboard" dashFeed $ dashFeed ^? getEmbeddedHeader
       urlStub <- handleMissing "Could not find the urlstub for the dashboard" summaryHeader $ summaryHeader ^? hasType "RecordListLink" . key "urlstub" . _String . to UrlStub
-      rrid <- handleMissing "Could not find the Opaque Record ID" dashHeader $ dashHeader ^? deep (key "opaqueRecordId" . _String . to RecordId)
+      let opaqueRecordIdTraversal = deep (key "opaqueRecordId" . _String . to RecordId)
+      rrid <- case summaryHeader ^? opaqueRecordIdTraversal of
+      	   Just r -> return r
+	   Nothing -> case dashHeader ^? opaqueRecordIdTraversal of
+	   	   Just r -> return r
+		   Nothing -> handleMissing "Could not find the Opaque Record ID" dashHeader Nothing
 
       assign appianValue uiPart
       return $ Right $ DashboardState urlStub rrid dashboard
