@@ -80,7 +80,7 @@ form471Intake conf = do
   val' <- sendUpdates "Click Cat2 Budget Link" (componentUpdateWithF "Could not find 'Cat2 Budget Link'" $ hasKeyValue "testLabel" ">> Click to View" . _JSON . to asDynamicLink) val
 
   val'' <- case val ^? getButton "Continue" of
-    Just _ -> sendUpdates "Click 'Continue'" (buttonUpdateF "Continue") val
+    Just _ -> sendUpdates "Click 'Continue'" (buttonUpdateF "Continue") val'
     Nothing -> return val'
 
   ifContinueToCertification val''
