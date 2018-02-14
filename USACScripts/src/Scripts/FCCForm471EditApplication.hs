@@ -72,7 +72,7 @@ removeLineItem :: RapidFire m => AppianT m ()
 removeLineItem = do
     sendUpdates1 "APPLICATION" (buttonUpdateF "Application")
     sendUpdates1 "Select the sub-category you want to modify" (dropdownUpdateF1 "Select the sub-category you want to modify" "Funding Request Details")
-    sendUpdates1 "Select FRN Dynamic Link" (gridDynamicLinkUpdateF "FRN" 3)
+    sendUpdates1 "Select FRN Dynamic Link" (gridDynamicLinkUpdateF "FRN" 0)
     sendUpdates1 "Select FRN Line Item in grid" (gridFieldUpdateWithF (dropping 1 getGridFieldCell) 0)
     sendUpdates1 "Click Delete Line Items button" (buttonUpdateWithF isDeleteAllButton "Could not find Delete Line Items button")
     sendUpdates1 "Click Finish button" (buttonUpdateF "Finish")
@@ -81,7 +81,7 @@ removeFRN :: RapidFire m => AppianT m ()
 removeFRN = do
     sendUpdates1 "APPLICATION" (buttonUpdateF "Application")
     sendUpdates1 "Select the sub-category you want to modify" (dropdownUpdateF1 "Select the sub-category you want to modify" "Funding Request Details")
-    sendUpdates1 "Select FRN in grid" (gridFieldUpdateWithF getGridFieldCell 3)
+    sendUpdates1 "Select FRN in grid" (gridFieldUpdateWithF getGridFieldCell 0)
     sendUpdates1 "Click Remove FRN button" (buttonUpdateF "Remove FRN")
     sendUpdates1 "Click Finish button" (buttonUpdateF "Finish")
     
@@ -136,14 +136,15 @@ addLineItem conf = do
     sendUpdates1 "APPLICATION" (buttonUpdateF "Application")
     sendUpdates1 "Select the sub-category you want to modify" (dropdownUpdateF1 "Select the sub-category you want to modify" "Funding Request Details")
     addLineItemToAllFRNs conf
+    sendUpdates1 "Select 'Finish'" (buttonUpdateF "Finish")
     -- sendUpdates1 "Select FRN Dynamic Link" (gridDynamicLinkUpdateF "FRN" 0)
     -- sendUpdates1 "Click 'Add New FRN Line Item'" (buttonUpdateF "Add New FRN Line Item")
 
 addLineItemToAllFRNs :: (RapidFire m, MonadGen m) => Form471Conf -> AppianT m ()
 addLineItemToAllFRNs conf = do
   v <- use appianValue
-  forLineItems conf v
-  assign appianValue v
+  v' <- forLineItems conf v
+  assign appianValue v'
 
 -- | This switch will take the "Edit Mode" column of the .csv file.
 -- Depending on what mode is present on that row this function will

@@ -117,7 +117,8 @@ instance ToHttpApiData Cookies where
   toHeader (Cookies cookies) = renderCookieHeader cookies
 
 defUserAgent :: UserAgent
-defUserAgent = UserAgent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36"
+defUserAgent = UserAgent "RapidFire"
+-- defUserAgent = UserAgent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36"
 
 usesValue :: Monad m => (Value -> a) -> AppianET err m a
 usesValue = uses appianValue

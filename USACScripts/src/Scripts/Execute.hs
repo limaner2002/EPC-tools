@@ -31,7 +31,8 @@ runIt f bounds (HostUrl hostUrl) logMode csvInput (RampupTime delay) (NThreads n
 
   runResourceT $ runStdoutLoggingT $ runParallel $ Parallel (nThreads n) (S.zip (S.each [0..]) $ void (csvStreamByName csvInput)) (\(i, a) -> do
                                                                                                                let d = (i * (delay `div` n))
-                                                                                                               threadDelay $ trace (show d) d
+                                                                                                               tid <- threadId
+                                                                                                               logDebugN $ tshow tid <> ": " <> tshow a
                                                                                                                res <- liftIO $ runAppianT logMode (f a) appianState env (getLogin a)
                                                                                                                logResult res
                                                                                                                return res

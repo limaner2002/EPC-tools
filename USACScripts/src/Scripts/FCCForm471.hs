@@ -225,11 +225,16 @@ selectConsortiumMembers v = case v ^? getButton "Select an Entity by Consortium 
   Just _ -> True
 
 selectEntities :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
-selectEntities v = case selectConsortiumMembers v of
-  True -> selectEntitiesReceivingService v
-  False -> sendUpdates "Manage Recipients of Service" (MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
-                                                       <|> buttonUpdateNoCheckF "Save & Continue"
-                                                      ) v
+selectEntities v = do
+  v' <- case v ^? getButton "Manage Recipients of Service" of
+    Nothing -> return v
+    Just _ -> sendUpdates "Click 'Manage Recipients of Service'" (buttonUpdateF "Manage Recipients of Service") v
+
+  case selectConsortiumMembers v' of
+    True -> selectEntitiesReceivingService v'
+    False -> sendUpdates "Manage Recipients of Service" (MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
+                                                         <|> buttonUpdateNoCheckF "Save & Continue"
+                                                        ) v'
 
 selectEntitiesReceivingService :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectEntitiesReceivingService v
@@ -425,7 +430,7 @@ addLineItem' :: (RapidFire m, MonadGen m) => Form471Conf -> DynamicLink -> Value
 addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right)) v
   >>= addLineItem'' (conf ^. nLineItems)
   -- >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue" || label == "Review FCC Form 471") "Could not locate 'Continue' or 'Review 471 Button'")
-  >>= sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue") "Could not locate 'Continue' or 'Review 471 Button'")
+  >>= toFRNGrid 
   where
     addLineItem'' 0 val = return val
     addLineItem'' n val = do
@@ -436,7 +441,12 @@ addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const d
         >>= enterCosts conf
         >>= selectEntities
         >>= sendUpdates "Review Recpients" (buttonUpdateNoCheckF "Continue")
+--        >>= sendUpdates "Select the sub-category" (dropdownUpdateF1 "Select the sub-category you want to modify" "Funding Request Details")
+--        >>= sendUpdates "Click FRN Link" (MonadicFold (to (const dyl) . to toUpdate . to Right))
         >>= (\v -> addLineItem'' (n - 1) v)
+    toFRNGrid val = case val ^? getDropdown "Select the sub-category you want to modify" of
+      Nothing -> sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue") "Could not locate 'Continue' Button") val
+      Just _ -> sendUpdates "Select 'Funding Request Details'" (dropdownUpdateF1 "Select the sub-category you want to modify" "Funding Request Details") val
 
 selectFunction :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectFunction v =
