@@ -1,6 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Scripts.Assignment where
 
@@ -20,26 +21,26 @@ import Control.Monad.Time
 import Data.Random (MonadRandom)
 import Control.Monad.Except
 import Appian.Internal.Updates
+import Scripts.Execute
+import Stats.CsvStream
+import Appian.Internal.Arbitrary
 
-assignment :: RapidFire m => ReviewBaseConf -> ReviewConf' -> AppianT m Value
+assignment :: (RapidFire m, MonadGen m) => ReviewBaseConf -> ReviewConf' -> AppianT m Value
 assignment baseConf conf = do
-  let un = Identifiers [conf ^. reviewer . username . to AppianUsername]
-  (rid, v) <- openReport "Post-Commit Assignments"
-  sendReportUpdates rid "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType baseConf)) v
-    >>= sendReportUpdates rid "Select Reviewer Type, and Funding Year" (dropdownUpdateF' "Reviewer Type" (reviewerType baseConf)
-                                                                        <|> dropdownUpdateF' "Funding Year" (fundingYear baseConf)
-                                                                        <|> MonadicFold (to $ textUpdate "Application/Request Number" $ conf ^. frnCaseNumber . caseNumber . to tshow)
-                                                                       --          <|> MonadicFold (checkboxGroupUpdate "" [1])
-                                                                       )
-    >>= sendReportUpdates rid "Apply Filters" (MonadicFold (to (buttonUpdate "Apply Filters")))
-    >>= sendReportUpdates rid "Sort by Age" (MonadicFold $ getGridFieldCell . traverse . to setAgeSort . to toUpdate . to Right)
-    >>= sendReportUpdates rid ("Select Case: " <> (conf ^. frnCaseNumber . caseNumber . to tshow)) (MonadicFold $ getGridFieldCell . traverse . to (gridSelection [0]) . to toUpdate . to Right)
-    >>= sendReportUpdates rid "Select & Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un)
-                                                 <|> MonadicFold (to (buttonUpdate "Assign Case(s) to Reviewer"))
-                                                )
+  runReportByName "Post-Commit Assignments" $ assignmentReport baseConf conf
+  use appianValue
+  
+assignmentReport :: ReviewBaseConf -> ReviewConf' -> Report ()
+assignmentReport baseConf conf = do
+    let un = Identifiers [conf ^. reviewer . username . to AppianUsername]
+    update "Select Review Type" (dropdownUpdateF' "Review Type" (reviewType baseConf))
+    update "Select Reviewer Type" (dropdownUpdateF' "Reviewer Type" (reviewerType baseConf))
+    update "Select Funding Year" (dropdownUpdateF' "Funding Year" (fundingYear baseConf))
+    update "Enter the Application/Request Number" (MonadicFold (to $ textUpdate "Application/Request Number" $ conf ^. frnCaseNumber . caseNumber . to tshow))
+    update "Click Apply Filters" (buttonUpdateF "Apply Filters")
+    update "Select Application Number in grid" (gridFieldUpdateWithF getGridFieldCell 0)
+    update "Select & Assign Reviewer" (MonadicFold (to $ pickerUpdate "Select a Reviewer" un))
+    update "Select Assign Case(s) to Reviewer" (MonadicFold (to (buttonUpdate "Assign Case(s) to Reviewer")))
 
-gridSelection :: [Int] -> GridField a -> GridField a
-gridSelection idxs gf = gfSelection . traverse . _Selectable . gslSelected .~ idents $ gf
-  where
-    idents = gf ^.. gfIdentifiers . traverse . itraversed . withIndex . filtered isDesired . _2
-    isDesired (i, _) = i `elem` idxs
+runassignment :: ReviewBaseConf -> Bounds -> HostUrl -> LogMode -> CsvPath -> NThreads -> NumRecords -> IO () -- [Maybe (Either ServantError (Either ScriptError Value))]
+runassignment conf = runScriptExhaustive $ assignment conf

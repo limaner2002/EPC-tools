@@ -139,5 +139,6 @@ openReport :: RapidFire m => Text -> AppianT m (ReportId, Value)
 openReport reportName = do
   v <- reportsTab
   rid <- getReportId reportName v
-  v' <- editReport rid
+  bounds <- use appianBounds
+  v' <- thinkTimer bounds $ recordTime ("Edit Report " <> tshow reportName) $ editReport rid
   return (rid, v')
