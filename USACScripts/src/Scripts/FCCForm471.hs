@@ -77,7 +77,9 @@ form471Intake conf = do
 
   let asDynamicLink = id :: DynamicLink -> DynamicLink
 
-  val' <- sendUpdates "Click Cat2 Budget Link" (componentUpdateWithF "Could not find 'Cat2 Budget Link'" $ hasKeyValue "testLabel" ">> Click to View" . _JSON . to asDynamicLink) val
+  val' <- case conf ^. category of
+            Cat2 -> sendUpdates "Click Cat2 Budget Link" (componentUpdateWithF "Could not find 'Cat2 Budget Link'" $ hasKeyValue "testLabel" ">> Click to View" . _JSON . to asDynamicLink) val
+            Cat1 -> return val
 
   val'' <- case val ^? getButton "Continue" of
     Just _ -> sendUpdates "Click 'Continue'" (buttonUpdateF "Continue") val'
@@ -449,24 +451,37 @@ addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const d
       Just _ -> sendUpdates "Select 'Funding Request Details'" (dropdownUpdateF1 "Select the sub-category you want to modify" "Funding Request Details") val
 
 selectFunction :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
-selectFunction v =
-  case has (getDropdown "Function") v of
-    True -> sendUpdates "Select Function" (dropdownUpdateF1 "Function" "Fiber") v
-            >>= sendUpdates "Select Type of Connection and Continue" (dropdownArbitraryUpdateF "Type of Connection" -- MonadicFold (to (dropdownUpdate "Type of Connection" 13))
-                                                                      <|> MonadicFold (radioButtonUpdate "Purpose" 1)
-                                                                      <|> buttonUpdateNoCheckF "Continue"
-                                                                     )
-    -- False -> sendUpdates "Select Type of Connection" (MonadicFold (to $ dropdownUpdate "Type of Internal Connection" 2)) v
-    --   >>= sendUpdates "Select Type, Make, Model, and Continue" (MonadicFold (to $ dropdownUpdate "Type of Product" 2)
-    --                                                            <|> dropdownArbitraryUpdateF "Make"
-    --     						       <|> MonadicFold (textFieldArbitrary "Enter the Make" 255)
-    --                                                            <|> MonadicFold (textFieldArbitrary "Model" 255)
-    --                                                            <|> MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
-    --                                                            <|> MonadicFold (to $ buttonUpdate "Continue")
-    --                                                            )
-    False -> sendUpdates "Total Quantity of Equipment Maintained" (MonadicFold (to $ textUpdate "Total Quantity of Equipment Maintained" "2")
-                                                                   <|> buttonUpdateNoCheckF "Continue"
-                                                                  ) v
+selectFunction v = do
+  assign appianValue v
+  hasFunction <- usesValue (has $ getDropdown "Function")
+
+  case hasFunction of
+    True -> do
+      sendUpdates1 "Select Function" (dropdownArbitraryUpdateF "Function")
+      sendUpdates1 "Select 'Type of Connection'" (dropdownArbitraryUpdateF "Type of Connection")
+      sendUpdates1 "buttonUpdate" (buttonUpdateF "Continue")
+    False -> do
+      sendUpdates1 "Total Quantity of Equipment Maintained" (intFieldArbitraryUpdateF "Total Quantity of Equipment Maintained")
+      sendUpdates1 "Click 'Continue' from Function Details" (buttonUpdateF "Continue")
+
+  use appianValue
+  -- case has (getDropdown "Function") v of
+  --   True -> sendUpdates "Select Function" (dropdownArbitraryUpdateF "Function") v
+  --           >>= sendUpdates "Select Type of Connection and Continue" (dropdownArbitraryUpdateF "Type of Connection" -- MonadicFold (to (dropdownUpdate "Type of Connection" 13))
+  --                                                                     <|> MonadicFold (radioButtonUpdate "Purpose" 1)
+  --                                                                     <|> buttonUpdateNoCheckF "Continue"
+  --                                                                    )
+  --   -- False -> sendUpdates "Select Type of Connection" (MonadicFold (to $ dropdownUpdate "Type of Internal Connection" 2)) v
+  --   --   >>= sendUpdates "Select Type, Make, Model, and Continue" (MonadicFold (to $ dropdownUpdate "Type of Product" 2)
+  --   --                                                            <|> dropdownArbitraryUpdateF "Make"
+  --   --     						       <|> MonadicFold (textFieldArbitrary "Enter the Make" 255)
+  --   --                                                            <|> MonadicFold (textFieldArbitrary "Model" 255)
+  --   --                                                            <|> MonadicFold (getButtonWith (== "Yes") . to toUpdate . to Right)
+  --   --                                                            <|> MonadicFold (to $ buttonUpdate "Continue")
+  --   --                                                            )
+  --   False -> sendUpdates "Total Quantity of Equipment Maintained" (MonadicFold (to $ textUpdate "Total Quantity of Equipment Maintained" "2")
+  --                                                                  <|> buttonUpdateNoCheckF "Continue"
+  --                                                                 ) v
 
 handleDataQuestions :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 handleDataQuestions v = do

@@ -284,10 +284,14 @@ checkCosts :: MonthlyCost -> OneTimeCost -> Bool
 checkCosts monthly oneTime = checkMonthlyEligible && checkOneTimeEligible && checkPreDiscountEligible
   where
     oneTimeEligible = oneTime ^? otEligible . _EligibleCost
+    oneTimeQuantity = oneTime ^. otQuantity . to (DollarAmt . fromIntegral)
     monthlyEligible = monthly ^? mthEligible . _EligibleCost
+    monthlyQuantity = monthly ^. mthQuantity . to (DollarAmt . fromIntegral)
     checkMonthlyEligible = monthlyEligible > Just 0
     checkOneTimeEligible = oneTimeEligible > Just 0
-    checkPreDiscountEligible = ((+) <$> oneTimeEligible <*> monthlyEligible) < Just 9999999999.99
+    checkPreDiscountEligible = ((+) <$> totalOneTimeEligible  <*> totalMonthlyEligible) < Just 9999999999.99
+    totalOneTimeEligible = fmap (* oneTimeQuantity) oneTimeEligible
+    totalMonthlyEligible = fmap (* monthlyQuantity) monthlyEligible
 
 instance IsInput BandwidthSpeeds where
   enterInput bdw = do
@@ -326,13 +330,13 @@ instance IsInput LineItemCost where
                                                                (line ^. lineMonthly . mthIneligible . dispDollarAmt)
                                                               )
       -- If unit cost
-    isUnitCost <- usesValue (has $ hasKeyValue "_cId" "cd8b0ba945b6fd223e8b27a28c249f0d")
+    isUnitCost <- usesValue (has $ deep $ filtered $ has $ key "_cId" . _String . runFold (Fold (only "cd8b0ba945b6fd223e8b27a28c249f0d") <|> Fold (only "8ad40de34efe605ac0e0715a6635f0c0")))
     case isUnitCost of
       True -> do
-        sendUpdates1 "Enter 'Monthly Quantity'" (lineItemFieldUpdateF (\cid -> cid == "972a225f416e9fd116a9fe7b0bb9cc05") "Could not find 'Monthly Quantity' field"
+        sendUpdates1 "Enter 'Monthly Quantity'" (lineItemFieldUpdateF (\cid -> cid == "972a225f416e9fd116a9fe7b0bb9cc05" || cid == "962c6b0f58a1bddff3b0d629742c983c") "Could not find 'Monthly Quantity' field"
                                                               (line ^. lineMonthly . mthQuantity . to tshow)
                                                              )
-        sendUpdates1 "Enter 'One-time Quantity'" (lineItemFieldUpdateF (\cid -> cid == "e4eae166587fadc2f4bebebf4c7990a3") "Could not find 'One-time Quantity' field"
+        sendUpdates1 "Enter 'One-time Quantity'" (lineItemFieldUpdateF (\cid -> cid == "e4eae166587fadc2f4bebebf4c7990a3" || cid == "b7c76bf218e1350b13fb987094288670") "Could not find 'One-time Quantity' field"
                                                          (line ^. lineOneTime . otQuantity . to tshow)
                                                         )
       False -> return ()
