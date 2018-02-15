@@ -457,9 +457,11 @@ selectFunction v = do
 
   case hasFunction of
     True -> do
+      selectPurpose
       sendUpdates1 "Select Function" (dropdownArbitraryUpdateF "Function")
       sendUpdates1 "Select 'Type of Connection'" (dropdownArbitraryUpdateF "Type of Connection")
-      sendUpdates1 "buttonUpdate" (buttonUpdateF "Continue")
+      enterOther
+      sendUpdates1 "Click 'Continue' from Function Details" (buttonUpdateF "Continue")
     False -> do
       sendUpdates1 "Total Quantity of Equipment Maintained" (intFieldArbitraryUpdateF "Total Quantity of Equipment Maintained")
       sendUpdates1 "Click 'Continue' from Function Details" (buttonUpdateF "Continue")
@@ -482,6 +484,20 @@ selectFunction v = do
   --   False -> sendUpdates "Total Quantity of Equipment Maintained" (MonadicFold (to $ textUpdate "Total Quantity of Equipment Maintained" "2")
   --                                                                  <|> buttonUpdateNoCheckF "Continue"
   --                                                                 ) v
+
+selectPurpose :: (RapidFire m, MonadGen m) => AppianT m ()
+selectPurpose = do
+  hasPurpose <- usesValue (has $ getRadioButtonField "Purpose")
+  case hasPurpose of
+    True -> sendUpdates1 "Select 'Purpose'" (radioArbitraryF "Purpose")
+    False -> return ()
+
+enterOther :: (RapidFire m, MonadGen m) => AppianT m ()
+enterOther = do
+  hasOther <- usesValue (has $ getTextField "Enter Type of Connection, if Other was selected")
+  case hasOther of
+    True -> sendUpdates1 "Enter 'Other'" (textFieldArbitraryF "Enter Type of Connection, if Other was selected" 255)
+    False -> return ()
 
 handleDataQuestions :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 handleDataQuestions v = do
