@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Scripts.FCCForm471
   ( module Scripts.FCCForm471
@@ -450,21 +451,59 @@ addLineItem' conf dyl v = sendUpdates "Click FRN Link" (MonadicFold (to (const d
       Nothing -> sendUpdates "Review FRN Line Items" (buttonUpdateWithF (\label -> label == "Continue") "Could not locate 'Continue' Button") val
       Just _ -> sendUpdates "Select 'Funding Request Details'" (dropdownUpdateF1 "Select the sub-category you want to modify" "Funding Request Details") val
 
+data ProductType
+  = Connection
+  | InternalConnection
+  | Multiple
+  | Unknown
+  deriving (Show, Eq)
+
+getProductType :: Value -> ProductType
+getProductType v = maybe Unknown id mProductType
+  where
+    mProductType = v ^? runFold
+      (   Fold (getDropdown "Function" . to (const Connection))
+      <|> Fold (getDropdown "Type of Internal Connection" . to (const InternalConnection))
+      <|> Fold (to $ const Multiple)
+      )
+
 selectFunction :: (RapidFire m, MonadGen m) => Value -> AppianT m Value
 selectFunction v = do
   assign appianValue v
-  hasFunction <- usesValue (has $ getDropdown "Function")
+  hasFunction <- usesValue getProductType -- (has $ getDropdown "Function")
 
   case hasFunction of
-    True -> do
+    Connection -> do
       selectPurpose
       sendUpdates1 "Select Function" (dropdownArbitraryUpdateF "Function")
       sendUpdates1 "Select 'Type of Connection'" (dropdownArbitraryUpdateF "Type of Connection")
       enterOther
       sendUpdates1 "Click 'Continue' from Function Details" (buttonUpdateF "Continue")
-    False -> do
+    InternalConnection -> do
+      sendUpdates1 "Type of Internal Connection" (dropdownArbitraryUpdateF "Type of Internal Connection")
+      isEditable <- usesValue (has $ getTextField "Type of Product" . tfReadOnly . _Just . only True)
+      case isEditable of
+        True -> return () 
+        False -> sendUpdates1 "Type of Product" (dropdownArbitraryUpdateF "Type of Product")
+      sendUpdates1 "Select 'Make'" (dropdownArbitraryUpdateF "Make")
+      makeInput <- usesValue (has $ getTextField "Enter the Make")
+      case makeInput of
+        True -> sendUpdates1 "Enter the Make" (textFieldArbitraryF "Enter the Make" 255)
+        False -> sendUpdates1 "Enter the 'Model'" (textFieldArbitraryF "Model" 255)
+
+      -- let asButtons = to (id :: [ButtonWidget] -> [ButtonWidget])
+      -- firstYesNoButtons <- usesValue (^? _JSON . asValue . deep (key "secondaryButtons") . _JSON . asButtons)
+      -- secondYesNoButtons <- usesValue (^? _JSON . asValue . dropping 1 (deep (key "secondaryButtons")) . _JSON . asButtons)
+
+      -- firstYesNoChoice <- QC.elements $ maybe mempty firstYesNoButtons
+
+      sendUpdates1 "Select Yes/No Buttons" (buttonArbitraryUpdateF $ deep (key "secondaryButtons") . _JSON)
+      sendUpdates1 "Click 'Continue' from Product Type" (buttonUpdateF "Continue")
+
+    Multiple -> do
       sendUpdates1 "Total Quantity of Equipment Maintained" (intFieldArbitraryUpdateF "Total Quantity of Equipment Maintained")
       sendUpdates1 "Click 'Continue' from Function Details" (buttonUpdateF "Continue")
+    Unknown -> logErrorN "Unknown product type?!"
 
   use appianValue
   -- case has (getDropdown "Function") v of
@@ -484,6 +523,31 @@ selectFunction v = do
   --   False -> sendUpdates "Total Quantity of Equipment Maintained" (MonadicFold (to $ textUpdate "Total Quantity of Equipment Maintained" "2")
   --                                                                  <|> buttonUpdateNoCheckF "Continue"
   --                                                                 ) v
+
+data YesNoButtons = YesNoButtons
+  { yesButton :: ButtonWidget
+  , noButton :: ButtonWidget
+  } deriving (Show, Generic)
+
+instance FromJSON YesNoButtons where
+  parseJSON val = do
+    mButtons <- val ^!? runMonadicFold (YesNoButtons <$> MonadicFold (hasLabel "Yes" . act parseJSON) <*> MonadicFold (hasLabel"No" . act parseJSON))
+    case mButtons of
+      Nothing -> fail "Could not find YES/NO buttons"
+      Just buttons -> pure buttons
+
+instance ToJSON YesNoButtons
+
+buttonArbitraryUpdateF :: MonadGen m => Fold Value YesNoButtons -> ReifiedMonadicFold m Value (Either Text Update)
+buttonArbitraryUpdateF getButtons = MonadicFold $ failing
+  (getButtons . to Right)
+  (to (const $ Left "Failed to find Yes/No buttons"))
+  . act (mapM (genArbitrary . sampleButton)) . to (fmap toUpdate)
+ where
+   sampleButton (YesNoButtons yes no) = QC.elements [yes, no]
+
+checkEmpty :: [a] -> Either Text (NonNull [a])
+checkEmpty = maybe (Left "Empty list!") Right . fromNullable
 
 selectPurpose :: (RapidFire m, MonadGen m) => AppianT m ()
 selectPurpose = do
@@ -552,6 +616,12 @@ enterCosts conf v = do
 
   lineItemCost <- genArbitrary $ arbLineItemCost $ conf ^. lineItemSize
   enterLineItemCost lineItemCost
+
+  differentUnits <- usesValue (has $ deep $ filtered $ has $ key "_cId" . _String . only "c7124e2e127c533cfb4479122a135aa3")
+
+  case differentUnits of
+    True -> sendUpdates1 "Select 'Units'" (dropdownArbitraryCidUpdateF "c7124e2e127c533cfb4479122a135aa3")
+    False -> return ()
 
   sendUpdates1 "Click 'Save & Continue'" (buttonUpdateF "Save & Continue")
 

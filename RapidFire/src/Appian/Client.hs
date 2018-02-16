@@ -17,8 +17,8 @@ module Appian.Client
   ) where
 
 import Servant.API
-import Servant.Client hiding (responseStatus, HasClient, Client)
-import Servant.Client.Core hiding (ServantError, BaseUrl, Https)
+import Servant.Client hiding (responseStatus, HasClient, Client, Response)
+import Servant.Client.Core hiding (ServantError, BaseUrl, Https, Response)
 import Control.Lens hiding (cons, index, snoc)
 import Control.Lens.Action.Reified
 import Control.Lens.Action
@@ -1011,3 +1011,20 @@ class IsInput a where
 instance IsInput a => IsInput (Maybe a) where
   enterInput Nothing = return ()
   enterInput (Just input) = enterInput input
+
+type Response = Maybe (Either ServantError (Either ScriptError Value))
+type Response' = [Response]
+
+writeResponse :: MonadIO m => FilePath -> Response -> m ()
+writeResponse _ Nothing = putStrLn "Nothing provided to this thread!"
+writeResponse _ (Just (Left err)) = print err
+writeResponse fp (Just (Right (Left scriptError))) = writeScriptError fp scriptError
+
+writeValue :: MonadIO m => FilePath -> Value -> m ()
+writeValue fp = writeFile fp . toStrict . encode
+
+writeScriptError :: MonadIO m => FilePath -> ScriptError -> m ()
+writeScriptError fp (ValidationsError (_, v, _)) = writeValue fp v
+writeScriptError fp (MissingComponentError (_, v)) = writeValue fp v
+writeScriptError fp (BadUpdateError _ mv) = mapM_ (writeValue fp) mv
+writeScriptError fp err = print err

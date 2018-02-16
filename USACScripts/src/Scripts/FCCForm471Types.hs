@@ -8,6 +8,7 @@ module Scripts.FCCForm471Types where
 
 import Control.Lens
 import Control.Lens.Action.Reified
+import Control.Lens.Action
 import ClassyPrelude
 import qualified Data.Csv as Csv
 import Appian.Instances
@@ -353,3 +354,7 @@ lineItemFieldUpdateF f errMsg newVal = componentUpdateWithF errMsg (getLineItemF
 
 getLineItemField :: (Text -> Bool) -> Fold Value TextField
 getLineItemField f = deep (getTextFieldWith (anyOf (key "_cId" . _String) f)) . traverse
+
+                     -- c7124e2e127c533cfb4479122a135aa3
+dropdownArbitraryCidUpdateF :: MonadGen m => Text -> ReifiedMonadicFold m Value (Either Text Update)
+dropdownArbitraryCidUpdateF cid = MonadicFold $ failing (dropdownFieldCid cid . to Right) (to $ const $ Left "Could not find Units dropdown") . act (mapM dropdownArbitrarySelect) . to (fmap toUpdate)
